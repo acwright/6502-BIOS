@@ -18,7 +18,6 @@ Current file: BIOS.asm
 000000r 2               READ_PTR            := $00
 000000r 2               WRITE_PTR           := $01
 000000r 2               STR_PTR             := $02               ; $02-$03 - String pointer (2 bytes)
-000000r 2               KEYPAD_IN           := $0F               ; Keypad input buffer (1 byte)
 000000r 2               
 000000r 2               ; Stack
 000000r 2               STACK               := $0100             ; $0100-$01FF
@@ -309,151 +308,1047 @@ Current file: BIOS.asm
 000000r 2               ; ***             ***
 000000r 2               
 000000r 2               ; Main entry point
-000000r 2               RESET:
+000000r 2               Reset:
 000000r 2  D8             cld                           ; Clear decimal mode
 000001r 2  78             sei                           ; Disable interrupts
 000002r 2               
 000002r 2  A2 FF          ldx #$ff
 000004r 2  9A             txs                           ; Reset the stack pointer
 000005r 2               
-000005r 2  A9 rr          lda #<IRQ                     ; Initialize the IRQ pointer
+000005r 2  A9 rr          lda #<Irq                     ; Initialize the IRQ pointer
 000007r 2  8D 00 03       sta IRQ_PTR
-00000Ar 2  A9 rr          lda #>IRQ
+00000Ar 2  A9 rr          lda #>Irq
 00000Cr 2  8D 01 03       sta IRQ_PTR + 1
 00000Fr 2               
-00000Fr 2  A9 rr          lda #<NMI                     ; Initialize the NMI pointer
+00000Fr 2  A9 rr          lda #<Nmi                     ; Initialize the NMI pointer
 000011r 2  8D 04 03       sta NMI_PTR
-000014r 2  A9 rr          lda #>NMI
+000014r 2  A9 rr          lda #>Nmi
 000016r 2  8D 05 03       sta NMI_PTR + 1
 000019r 2               
-000019r 2  20 rr rr       jsr INIT_BUFFER               ; Initialize the input buffer
-00001Cr 2  20 rr rr       jsr INIT_SC                   ; Initialize the serial output
-00001Fr 2               
-00001Fr 2  58             cli                           ; Enable interrupts
-000020r 2               
-000020r 2  4C rr rr       jmp WOZ_MON                   ; Jump to Wozmon
-000023r 2               
-000023r 2               ; Initialize the serial output
-000023r 2               ; Modifies: Flags, A
-000023r 2               INIT_SC:
-000023r 2  A9 1F          lda     #$1F                  ; 8-N-1, 19200 baud
-000025r 2  8D 03 90       sta     SC_CTRL
-000028r 2  A9 09          lda     #$09                  ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-00002Ar 2  8D 02 90       sta     SC_CMD
-00002Dr 2  60             rts
+000019r 2  20 rr rr       jsr InitBuffer                ; Initialize the input buffer
+00001Cr 2  20 rr rr       jsr InitSC                    ; Initialize the Serial Card (6551)
+00001Fr 2  20 rr rr       jsr InitSID                   ; Initialize the Sound Card (6581)
+000022r 2  20 rr rr       jsr InitVideo                 ; Initialize the Video Card (TMS9918)
+000025r 2  20 rr rr       jsr InitCharacters            ; Initialize the character set
+000028r 2               
+000028r 2  20 rr rr       jsr Beep                      ; Play the startup beep
+00002Br 2  20 rr rr       jsr Splash                    ; Draw the splash screen
 00002Er 2               
-00002Er 2               ; Initialize the INPUT_BUFFER
-00002Er 2               ; Modifies: Flags, A
-00002Er 2               INIT_BUFFER:
-00002Er 2  A9 00          lda #$00
-000030r 2  85 00          sta READ_PTR                  ; Init read and write pointers
-000032r 2  85 01          sta WRITE_PTR
-000034r 2  60             rts
-000035r 2               
-000035r 2               ; Write a character from the A register to the INPUT_BUFFER
-000035r 2               ; Modifies: Flags, X
-000035r 2               WRITE_BUFFER:
-000035r 2  A6 01          ldx WRITE_PTR
-000037r 2  9D 00 02       sta INPUT_BUFFER,x
-00003Ar 2  E6 01          inc WRITE_PTR
+00002Er 2  58             cli                           ; Enable interrupts
+00002Fr 2               
+00002Fr 2  4C rr rr       jmp WozMon                    ; Jump to Wozmon
+000032r 2               
+000032r 2               ; Initialize the Serial Card (6551)
+000032r 2               ; Modifies: Flags, A
+000032r 2               InitSC:
+000032r 2  A9 1F          lda     #$1F                  ; 8-N-1, 19200 baud
+000034r 2  8D 03 90       sta     SC_CTRL
+000037r 2  A9 09          lda     #$09                  ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+000039r 2  8D 02 90       sta     SC_CMD
 00003Cr 2  60             rts
 00003Dr 2               
-00003Dr 2               ; Read a character from the INPUT_BUFFER and store it in A register
-00003Dr 2               ; Modifies: Flags, X, A
-00003Dr 2               READ_BUFFER:
-00003Dr 2  A6 00          ldx READ_PTR
-00003Fr 2  BD 00 02       lda INPUT_BUFFER,x
-000042r 2  E6 00          inc READ_PTR
-000044r 2  60             rts
-000045r 2               
-000045r 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
-000045r 2               ; Modifies: Flags, A
-000045r 2               BUFFER_SIZE:
-000045r 2  A5 01          lda WRITE_PTR
-000047r 2  38             sec
-000048r 2  E5 00          sbc READ_PTR
-00004Ar 2  60             rts
-00004Br 2               
-00004Br 2               ; Get a character from the INPUT_BUFFER if available
-00004Br 2               ; On return, carry flag indicates whether a character was available
-00004Br 2               ; If character available the character will be in the A register
-00004Br 2               ; Modifies: Flags, A
-00004Br 2               CHRIN:
-00004Br 2  DA             phx
-00004Cr 2  20 rr rr       jsr BUFFER_SIZE               ; Check for character available
-00004Fr 2  F0 1E          beq @CHRIN_NO_CHAR            ; Branch if no character available
-000051r 2  20 rr rr       jsr READ_BUFFER               ; Read the character from the buffer
-000054r 2  20 rr rr       jsr CHROUT                    ; Echo
-000057r 2  48             pha
-000058r 2  20 rr rr       jsr BUFFER_SIZE
-00005Br 2  C9 B0          cmp #$B0                      ; Check if buffer is mostly full
-00005Dr 2  90 07          bcc @CHRIN_NOT_FULL           ; Branch if buffer size < $B0
-00005Fr 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000061r 2  8D 02 90       sta SC_CMD
-000064r 2  80 05          bra @CHRIN_EXIT
-000066r 2               @CHRIN_NOT_FULL:
-000066r 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-000068r 2  8D 02 90       sta SC_CMD
-00006Br 2               @CHRIN_EXIT:
-00006Br 2  68             pla
-00006Cr 2  FA             plx
-00006Dr 2  38             sec
-00006Er 2  60             rts
-00006Fr 2               @CHRIN_NO_CHAR:
-00006Fr 2  FA             plx
-000070r 2  18             clc
-000071r 2  60             rts
-000072r 2               
-000072r 2               ; Output a character from the A register to the Serial Card
-000072r 2               ; Modifies: Flags
-000072r 2               CHROUT:
-000072r 2  8D 00 90       sta SC_DATA
-000075r 2  48             pha
-000076r 2               @CHROUT_WAIT:
-000076r 2  AD 01 90       lda SC_STATUS
-000079r 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
-00007Br 2  F0 F9          beq @CHROUT_WAIT              ; Loop if TX buffer not empty
-00007Dr 2  68             pla
-00007Er 2  60             rts
-00007Fr 2               
-00007Fr 2               ; NMI Handler
-00007Fr 2               NMI:
-00007Fr 2  40             rti
-000080r 2               
-000080r 2               ; IRQ Handler
-000080r 2               IRQ:
-000080r 2  48             pha
-000081r 2  5A             phy
-000082r 2  DA             phx
-000083r 2  AD 01 90       lda SC_STATUS
-000086r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-000088r 2  F0 12          beq @IRQ_EXIT                 ; If not, exit
-00008Ar 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
-00008Dr 2  20 rr rr       jsr WRITE_BUFFER              ; Store to the input buffer
-000090r 2  20 rr rr       jsr BUFFER_SIZE
-000093r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-000095r 2  90 05          bcc @IRQ_EXIT                 ; If not, exit
-000097r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000099r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-00009Cr 2               @IRQ_EXIT:
-00009Cr 2  FA             plx
-00009Dr 2  7A             ply
-00009Er 2  68             pla
-00009Fr 2  40             rti
-0000A0r 2               
-0000A0r 2               ; NMI Vector
-0000A0r 2               NMI_VEC:
-0000A0r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
-0000A3r 2               
-0000A3r 2               ; Reset Vector
-0000A3r 2               RESET_VEC:
-0000A3r 2  4C rr rr       jmp RESET                     ; Initialize the system
-0000A6r 2               
-0000A6r 2               ; IRQ Vector
-0000A6r 2               IRQ_VEC:
-0000A6r 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
-0000A9r 2               
-0000A9r 1               .segment "CART"
+00003Dr 2               ; Initialze the Sound Card (6581)
+00003Dr 2               ; Modifies: Flags, A, X
+00003Dr 2               InitSID:
+00003Dr 2  A9 00          lda #$00
+00003Fr 2  A2 1D          ldx #$1D                      ; Clear all 29 SID registers
+000041r 2               @InitSIDLoop:
+000041r 2  9D 00 98       sta SID_V1_FREQ_LO,x          ; Clear register
+000044r 2  CA             dex
+000045r 2  10 FA          bpl @InitSIDLoop              ; Loop until all registers cleared
+000047r 2  A9 0F          lda #$0F                      ; Set volume to maximum
+000049r 2  8D 18 98       sta SID_MODE_VOL
+00004Cr 2  60             rts
+00004Dr 2               
+00004Dr 2               ; Initialize the Video Card (TMS9918)
+00004Dr 2               ; Modifies: Flags, A, X
+00004Dr 2               InitVideo:
+00004Dr 2  A2 00          ldx #$00                      ; Start with register 0
+00004Fr 2               @InitVideoLoop:
+00004Fr 2  BD rr rr       lda @InitVideoRegData,x       ; Load register value
+000052r 2  8D 01 9C       sta VC_REG                    ; Write data byte
+000055r 2  8A             txa
+000056r 2  09 80          ora #$80                      ; Set bit 7 to indicate register write
+000058r 2  8D 01 9C       sta VC_REG                    ; Write register number
+00005Br 2  E8             inx
+00005Cr 2  E0 08          cpx #$08                      ; Check if all 8 registers written
+00005Er 2  D0 EF          bne @InitVideoLoop            ; Continue until done
+000060r 2  60             rts
+000061r 2               @InitVideoRegData:
+000061r 2  00             .byte $00                     ; R0: Mode control (no external video)
+000062r 2  D0             .byte $D0                     ; R1: 16K, display on, interrupt off, text mode M1
+000063r 2  00             .byte $00                     ; R2: Name table at $0000 (0x00 * 0x400)
+000064r 2  00             .byte $00                     ; R3: Color table (not used in text mode)
+000065r 2  01             .byte $01                     ; R4: Pattern table at $0800 (0x01 * 0x800)
+000066r 2  00             .byte $00                     ; R5: Sprite attribute table (not used in text mode)
+000067r 2  00             .byte $00                     ; R6: Sprite pattern table (not used in text mode)
+000068r 2  F0             .byte $F0                     ; R7: White text on black background
+000069r 2               
+000069r 2               ; Initialize the character set
+000069r 2               ; Modifies: Flags, A, X, Y
+000069r 2               InitCharacters:
+000069r 2                 ; Set VRAM write address to $0800 (pattern table base)
+000069r 2  A9 00          lda #$00                      ; Low byte of address
+00006Br 2  8D 01 9C       sta VC_REG
+00006Er 2  A9 48          lda #$48                      ; High byte ($08) OR $40 for write mode
+000070r 2  8D 01 9C       sta VC_REG
+000073r 2                 ; Set up source pointer
+000073r 2  A9 rr          lda #<CharacterSet
+000075r 2  85 02          sta STR_PTR                   ; Use STR_PTR ($02-$03) for character set pointer
+000077r 2  A9 rr          lda #>CharacterSet
+000079r 2  85 03          sta STR_PTR + 1
+00007Br 2                 ; Copy 2048 bytes (8 pages of 256 bytes each)
+00007Br 2  A2 08          ldx #$08                      ; 8 pages to copy
+00007Dr 2  A0 00          ldy #$00                      ; Byte counter within page
+00007Fr 2               @InitCharPageLoop:
+00007Fr 2  B1 02          lda (STR_PTR),y               ; Load from character set
+000081r 2  8D 00 9C       sta VC_DATA                   ; Write to VRAM
+000084r 2  C8             iny
+000085r 2  D0 F8          bne @InitCharPageLoop         ; Loop until page complete (256 bytes)
+000087r 2  E6 03          inc STR_PTR + 1               ; Move to next page
+000089r 2  CA             dex
+00008Ar 2  D0 F3          bne @InitCharPageLoop         ; Loop for all 8 pages
+00008Cr 2  60             rts
+00008Dr 2               
+00008Dr 2               ; Initialize the INPUT_BUFFER
+00008Dr 2               ; Modifies: Flags, A
+00008Dr 2               InitBuffer:
+00008Dr 2  A9 00          lda #$00
+00008Fr 2  85 00          sta READ_PTR                  ; Init read and write pointers
+000091r 2  85 01          sta WRITE_PTR
+000093r 2  60             rts
+000094r 2               
+000094r 2               ; Write a character from the A register to the INPUT_BUFFER
+000094r 2               ; Modifies: Flags, X
+000094r 2               WriteBuffer:
+000094r 2  A6 01          ldx WRITE_PTR
+000096r 2  9D 00 02       sta INPUT_BUFFER,x
+000099r 2  E6 01          inc WRITE_PTR
+00009Br 2  60             rts
+00009Cr 2               
+00009Cr 2               ; Read a character from the INPUT_BUFFER and store it in A register
+00009Cr 2               ; Modifies: Flags, X, A
+00009Cr 2               ReadBuffer:
+00009Cr 2  A6 00          ldx READ_PTR
+00009Er 2  BD 00 02       lda INPUT_BUFFER,x
+0000A1r 2  E6 00          inc READ_PTR
+0000A3r 2  60             rts
+0000A4r 2               
+0000A4r 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
+0000A4r 2               ; Modifies: Flags, A
+0000A4r 2               BufferSize:
+0000A4r 2  A5 01          lda WRITE_PTR
+0000A6r 2  38             sec
+0000A7r 2  E5 00          sbc READ_PTR
+0000A9r 2  60             rts
+0000AAr 2               
+0000AAr 2               ; Get a character from the INPUT_BUFFER if available
+0000AAr 2               ; On return, carry flag indicates whether a character was available
+0000AAr 2               ; If character available the character will be in the A register
+0000AAr 2               ; Modifies: Flags, A
+0000AAr 2               Chrin:
+0000AAr 2  DA             phx
+0000ABr 2  20 rr rr       jsr BufferSize                ; Check for character available
+0000AEr 2  F0 1E          beq @ChrinNoChar              ; Branch if no character available
+0000B0r 2  20 rr rr       jsr ReadBuffer                ; Read the character from the buffer
+0000B3r 2  20 rr rr       jsr Chrout                    ; Echo
+0000B6r 2  48             pha
+0000B7r 2  20 rr rr       jsr BufferSize
+0000BAr 2  C9 B0          cmp #$B0                      ; Check if buffer is mostly full
+0000BCr 2  90 07          bcc @ChrinNotFull             ; Branch if buffer size < $B0
+0000BEr 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+0000C0r 2  8D 02 90       sta SC_CMD
+0000C3r 2  80 05          bra @ChrinExit
+0000C5r 2               @ChrinNotFull:
+0000C5r 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+0000C7r 2  8D 02 90       sta SC_CMD
+0000CAr 2               @ChrinExit:
+0000CAr 2  68             pla
+0000CBr 2  FA             plx
+0000CCr 2  38             sec
+0000CDr 2  60             rts
+0000CEr 2               @ChrinNoChar:
+0000CEr 2  FA             plx
+0000CFr 2  18             clc
+0000D0r 2  60             rts
+0000D1r 2               
+0000D1r 2               ; Output a character from the A register to the Serial Card
+0000D1r 2               ; Modifies: Flags
+0000D1r 2               Chrout:
+0000D1r 2  8D 00 90       sta SC_DATA
+0000D4r 2  48             pha
+0000D5r 2               @ChroutWait:
+0000D5r 2  AD 01 90       lda SC_STATUS
+0000D8r 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
+0000DAr 2  F0 F9          beq @ChroutWait               ; Loop if TX buffer not empty
+0000DCr 2  68             pla
+0000DDr 2  60             rts
+0000DEr 2               
+0000DEr 2               ; Play a short beep sound
+0000DEr 2               ; Modifies: Flags, A, X, Y
+0000DEr 2               Beep:
+0000DEr 2  A9 09          lda #$09                      ; Set Attack = 0, Decay = 9 (fast)
+0000E0r 2  8D 05 98       sta SID_V1_AD
+0000E3r 2  A9 00          lda #$00                      ; Set Sustain = 0, Release = 0
+0000E5r 2  8D 06 98       sta SID_V1_SR
+0000E8r 2  A9 20          lda #$20                      ; Frequency low byte (~8000 Hz / 1000 Hz tone)
+0000EAr 2  8D 00 98       sta SID_V1_FREQ_LO
+0000EDr 2  A9 1F          lda #$1F                      ; Frequency high byte (for ~1000 Hz)
+0000EFr 2  8D 01 98       sta SID_V1_FREQ_HI
+0000F2r 2  A9 11          lda #$11                      ; Triangle wave + Gate on
+0000F4r 2  8D 04 98       sta SID_V1_CTRL
+0000F7r 2                 ; Delay for beep duration
+0000F7r 2  A2 F0          ldx #$F0                      ; Outer loop counter
+0000F9r 2               @BeepDelay1:
+0000F9r 2  A0 FF          ldy #$FF                      ; Inner loop counter
+0000FBr 2               @BeepDelay2:
+0000FBr 2  88             dey
+0000FCr 2  D0 FD          bne @BeepDelay2
+0000FEr 2  CA             dex
+0000FFr 2  D0 F8          bne @BeepDelay1
+000101r 2  A9 10          lda #$10                      ; Gate off (stop sound)
+000103r 2  8D 04 98       sta SID_V1_CTRL
+000106r 2  60             rts
+000107r 2               
+000107r 2               ; Draw the splash screen
+000107r 2               ; Modifies: Flags, A, X, Y
+000107r 2               Splash:
+000107r 2                 ; Set VRAM write address to center of screen
+000107r 2                 ; Name table base = $0000, center position = row 11, col 10
+000107r 2                 ; Address = $0000 + (11 * 40) + 6 = $01B8 + $0A = $01C2
+000107r 2  A9 C2          lda #$C2                      ; Low byte of address
+000109r 2  8D 01 9C       sta VC_REG
+00010Cr 2  A9 41          lda #$41                      ; High byte ($01) OR $40 for write mode
+00010Er 2  8D 01 9C       sta VC_REG
+000111r 2                 ; Set up string pointer
+000111r 2  A9 rr          lda #<@SplashText
+000113r 2  85 02          sta STR_PTR
+000115r 2  A9 rr          lda #>@SplashText
+000117r 2  85 03          sta STR_PTR + 1
+000119r 2                 ; Write string to VRAM
+000119r 2  A0 00          ldy #$00
+00011Br 2               @SplashLoop:
+00011Br 2  B1 02          lda (STR_PTR),y
+00011Dr 2  F0 06          beq @SplashDone               ; Exit if null terminator
+00011Fr 2  8D 00 9C       sta VC_DATA                   ; Write character to VRAM
+000122r 2  C8             iny
+000123r 2  D0 F6          bne @SplashLoop
+000125r 2               @SplashDone:
+000125r 2  60             rts
+000126r 2  2D 2D 20 54  @SplashText: .asciiz "-- The 'COB' v1.0 --"
+00012Ar 2  68 65 20 27  
+00012Er 2  43 4F 42 27  
+00013Br 2               
+00013Br 2               ; NMI Handler
+00013Br 2               Nmi:
+00013Br 2  40             rti
+00013Cr 2               
+00013Cr 2               ; IRQ Handler
+00013Cr 2               Irq:
+00013Cr 2  48             pha
+00013Dr 2  5A             phy
+00013Er 2  DA             phx
+00013Fr 2  AD 01 90       lda SC_STATUS
+000142r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+000144r 2  F0 12          beq @IrqExit                  ; If not, exit
+000146r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
+000149r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+00014Cr 2  20 rr rr       jsr BufferSize
+00014Fr 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
+000151r 2  90 05          bcc @IrqExit                  ; If not, exit
+000153r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+000155r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+000158r 2               @IrqExit:
+000158r 2  FA             plx
+000159r 2  7A             ply
+00015Ar 2  68             pla
+00015Br 2  40             rti
+00015Cr 2               
+00015Cr 2               ; NMI Vector
+00015Cr 2               NmiVec:
+00015Cr 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
+00015Fr 2               
+00015Fr 2               ; Reset Vector
+00015Fr 2               ResetVec:
+00015Fr 2  4C rr rr       jmp Reset                     ; Initialize the system
+000162r 2               
+000162r 2               ; IRQ Vector
+000162r 2               IrqVec:
+000162r 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+000165r 2               
+000165r 1               .segment "CHARACTERS"
+000000r 1               .include "Characters.asm"
+000000r 2               ; IBM Code Page 437 Character Set
+000000r 2               ; 6x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)
+000000r 2               ; Each byte represents one horizontal row of pixels (6 pixels centered in 8-bit space)
+000000r 2               
+000000r 2               CharacterSet:
+000000r 2                   ; Character $00 - NULL (blank)
+000000r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $00, $00, $00
+000004r 2  00 00 00 00  
+000008r 2                   ; Character $01 - ☺ (white smiling face)
+000008r 2  00 7C 82 AA      .byte $00, $7C, $82, $AA, $82, $BA, $44, $38
+00000Cr 2  82 BA 44 38  
+000010r 2                   ; Character $02 - ☻ (black smiling face)
+000010r 2  00 7C FE D6      .byte $00, $7C, $FE, $D6, $FE, $C6, $7C, $38
+000014r 2  FE C6 7C 38  
+000018r 2                   ; Character $03 - ♥ (heart)
+000018r 2  00 00 6C FE      .byte $00, $00, $6C, $FE, $FE, $7C, $38, $10
+00001Cr 2  FE 7C 38 10  
+000020r 2                   ; Character $04 - ♦ (diamond)
+000020r 2  00 10 38 7C      .byte $00, $10, $38, $7C, $FE, $7C, $38, $10
+000024r 2  FE 7C 38 10  
+000028r 2                   ; Character $05 - ♣ (club)
+000028r 2  00 38 7C 38      .byte $00, $38, $7C, $38, $FE, $D6, $10, $38
+00002Cr 2  FE D6 10 38  
+000030r 2                   ; Character $06 - ♠ (spade)
+000030r 2  00 10 38 7C      .byte $00, $10, $38, $7C, $FE, $7C, $10, $38
+000034r 2  FE 7C 10 38  
+000038r 2                   ; Character $07 - • (bullet)
+000038r 2  00 00 00 38      .byte $00, $00, $00, $38, $38, $00, $00, $00
+00003Cr 2  38 00 00 00  
+000040r 2                   ; Character $08 - ◘ (inverse bullet)
+000040r 2  FE FE FE C6      .byte $FE, $FE, $FE, $C6, $C6, $FE, $FE, $FE
+000044r 2  C6 FE FE FE  
+000048r 2                   ; Character $09 - ○ (white circle)
+000048r 2  00 00 38 44      .byte $00, $00, $38, $44, $44, $44, $38, $00
+00004Cr 2  44 44 38 00  
+000050r 2                   ; Character $0A - ◙ (inverse white circle)
+000050r 2  FE FE C6 BA      .byte $FE, $FE, $C6, $BA, $BA, $BA, $C6, $FE
+000054r 2  BA BA C6 FE  
+000058r 2                   ; Character $0B - ♂ (male symbol)
+000058r 2  00 78 30 68      .byte $00, $78, $30, $68, $5C, $CC, $CC, $78
+00005Cr 2  5C CC CC 78  
+000060r 2                   ; Character $0C - ♀ (female symbol)
+000060r 2  00 78 CC CC      .byte $00, $78, $CC, $CC, $78, $30, $FC, $30
+000064r 2  78 30 FC 30  
+000068r 2                   ; Character $0D - ♪ (eighth note)
+000068r 2  00 70 60 60      .byte $00, $70, $60, $60, $60, $E0, $E0, $C0
+00006Cr 2  60 E0 E0 C0  
+000070r 2                   ; Character $0E - ♫ (beamed eighth notes)
+000070r 2  00 6C 6C 6C      .byte $00, $6C, $6C, $6C, $6C, $EC, $EC, $C0
+000074r 2  6C EC EC C0  
+000078r 2                   ; Character $0F - ☼ (sun)
+000078r 2  00 92 54 38      .byte $00, $92, $54, $38, $EE, $38, $54, $92
+00007Cr 2  EE 38 54 92  
+000080r 2                   ; Character $10 - ► (right-pointing triangle)
+000080r 2  00 00 40 60      .byte $00, $00, $40, $60, $78, $60, $40, $00
+000084r 2  78 60 40 00  
+000088r 2                   ; Character $11 - ◄ (left-pointing triangle)
+000088r 2  00 00 08 18      .byte $00, $00, $08, $18, $78, $18, $08, $00
+00008Cr 2  78 18 08 00  
+000090r 2                   ; Character $12 - ↕ (up/down arrow)
+000090r 2  00 10 38 54      .byte $00, $10, $38, $54, $10, $54, $38, $10
+000094r 2  10 54 38 10  
+000098r 2                   ; Character $13 - ‼ (double exclamation mark)
+000098r 2  00 00 48 48      .byte $00, $00, $48, $48, $48, $00, $48, $00
+00009Cr 2  48 00 48 00  
+0000A0r 2                   ; Character $14 - ¶ (pilcrow)
+0000A0r 2  00 7C D4 D4      .byte $00, $7C, $D4, $D4, $54, $54, $54, $00
+0000A4r 2  54 54 54 00  
+0000A8r 2                   ; Character $15 - § (section sign)
+0000A8r 2  00 38 40 30      .byte $00, $38, $40, $30, $48, $30, $08, $70
+0000ACr 2  48 30 08 70  
+0000B0r 2                   ; Character $16 - ▬ (black rectangle)
+0000B0r 2  00 00 00 00      .byte $00, $00, $00, $00, $FC, $FC, $00, $00
+0000B4r 2  FC FC 00 00  
+0000B8r 2                   ; Character $17 - ↨ (up/down arrow with base)
+0000B8r 2  00 10 38 54      .byte $00, $10, $38, $54, $10, $54, $38, $10
+0000BCr 2  10 54 38 10  
+0000C0r 2                   ; Character $18 - ↑ (up arrow)
+0000C0r 2  00 10 38 54      .byte $00, $10, $38, $54, $10, $10, $10, $00
+0000C4r 2  10 10 10 00  
+0000C8r 2                   ; Character $19 - ↓ (down arrow)
+0000C8r 2  00 10 10 10      .byte $00, $10, $10, $10, $54, $38, $10, $00
+0000CCr 2  54 38 10 00  
+0000D0r 2                   ; Character $1A - → (right arrow)
+0000D0r 2  00 00 10 08      .byte $00, $00, $10, $08, $FC, $08, $10, $00
+0000D4r 2  FC 08 10 00  
+0000D8r 2                   ; Character $1B - ← (left arrow)
+0000D8r 2  00 00 10 20      .byte $00, $00, $10, $20, $FC, $20, $10, $00
+0000DCr 2  FC 20 10 00  
+0000E0r 2                   ; Character $1C - ∟ (right angle)
+0000E0r 2  00 00 00 40      .byte $00, $00, $00, $40, $40, $40, $FC, $00
+0000E4r 2  40 40 FC 00  
+0000E8r 2                   ; Character $1D - ↔ (left/right arrow)
+0000E8r 2  00 00 28 10      .byte $00, $00, $28, $10, $FE, $10, $28, $00
+0000ECr 2  FE 10 28 00  
+0000F0r 2                   ; Character $1E - ▲ (up-pointing triangle)
+0000F0r 2  00 10 38 54      .byte $00, $10, $38, $54, $92, $FE, $00, $00
+0000F4r 2  92 FE 00 00  
+0000F8r 2                   ; Character $1F - ▼ (down-pointing triangle)
+0000F8r 2  00 00 FE 92      .byte $00, $00, $FE, $92, $54, $38, $10, $00
+0000FCr 2  54 38 10 00  
+000100r 2                   ; Character $20 - SPACE
+000100r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $00, $00, $00
+000104r 2  00 00 00 00  
+000108r 2                   ; Character $21 - !
+000108r 2  00 10 10 10      .byte $00, $10, $10, $10, $10, $00, $10, $00
+00010Cr 2  10 00 10 00  
+000110r 2                   ; Character $22 - "
+000110r 2  00 28 28 28      .byte $00, $28, $28, $28, $00, $00, $00, $00
+000114r 2  00 00 00 00  
+000118r 2                   ; Character $23 - #
+000118r 2  00 28 28 7C      .byte $00, $28, $28, $7C, $28, $7C, $28, $28
+00011Cr 2  28 7C 28 28  
+000120r 2                   ; Character $24 - $
+000120r 2  00 10 78 A0      .byte $00, $10, $78, $A0, $70, $28, $F0, $10
+000124r 2  70 28 F0 10  
+000128r 2                   ; Character $25 - %
+000128r 2  00 C8 C8 10      .byte $00, $C8, $C8, $10, $20, $4C, $4C, $00
+00012Cr 2  20 4C 4C 00  
+000130r 2                   ; Character $26 - &
+000130r 2  00 60 90 90      .byte $00, $60, $90, $90, $60, $94, $88, $74
+000134r 2  60 94 88 74  
+000138r 2                   ; Character $27 - '
+000138r 2  00 10 10 20      .byte $00, $10, $10, $20, $00, $00, $00, $00
+00013Cr 2  00 00 00 00  
+000140r 2                   ; Character $28 - (
+000140r 2  00 08 10 20      .byte $00, $08, $10, $20, $20, $20, $10, $08
+000144r 2  20 20 10 08  
+000148r 2                   ; Character $29 - )
+000148r 2  00 20 10 08      .byte $00, $20, $10, $08, $08, $08, $10, $20
+00014Cr 2  08 08 10 20  
+000150r 2                   ; Character $2A - *
+000150r 2  00 00 28 10      .byte $00, $00, $28, $10, $7C, $10, $28, $00
+000154r 2  7C 10 28 00  
+000158r 2                   ; Character $2B - +
+000158r 2  00 00 10 10      .byte $00, $00, $10, $10, $7C, $10, $10, $00
+00015Cr 2  7C 10 10 00  
+000160r 2                   ; Character $2C - ,
+000160r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $10, $10, $20
+000164r 2  00 10 10 20  
+000168r 2                   ; Character $2D - -
+000168r 2  00 00 00 00      .byte $00, $00, $00, $00, $7C, $00, $00, $00
+00016Cr 2  7C 00 00 00  
+000170r 2                   ; Character $2E - .
+000170r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $00, $10, $00
+000174r 2  00 00 10 00  
+000178r 2  00 04 08 10      .byte $00, $04, $08, $10, $20, $40, $80, $00
+00017Cr 2  20 40 80 00  
+000180r 2                   ; Character $30 - 0
+000180r 2  00 38 44 4C      .byte $00, $38, $44, $4C, $54, $64, $44, $38
+000184r 2  54 64 44 38  
+000188r 2                   ; Character $31 - 1
+000188r 2  00 10 30 10      .byte $00, $10, $30, $10, $10, $10, $10, $38
+00018Cr 2  10 10 10 38  
+000190r 2                   ; Character $32 - 2
+000190r 2  00 38 44 04      .byte $00, $38, $44, $04, $08, $10, $20, $7C
+000194r 2  08 10 20 7C  
+000198r 2                   ; Character $33 - 3
+000198r 2  00 38 44 04      .byte $00, $38, $44, $04, $18, $04, $44, $38
+00019Cr 2  18 04 44 38  
+0001A0r 2                   ; Character $34 - 4
+0001A0r 2  00 08 18 28      .byte $00, $08, $18, $28, $48, $7C, $08, $08
+0001A4r 2  48 7C 08 08  
+0001A8r 2                   ; Character $35 - 5
+0001A8r 2  00 7C 40 78      .byte $00, $7C, $40, $78, $04, $04, $44, $38
+0001ACr 2  04 04 44 38  
+0001B0r 2                   ; Character $36 - 6
+0001B0r 2  00 18 20 40      .byte $00, $18, $20, $40, $78, $44, $44, $38
+0001B4r 2  78 44 44 38  
+0001B8r 2                   ; Character $37 - 7
+0001B8r 2  00 7C 04 08      .byte $00, $7C, $04, $08, $10, $20, $20, $20
+0001BCr 2  10 20 20 20  
+0001C0r 2                   ; Character $38 - 8
+0001C0r 2  00 38 44 44      .byte $00, $38, $44, $44, $38, $44, $44, $38
+0001C4r 2  38 44 44 38  
+0001C8r 2                   ; Character $39 - 9
+0001C8r 2  00 38 44 44      .byte $00, $38, $44, $44, $3C, $04, $08, $30
+0001CCr 2  3C 04 08 30  
+0001D0r 2                   ; Character $3A - :
+0001D0r 2  00 00 10 00      .byte $00, $00, $10, $00, $00, $00, $10, $00
+0001D4r 2  00 00 10 00  
+0001D8r 2                   ; Character $3B - ;
+0001D8r 2  00 00 10 00      .byte $00, $00, $10, $00, $00, $00, $10, $20
+0001DCr 2  00 00 10 20  
+0001E0r 2                   ; Character $3C - <
+0001E0r 2  00 08 10 20      .byte $00, $08, $10, $20, $40, $20, $10, $08
+0001E4r 2  40 20 10 08  
+0001E8r 2                   ; Character $3D - =
+0001E8r 2  00 00 00 7C      .byte $00, $00, $00, $7C, $00, $7C, $00, $00
+0001ECr 2  00 7C 00 00  
+0001F0r 2                   ; Character $3E - >
+0001F0r 2  00 20 10 08      .byte $00, $20, $10, $08, $04, $08, $10, $20
+0001F4r 2  04 08 10 20  
+0001F8r 2                   ; Character $3F - ?
+0001F8r 2  00 38 44 04      .byte $00, $38, $44, $04, $08, $10, $00, $10
+0001FCr 2  08 10 00 10  
+000200r 2                   ; Character $40 - @
+000200r 2  00 38 44 5C      .byte $00, $38, $44, $5C, $54, $5C, $40, $38
+000204r 2  54 5C 40 38  
+000208r 2                   ; Character $41 - A
+000208r 2  00 10 28 44      .byte $00, $10, $28, $44, $44, $7C, $44, $44
+00020Cr 2  44 7C 44 44  
+000210r 2                   ; Character $42 - B
+000210r 2  00 78 44 44      .byte $00, $78, $44, $44, $78, $44, $44, $78
+000214r 2  78 44 44 78  
+000218r 2                   ; Character $43 - C
+000218r 2  00 38 44 40      .byte $00, $38, $44, $40, $40, $40, $44, $38
+00021Cr 2  40 40 44 38  
+000220r 2                   ; Character $44 - D
+000220r 2  00 78 44 44      .byte $00, $78, $44, $44, $44, $44, $44, $78
+000224r 2  44 44 44 78  
+000228r 2                   ; Character $45 - E
+000228r 2  00 7C 40 40      .byte $00, $7C, $40, $40, $78, $40, $40, $7C
+00022Cr 2  78 40 40 7C  
+000230r 2                   ; Character $46 - F
+000230r 2  00 7C 40 40      .byte $00, $7C, $40, $40, $78, $40, $40, $40
+000234r 2  78 40 40 40  
+000238r 2                   ; Character $47 - G
+000238r 2  00 38 44 40      .byte $00, $38, $44, $40, $5C, $44, $44, $3C
+00023Cr 2  5C 44 44 3C  
+000240r 2                   ; Character $48 - H
+000240r 2  00 44 44 44      .byte $00, $44, $44, $44, $7C, $44, $44, $44
+000244r 2  7C 44 44 44  
+000248r 2                   ; Character $49 - I
+000248r 2  00 38 10 10      .byte $00, $38, $10, $10, $10, $10, $10, $38
+00024Cr 2  10 10 10 38  
+000250r 2                   ; Character $4A - J
+000250r 2  00 04 04 04      .byte $00, $04, $04, $04, $04, $04, $44, $38
+000254r 2  04 04 44 38  
+000258r 2                   ; Character $4B - K
+000258r 2  00 44 48 50      .byte $00, $44, $48, $50, $60, $50, $48, $44
+00025Cr 2  60 50 48 44  
+000260r 2                   ; Character $4C - L
+000260r 2  00 40 40 40      .byte $00, $40, $40, $40, $40, $40, $40, $7C
+000264r 2  40 40 40 7C  
+000268r 2                   ; Character $4D - M
+000268r 2  00 44 6C 54      .byte $00, $44, $6C, $54, $54, $44, $44, $44
+00026Cr 2  54 44 44 44  
+000270r 2                   ; Character $4E - N
+000270r 2  00 44 64 54      .byte $00, $44, $64, $54, $54, $4C, $44, $44
+000274r 2  54 4C 44 44  
+000278r 2                   ; Character $4F - O
+000278r 2  00 38 44 44      .byte $00, $38, $44, $44, $44, $44, $44, $38
+00027Cr 2  44 44 44 38  
+000280r 2                   ; Character $50 - P
+000280r 2  00 78 44 44      .byte $00, $78, $44, $44, $78, $40, $40, $40
+000284r 2  78 40 40 40  
+000288r 2                   ; Character $51 - Q
+000288r 2  00 38 44 44      .byte $00, $38, $44, $44, $44, $54, $48, $34
+00028Cr 2  44 54 48 34  
+000290r 2                   ; Character $52 - R
+000290r 2  00 78 44 44      .byte $00, $78, $44, $44, $78, $50, $48, $44
+000294r 2  78 50 48 44  
+000298r 2                   ; Character $53 - S
+000298r 2  00 38 44 40      .byte $00, $38, $44, $40, $38, $04, $44, $38
+00029Cr 2  38 04 44 38  
+0002A0r 2                   ; Character $54 - T
+0002A0r 2  00 7C 10 10      .byte $00, $7C, $10, $10, $10, $10, $10, $10
+0002A4r 2  10 10 10 10  
+0002A8r 2                   ; Character $55 - U
+0002A8r 2  00 44 44 44      .byte $00, $44, $44, $44, $44, $44, $44, $38
+0002ACr 2  44 44 44 38  
+0002B0r 2                   ; Character $56 - V
+0002B0r 2  00 44 44 44      .byte $00, $44, $44, $44, $44, $28, $28, $10
+0002B4r 2  44 28 28 10  
+0002B8r 2                   ; Character $57 - W
+0002B8r 2  00 44 44 44      .byte $00, $44, $44, $44, $54, $54, $6C, $44
+0002BCr 2  54 54 6C 44  
+0002C0r 2                   ; Character $58 - X
+0002C0r 2  00 44 44 28      .byte $00, $44, $44, $28, $10, $28, $44, $44
+0002C4r 2  10 28 44 44  
+0002C8r 2                   ; Character $59 - Y
+0002C8r 2  00 44 44 28      .byte $00, $44, $44, $28, $10, $10, $10, $10
+0002CCr 2  10 10 10 10  
+0002D0r 2                   ; Character $5A - Z
+0002D0r 2  00 7C 04 08      .byte $00, $7C, $04, $08, $10, $20, $40, $7C
+0002D4r 2  10 20 40 7C  
+0002D8r 2                   ; Character $5B - [
+0002D8r 2  00 38 20 20      .byte $00, $38, $20, $20, $20, $20, $20, $38
+0002DCr 2  20 20 20 38  
+0002E0r 2                   ; Character $5C - \
+0002E0r 2  00 00 40 20      .byte $00, $00, $40, $20, $10, $08, $04, $00
+0002E4r 2  10 08 04 00  
+0002E8r 2                   ; Character $5D - ]
+0002E8r 2  00 38 08 08      .byte $00, $38, $08, $08, $08, $08, $08, $38
+0002ECr 2  08 08 08 38  
+0002F0r 2                   ; Character $5E - ^
+0002F0r 2  00 10 28 44      .byte $00, $10, $28, $44, $00, $00, $00, $00
+0002F4r 2  00 00 00 00  
+0002F8r 2                   ; Character $5F - _
+0002F8r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $00, $00, $FC
+0002FCr 2  00 00 00 FC  
+000300r 2                   ; Character $60 - `
+000300r 2  00 20 10 08      .byte $00, $20, $10, $08, $00, $00, $00, $00
+000304r 2  00 00 00 00  
+000308r 2  00 00 38 04      .byte $00, $00, $38, $04, $3C, $44, $3C, $00
+00030Cr 2  3C 44 3C 00  
+000310r 2                   ; Character $62 - b
+000310r 2  00 40 40 78      .byte $00, $40, $40, $78, $44, $44, $44, $78
+000314r 2  44 44 44 78  
+000318r 2                   ; Character $63 - c
+000318r 2  00 00 38 44      .byte $00, $00, $38, $44, $40, $40, $44, $38
+00031Cr 2  40 40 44 38  
+000320r 2                   ; Character $64 - d
+000320r 2  00 04 04 3C      .byte $00, $04, $04, $3C, $44, $44, $44, $3C
+000324r 2  44 44 44 3C  
+000328r 2                   ; Character $65 - e
+000328r 2  00 00 38 44      .byte $00, $00, $38, $44, $7C, $40, $44, $38
+00032Cr 2  7C 40 44 38  
+000330r 2                   ; Character $66 - f
+000330r 2  00 18 20 20      .byte $00, $18, $20, $20, $78, $20, $20, $20
+000334r 2  78 20 20 20  
+000338r 2                   ; Character $67 - g
+000338r 2  00 00 3C 44      .byte $00, $00, $3C, $44, $44, $3C, $04, $38
+00033Cr 2  44 3C 04 38  
+000340r 2                   ; Character $68 - h
+000340r 2  00 40 40 78      .byte $00, $40, $40, $78, $44, $44, $44, $44
+000344r 2  44 44 44 44  
+000348r 2                   ; Character $69 - i
+000348r 2  00 10 00 30      .byte $00, $10, $00, $30, $10, $10, $10, $38
+00034Cr 2  10 10 10 38  
+000350r 2                   ; Character $6A - j
+000350r 2  00 04 00 04      .byte $00, $04, $00, $04, $04, $04, $44, $38
+000354r 2  04 04 44 38  
+000358r 2                   ; Character $6B - k
+000358r 2  00 40 40 48      .byte $00, $40, $40, $48, $50, $60, $50, $48
+00035Cr 2  50 60 50 48  
+000360r 2                   ; Character $6C - l
+000360r 2  00 30 10 10      .byte $00, $30, $10, $10, $10, $10, $10, $38
+000364r 2  10 10 10 38  
+000368r 2                   ; Character $6D - m
+000368r 2  00 00 68 54      .byte $00, $00, $68, $54, $54, $54, $54, $00
+00036Cr 2  54 54 54 00  
+000370r 2                   ; Character $6E - n
+000370r 2  00 00 78 44      .byte $00, $00, $78, $44, $44, $44, $44, $00
+000374r 2  44 44 44 00  
+000378r 2                   ; Character $6F - o
+000378r 2  00 00 38 44      .byte $00, $00, $38, $44, $44, $44, $44, $38
+00037Cr 2  44 44 44 38  
+000380r 2                   ; Character $70 - p
+000380r 2  00 00 78 44      .byte $00, $00, $78, $44, $44, $78, $40, $40
+000384r 2  44 78 40 40  
+000388r 2                   ; Character $71 - q
+000388r 2  00 00 3C 44      .byte $00, $00, $3C, $44, $44, $3C, $04, $04
+00038Cr 2  44 3C 04 04  
+000390r 2                   ; Character $72 - r
+000390r 2  00 00 58 64      .byte $00, $00, $58, $64, $40, $40, $40, $00
+000394r 2  40 40 40 00  
+000398r 2                   ; Character $73 - s
+000398r 2  00 00 38 40      .byte $00, $00, $38, $40, $38, $04, $44, $38
+00039Cr 2  38 04 44 38  
+0003A0r 2                   ; Character $74 - t
+0003A0r 2  00 20 20 78      .byte $00, $20, $20, $78, $20, $20, $24, $18
+0003A4r 2  20 20 24 18  
+0003A8r 2                   ; Character $75 - u
+0003A8r 2  00 00 44 44      .byte $00, $00, $44, $44, $44, $44, $4C, $34
+0003ACr 2  44 44 4C 34  
+0003B0r 2                   ; Character $76 - v
+0003B0r 2  00 00 44 44      .byte $00, $00, $44, $44, $44, $28, $28, $10
+0003B4r 2  44 28 28 10  
+0003B8r 2                   ; Character $77 - w
+0003B8r 2  00 00 44 54      .byte $00, $00, $44, $54, $54, $54, $6C, $00
+0003BCr 2  54 54 6C 00  
+0003C0r 2                   ; Character $78 - x
+0003C0r 2  00 00 44 28      .byte $00, $00, $44, $28, $10, $28, $44, $00
+0003C4r 2  10 28 44 00  
+0003C8r 2                   ; Character $79 - y
+0003C8r 2  00 00 44 44      .byte $00, $00, $44, $44, $44, $3C, $04, $38
+0003CCr 2  44 3C 04 38  
+0003D0r 2                   ; Character $7A - z
+0003D0r 2  00 00 7C 08      .byte $00, $00, $7C, $08, $10, $20, $7C, $00
+0003D4r 2  10 20 7C 00  
+0003D8r 2                   ; Character $7B - {
+0003D8r 2  00 18 20 20      .byte $00, $18, $20, $20, $40, $20, $20, $18
+0003DCr 2  40 20 20 18  
+0003E0r 2                   ; Character $7C - |
+0003E0r 2  00 10 10 10      .byte $00, $10, $10, $10, $10, $10, $10, $10
+0003E4r 2  10 10 10 10  
+0003E8r 2                   ; Character $7D - }
+0003E8r 2  00 30 08 08      .byte $00, $30, $08, $08, $04, $08, $08, $30
+0003ECr 2  04 08 08 30  
+0003F0r 2                   ; Character $7E - ~
+0003F0r 2  00 00 34 58      .byte $00, $00, $34, $58, $00, $00, $00, $00
+0003F4r 2  00 00 00 00  
+0003F8r 2                   ; Character $7F - ⌂ (house)
+0003F8r 2  00 10 28 44      .byte $00, $10, $28, $44, $44, $7C, $44, $00
+0003FCr 2  44 7C 44 00  
+000400r 2                   ; Character $80 - Ç
+000400r 2  00 38 44 40      .byte $00, $38, $44, $40, $44, $38, $10, $20
+000404r 2  44 38 10 20  
+000408r 2                   ; Character $81 - ü
+000408r 2  00 28 00 44      .byte $00, $28, $00, $44, $44, $44, $3C, $00
+00040Cr 2  44 44 3C 00  
+000410r 2                   ; Character $82 - é
+000410r 2  00 08 10 38      .byte $00, $08, $10, $38, $44, $7C, $40, $38
+000414r 2  44 7C 40 38  
+000418r 2                   ; Character $83 - â
+000418r 2  00 10 28 38      .byte $00, $10, $28, $38, $04, $3C, $44, $3C
+00041Cr 2  04 3C 44 3C  
+000420r 2                   ; Character $84 - ä
+000420r 2  00 28 00 38      .byte $00, $28, $00, $38, $04, $3C, $44, $3C
+000424r 2  04 3C 44 3C  
+000428r 2                   ; Character $85 - à
+000428r 2  00 20 10 38      .byte $00, $20, $10, $38, $04, $3C, $44, $3C
+00042Cr 2  04 3C 44 3C  
+000430r 2                   ; Character $86 - å
+000430r 2  00 10 28 38      .byte $00, $10, $28, $38, $04, $3C, $44, $3C
+000434r 2  04 3C 44 3C  
+000438r 2                   ; Character $87 - ç
+000438r 2  00 00 38 44      .byte $00, $00, $38, $44, $40, $38, $10, $20
+00043Cr 2  40 38 10 20  
+000440r 2                   ; Character $88 - ê
+000440r 2  00 10 28 38      .byte $00, $10, $28, $38, $44, $7C, $40, $38
+000444r 2  44 7C 40 38  
+000448r 2                   ; Character $89 - ë
+000448r 2  00 28 00 38      .byte $00, $28, $00, $38, $44, $7C, $40, $38
+00044Cr 2  44 7C 40 38  
+000450r 2                   ; Character $8A - è
+000450r 2  00 20 10 38      .byte $00, $20, $10, $38, $44, $7C, $40, $38
+000454r 2  44 7C 40 38  
+000458r 2                   ; Character $8B - ï
+000458r 2  00 28 00 30      .byte $00, $28, $00, $30, $10, $10, $10, $38
+00045Cr 2  10 10 10 38  
+000460r 2                   ; Character $8C - î
+000460r 2  00 10 28 00      .byte $00, $10, $28, $00, $30, $10, $10, $38
+000464r 2  30 10 10 38  
+000468r 2                   ; Character $8D - ì
+000468r 2  00 20 10 00      .byte $00, $20, $10, $00, $30, $10, $10, $38
+00046Cr 2  30 10 10 38  
+000470r 2                   ; Character $8E - Ä
+000470r 2  00 28 10 28      .byte $00, $28, $10, $28, $44, $7C, $44, $44
+000474r 2  44 7C 44 44  
+000478r 2                   ; Character $8F - Å
+000478r 2  00 10 28 10      .byte $00, $10, $28, $10, $28, $44, $7C, $44
+00047Cr 2  28 44 7C 44  
+000480r 2                   ; Character $90 - É
+000480r 2  00 08 10 7C      .byte $00, $08, $10, $7C, $40, $78, $40, $7C
+000484r 2  40 78 40 7C  
+000488r 2                   ; Character $91 - æ
+000488r 2  00 00 6C 10      .byte $00, $00, $6C, $10, $7C, $90, $7C, $00
+00048Cr 2  7C 90 7C 00  
+000490r 2                   ; Character $92 - Æ
+000490r 2  00 3C 50 90      .byte $00, $3C, $50, $90, $FC, $90, $90, $9C
+000494r 2  FC 90 90 9C  
+000498r 2                   ; Character $93 - ô
+000498r 2  00 10 28 00      .byte $00, $10, $28, $00, $38, $44, $44, $38
+00049Cr 2  38 44 44 38  
+0004A0r 2                   ; Character $94 - ö
+0004A0r 2  00 28 00 38      .byte $00, $28, $00, $38, $44, $44, $44, $38
+0004A4r 2  44 44 44 38  
+0004A8r 2                   ; Character $95 - ò
+0004A8r 2  00 20 10 00      .byte $00, $20, $10, $00, $38, $44, $44, $38
+0004ACr 2  38 44 44 38  
+0004B0r 2                   ; Character $96 - û
+0004B0r 2  00 10 28 00      .byte $00, $10, $28, $00, $44, $44, $4C, $34
+0004B4r 2  44 44 4C 34  
+0004B8r 2                   ; Character $97 - ù
+0004B8r 2  00 20 10 00      .byte $00, $20, $10, $00, $44, $44, $4C, $34
+0004BCr 2  44 44 4C 34  
+0004C0r 2                   ; Character $98 - ÿ
+0004C0r 2  00 28 00 44      .byte $00, $28, $00, $44, $44, $3C, $04, $38
+0004C4r 2  44 3C 04 38  
+0004C8r 2                   ; Character $99 - Ö
+0004C8r 2  00 28 38 44      .byte $00, $28, $38, $44, $44, $44, $44, $38
+0004CCr 2  44 44 44 38  
+0004D0r 2                   ; Character $9A - Ü
+0004D0r 2  00 28 00 44      .byte $00, $28, $00, $44, $44, $44, $44, $38
+0004D4r 2  44 44 44 38  
+0004D8r 2                   ; Character $9B - ¢
+0004D8r 2  00 10 38 50      .byte $00, $10, $38, $50, $50, $38, $10, $00
+0004DCr 2  50 38 10 00  
+0004E0r 2                   ; Character $9C - £
+0004E0r 2  00 18 24 20      .byte $00, $18, $24, $20, $78, $20, $20, $7C
+0004E4r 2  78 20 20 7C  
+0004E8r 2                   ; Character $9D - ¥
+0004E8r 2  00 44 28 10      .byte $00, $44, $28, $10, $7C, $10, $7C, $10
+0004ECr 2  7C 10 7C 10  
+0004F0r 2                   ; Character $9E - ₧
+0004F0r 2  00 78 44 78      .byte $00, $78, $44, $78, $44, $5C, $44, $44
+0004F4r 2  44 5C 44 44  
+0004F8r 2                   ; Character $9F - ƒ
+0004F8r 2  00 1C 20 18      .byte $00, $1C, $20, $18, $20, $20, $A0, $60
+0004FCr 2  20 20 A0 60  
+000500r 2                   ; Character $A0 - á
+000500r 2  00 08 10 38      .byte $00, $08, $10, $38, $04, $3C, $44, $3C
+000504r 2  04 3C 44 3C  
+000508r 2                   ; Character $A1 - í
+000508r 2  00 08 10 00      .byte $00, $08, $10, $00, $30, $10, $10, $38
+00050Cr 2  30 10 10 38  
+000510r 2                   ; Character $A2 - ó
+000510r 2  00 08 10 00      .byte $00, $08, $10, $00, $38, $44, $44, $38
+000514r 2  38 44 44 38  
+000518r 2                   ; Character $A3 - ú
+000518r 2  00 08 10 00      .byte $00, $08, $10, $00, $44, $44, $4C, $34
+00051Cr 2  44 44 4C 34  
+000520r 2                   ; Character $A4 - ñ
+000520r 2  00 28 50 00      .byte $00, $28, $50, $00, $78, $44, $44, $44
+000524r 2  78 44 44 44  
+000528r 2                   ; Character $A5 - Ñ
+000528r 2  00 28 50 44      .byte $00, $28, $50, $44, $64, $54, $4C, $44
+00052Cr 2  64 54 4C 44  
+000530r 2                   ; Character $A6 - ª
+000530r 2  00 38 04 3C      .byte $00, $38, $04, $3C, $44, $3C, $00, $7C
+000534r 2  44 3C 00 7C  
+000538r 2                   ; Character $A7 - º
+000538r 2  00 38 44 44      .byte $00, $38, $44, $44, $44, $38, $00, $7C
+00053Cr 2  44 38 00 7C  
+000540r 2                   ; Character $A8 - ¿
+000540r 2  00 10 00 10      .byte $00, $10, $00, $10, $20, $40, $44, $38
+000544r 2  20 40 44 38  
+000548r 2                   ; Character $A9 - ⌐
+000548r 2  00 00 00 7C      .byte $00, $00, $00, $7C, $40, $40, $40, $00
+00054Cr 2  40 40 40 00  
+000550r 2                   ; Character $AA - ¬
+000550r 2  00 00 00 7C      .byte $00, $00, $00, $7C, $04, $04, $04, $00
+000554r 2  04 04 04 00  
+000558r 2                   ; Character $AB - ½
+000558r 2  00 44 C8 50      .byte $00, $44, $C8, $50, $2C, $58, $9C, $04
+00055Cr 2  2C 58 9C 04  
+000560r 2                   ; Character $AC - ¼
+000560r 2  00 44 C8 58      .byte $00, $44, $C8, $58, $34, $54, $BC, $04
+000564r 2  34 54 BC 04  
+000568r 2                   ; Character $AD - ¡
+000568r 2  00 10 00 10      .byte $00, $10, $00, $10, $10, $10, $10, $00
+00056Cr 2  10 10 10 00  
+000570r 2                   ; Character $AE - «
+000570r 2  00 00 24 48      .byte $00, $00, $24, $48, $90, $48, $24, $00
+000574r 2  90 48 24 00  
+000578r 2                   ; Character $AF - »
+000578r 2  00 00 90 48      .byte $00, $00, $90, $48, $24, $48, $90, $00
+00057Cr 2  24 48 90 00  
+000580r 2                   ; Character $B0 - ░ (light shade)
+000580r 2  44 11 44 11      .byte $44, $11, $44, $11, $44, $11, $44, $11
+000584r 2  44 11 44 11  
+000588r 2                   ; Character $B1 - ▒ (medium shade)
+000588r 2  55 AA 55 AA      .byte $55, $AA, $55, $AA, $55, $AA, $55, $AA
+00058Cr 2  55 AA 55 AA  
+000590r 2                   ; Character $B2 - ▓ (dark shade)
+000590r 2  BB EE BB EE      .byte $BB, $EE, $BB, $EE, $BB, $EE, $BB, $EE
+000594r 2  BB EE BB EE  
+000598r 2                   ; Character $B3 - │ (box drawing vertical)
+000598r 2  10 10 10 10      .byte $10, $10, $10, $10, $10, $10, $10, $10
+00059Cr 2  10 10 10 10  
+0005A0r 2                   ; Character $B4 - ┤ (box drawing vertical and left)
+0005A0r 2  10 10 10 10      .byte $10, $10, $10, $10, $F0, $10, $10, $10
+0005A4r 2  F0 10 10 10  
+0005A8r 2                   ; Character $B5 - ╡ (box drawing vertical double and left single)
+0005A8r 2  10 10 F0 10      .byte $10, $10, $F0, $10, $F0, $10, $10, $10
+0005ACr 2  F0 10 10 10  
+0005B0r 2                   ; Character $B6 - ╢ (box drawing down double and left single)
+0005B0r 2  28 28 28 28      .byte $28, $28, $28, $28, $E8, $28, $28, $28
+0005B4r 2  E8 28 28 28  
+0005B8r 2                   ; Character $B7 - ╖ (box drawing down single and left double)
+0005B8r 2  00 00 00 00      .byte $00, $00, $00, $00, $F8, $28, $28, $28
+0005BCr 2  F8 28 28 28  
+0005C0r 2                   ; Character $B8 - ╕ (box drawing double vertical and left)
+0005C0r 2  00 00 F0 10      .byte $00, $00, $F0, $10, $F0, $10, $10, $10
+0005C4r 2  F0 10 10 10  
+0005C8r 2                   ; Character $B9 - ╣ (box drawing double vertical and left)
+0005C8r 2  28 28 E8 08      .byte $28, $28, $E8, $08, $E8, $28, $28, $28
+0005CCr 2  E8 28 28 28  
+0005D0r 2                   ; Character $BA - ║ (box drawing double vertical)
+0005D0r 2  28 28 28 28      .byte $28, $28, $28, $28, $28, $28, $28, $28
+0005D4r 2  28 28 28 28  
+0005D8r 2                   ; Character $BB - ╗ (box drawing double down and left)
+0005D8r 2  00 00 F8 08      .byte $00, $00, $F8, $08, $E8, $28, $28, $28
+0005DCr 2  E8 28 28 28  
+0005E0r 2                   ; Character $BC - ╝ (box drawing double up and left)
+0005E0r 2  28 28 E8 08      .byte $28, $28, $E8, $08, $F8, $00, $00, $00
+0005E4r 2  F8 00 00 00  
+0005E8r 2                   ; Character $BD - ╜ (box drawing up double and left single)
+0005E8r 2  28 28 28 28      .byte $28, $28, $28, $28, $F8, $00, $00, $00
+0005ECr 2  F8 00 00 00  
+0005F0r 2                   ; Character $BE - ╛ (box drawing up single and left double)
+0005F0r 2  10 10 F0 10      .byte $10, $10, $F0, $10, $F0, $00, $00, $00
+0005F4r 2  F0 00 00 00  
+0005F8r 2                   ; Character $BF - ┐ (box drawing down and left)
+0005F8r 2  00 00 00 00      .byte $00, $00, $00, $00, $F0, $10, $10, $10
+0005FCr 2  F0 10 10 10  
+000600r 2                   ; Character $C0 - └ (box drawing up and right)
+000600r 2  10 10 10 10      .byte $10, $10, $10, $10, $1C, $00, $00, $00
+000604r 2  1C 00 00 00  
+000608r 2                   ; Character $C1 - ┴ (box drawing vertical and horizontal)
+000608r 2  10 10 10 10      .byte $10, $10, $10, $10, $FC, $00, $00, $00
+00060Cr 2  FC 00 00 00  
+000610r 2                   ; Character $C2 - ┬ (box drawing down and horizontal)
+000610r 2  00 00 00 00      .byte $00, $00, $00, $00, $FC, $10, $10, $10
+000614r 2  FC 10 10 10  
+000618r 2                   ; Character $C3 - ├ (box drawing vertical and right)
+000618r 2  10 10 10 10      .byte $10, $10, $10, $10, $1C, $10, $10, $10
+00061Cr 2  1C 10 10 10  
+000620r 2                   ; Character $C4 - ─ (box drawing horizontal)
+000620r 2  00 00 00 00      .byte $00, $00, $00, $00, $FC, $00, $00, $00
+000624r 2  FC 00 00 00  
+000628r 2                   ; Character $C5 - ┼ (box drawing vertical and horizontal)
+000628r 2  10 10 10 10      .byte $10, $10, $10, $10, $FC, $10, $10, $10
+00062Cr 2  FC 10 10 10  
+000630r 2  10 10 1C 10      .byte $10, $10, $1C, $10, $1C, $10, $10, $10
+000634r 2  1C 10 10 10  
+000638r 2                   ; Character $C7 - ╟ (box drawing vertical double and right single)
+000638r 2  28 28 28 28      .byte $28, $28, $28, $28, $2C, $28, $28, $28
+00063Cr 2  2C 28 28 28  
+000640r 2                   ; Character $C8 - ╚ (box drawing double up and right)
+000640r 2  28 28 2C 20      .byte $28, $28, $2C, $20, $3C, $00, $00, $00
+000644r 2  3C 00 00 00  
+000648r 2                   ; Character $C9 - ╔ (box drawing double down and right)
+000648r 2  00 00 3C 20      .byte $00, $00, $3C, $20, $2C, $28, $28, $28
+00064Cr 2  2C 28 28 28  
+000650r 2                   ; Character $CA - ╩ (box drawing double up and horizontal)
+000650r 2  28 28 EC 00      .byte $28, $28, $EC, $00, $FC, $00, $00, $00
+000654r 2  FC 00 00 00  
+000658r 2                   ; Character $CB - ╦ (box drawing double down and horizontal)
+000658r 2  00 00 FC 00      .byte $00, $00, $FC, $00, $EC, $28, $28, $28
+00065Cr 2  EC 28 28 28  
+000660r 2                   ; Character $CC - ╠ (box drawing double vertical and right)
+000660r 2  28 28 2C 20      .byte $28, $28, $2C, $20, $2C, $28, $28, $28
+000664r 2  2C 28 28 28  
+000668r 2                   ; Character $CD - ═ (box drawing double horizontal)
+000668r 2  00 00 FC 00      .byte $00, $00, $FC, $00, $FC, $00, $00, $00
+00066Cr 2  FC 00 00 00  
+000670r 2                   ; Character $CE - ╬ (box drawing double vertical and horizontal)
+000670r 2  28 28 EC 00      .byte $28, $28, $EC, $00, $EC, $28, $28, $28
+000674r 2  EC 28 28 28  
+000678r 2                   ; Character $CF - ╧ (box drawing up single and horizontal double)
+000678r 2  10 10 FC 00      .byte $10, $10, $FC, $00, $FC, $00, $00, $00
+00067Cr 2  FC 00 00 00  
+000680r 2                   ; Character $D0 - ╨ (box drawing up double and horizontal single)
+000680r 2  28 28 28 28      .byte $28, $28, $28, $28, $FC, $00, $00, $00
+000684r 2  FC 00 00 00  
+000688r 2                   ; Character $D1 - ╤ (box drawing down single and horizontal double)
+000688r 2  00 00 FC 00      .byte $00, $00, $FC, $00, $FC, $10, $10, $10
+00068Cr 2  FC 10 10 10  
+000690r 2                   ; Character $D2 - ╥ (box drawing down double and horizontal single)
+000690r 2  00 00 00 00      .byte $00, $00, $00, $00, $FC, $28, $28, $28
+000694r 2  FC 28 28 28  
+000698r 2                   ; Character $D3 - ╙ (box drawing up double and right single)
+000698r 2  28 28 28 28      .byte $28, $28, $28, $28, $3C, $00, $00, $00
+00069Cr 2  3C 00 00 00  
+0006A0r 2                   ; Character $D4 - ╘ (box drawing up single and right double)
+0006A0r 2  10 10 1C 10      .byte $10, $10, $1C, $10, $1C, $00, $00, $00
+0006A4r 2  1C 00 00 00  
+0006A8r 2                   ; Character $D5 - ╒ (box drawing down single and right double)
+0006A8r 2  00 00 1C 10      .byte $00, $00, $1C, $10, $1C, $10, $10, $10
+0006ACr 2  1C 10 10 10  
+0006B0r 2                   ; Character $D6 - ╓ (box drawing down double and right single)
+0006B0r 2  00 00 00 00      .byte $00, $00, $00, $00, $3C, $28, $28, $28
+0006B4r 2  3C 28 28 28  
+0006B8r 2                   ; Character $D7 - ╫ (box drawing vertical double and horizontal single)
+0006B8r 2  28 28 28 28      .byte $28, $28, $28, $28, $FC, $28, $28, $28
+0006BCr 2  FC 28 28 28  
+0006C0r 2                   ; Character $D8 - ╪ (box drawing vertical single and horizontal double)
+0006C0r 2  10 10 FC 10      .byte $10, $10, $FC, $10, $FC, $10, $10, $10
+0006C4r 2  FC 10 10 10  
+0006C8r 2                   ; Character $D9 - ┘ (box drawing up and left)
+0006C8r 2  10 10 10 10      .byte $10, $10, $10, $10, $F0, $00, $00, $00
+0006CCr 2  F0 00 00 00  
+0006D0r 2                   ; Character $DA - ┌ (box drawing down and right)
+0006D0r 2  00 00 00 00      .byte $00, $00, $00, $00, $1C, $10, $10, $10
+0006D4r 2  1C 10 10 10  
+0006D8r 2                   ; Character $DB - █ (full block)
+0006D8r 2  FC FC FC FC      .byte $FC, $FC, $FC, $FC, $FC, $FC, $FC, $FC
+0006DCr 2  FC FC FC FC  
+0006E0r 2                   ; Character $DC - ▄ (lower half block)
+0006E0r 2  00 00 00 00      .byte $00, $00, $00, $00, $FC, $FC, $FC, $FC
+0006E4r 2  FC FC FC FC  
+0006E8r 2                   ; Character $DD - ▌ (left half block)
+0006E8r 2  E0 E0 E0 E0      .byte $E0, $E0, $E0, $E0, $E0, $E0, $E0, $E0
+0006ECr 2  E0 E0 E0 E0  
+0006F0r 2                   ; Character $DE - ▐ (right half block)
+0006F0r 2  1C 1C 1C 1C      .byte $1C, $1C, $1C, $1C, $1C, $1C, $1C, $1C
+0006F4r 2  1C 1C 1C 1C  
+0006F8r 2                   ; Character $DF - ▀ (upper half block)
+0006F8r 2  FC FC FC FC      .byte $FC, $FC, $FC, $FC, $00, $00, $00, $00
+0006FCr 2  00 00 00 00  
+000700r 2                   ; Character $E0 - α
+000700r 2  00 00 64 98      .byte $00, $00, $64, $98, $90, $90, $6C, $00
+000704r 2  90 90 6C 00  
+000708r 2                   ; Character $E1 - ß
+000708r 2  00 60 90 90      .byte $00, $60, $90, $90, $E0, $90, $B0, $80
+00070Cr 2  E0 90 B0 80  
+000710r 2                   ; Character $E2 - Γ
+000710r 2  00 7C 40 40      .byte $00, $7C, $40, $40, $40, $40, $40, $00
+000714r 2  40 40 40 00  
+000718r 2                   ; Character $E3 - π
+000718r 2  00 00 7C 44      .byte $00, $00, $7C, $44, $44, $44, $44, $00
+00071Cr 2  44 44 44 00  
+000720r 2                   ; Character $E4 - Σ
+000720r 2  00 7C 40 20      .byte $00, $7C, $40, $20, $10, $20, $40, $7C
+000724r 2  10 20 40 7C  
+000728r 2                   ; Character $E5 - σ
+000728r 2  00 00 7C 90      .byte $00, $00, $7C, $90, $90, $90, $60, $00
+00072Cr 2  90 90 60 00  
+000730r 2                   ; Character $E6 - µ
+000730r 2  00 00 44 44      .byte $00, $00, $44, $44, $44, $7C, $40, $80
+000734r 2  44 7C 40 80  
+000738r 2                   ; Character $E7 - τ
+000738r 2  00 00 7C 10      .byte $00, $00, $7C, $10, $10, $10, $10, $00
+00073Cr 2  10 10 10 00  
+000740r 2                   ; Character $E8 - Φ
+000740r 2  00 10 38 54      .byte $00, $10, $38, $54, $54, $54, $38, $10
+000744r 2  54 54 38 10  
+000748r 2                   ; Character $E9 - Θ
+000748r 2  00 38 44 44      .byte $00, $38, $44, $44, $7C, $44, $44, $38
+00074Cr 2  7C 44 44 38  
+000750r 2                   ; Character $EA - Ω
+000750r 2  00 38 44 44      .byte $00, $38, $44, $44, $44, $28, $6C, $00
+000754r 2  44 28 6C 00  
+000758r 2                   ; Character $EB - δ
+000758r 2  00 18 20 10      .byte $00, $18, $20, $10, $38, $44, $44, $38
+00075Cr 2  38 44 44 38  
+000760r 2                   ; Character $EC - ∞
+000760r 2  00 00 6C 92      .byte $00, $00, $6C, $92, $92, $92, $6C, $00
+000764r 2  92 92 6C 00  
+000768r 2                   ; Character $ED - φ
+000768r 2  00 04 38 54      .byte $00, $04, $38, $54, $54, $54, $38, $40
+00076Cr 2  54 54 38 40  
+000770r 2                   ; Character $EE - ε
+000770r 2  00 1C 20 40      .byte $00, $1C, $20, $40, $3C, $40, $20, $1C
+000774r 2  3C 40 20 1C  
+000778r 2                   ; Character $EF - ∩
+000778r 2  00 38 44 44      .byte $00, $38, $44, $44, $44, $44, $44, $00
+00077Cr 2  44 44 44 00  
+000780r 2                   ; Character $F0 - ≡
+000780r 2  00 00 7C 00      .byte $00, $00, $7C, $00, $7C, $00, $7C, $00
+000784r 2  7C 00 7C 00  
+000788r 2                   ; Character $F1 - ±
+000788r 2  00 10 10 7C      .byte $00, $10, $10, $7C, $10, $10, $00, $7C
+00078Cr 2  10 10 00 7C  
+000790r 2                   ; Character $F2 - ≥
+000790r 2  00 20 10 08      .byte $00, $20, $10, $08, $10, $20, $00, $7C
+000794r 2  10 20 00 7C  
+000798r 2                   ; Character $F3 - ≤
+000798r 2  00 08 10 20      .byte $00, $08, $10, $20, $10, $08, $00, $7C
+00079Cr 2  10 08 00 7C  
+0007A0r 2                   ; Character $F4 - ⌠ (top half integral)
+0007A0r 2  00 1C 10 10      .byte $00, $1C, $10, $10, $10, $10, $10, $10
+0007A4r 2  10 10 10 10  
+0007A8r 2                   ; Character $F5 - ⌡ (bottom half integral)
+0007A8r 2  10 10 10 10      .byte $10, $10, $10, $10, $10, $10, $90, $60
+0007ACr 2  10 10 90 60  
+0007B0r 2                   ; Character $F6 - ÷
+0007B0r 2  00 00 10 00      .byte $00, $00, $10, $00, $7C, $00, $10, $00
+0007B4r 2  7C 00 10 00  
+0007B8r 2                   ; Character $F7 - ≈
+0007B8r 2  00 00 28 54      .byte $00, $00, $28, $54, $00, $28, $54, $00
+0007BCr 2  00 28 54 00  
+0007C0r 2  00 38 44 44      .byte $00, $38, $44, $44, $38, $00, $00, $00
+0007C4r 2  38 00 00 00  
+0007C8r 2                   ; Character $F9 - ∙
+0007C8r 2  00 00 00 10      .byte $00, $00, $00, $10, $10, $00, $00, $00
+0007CCr 2  10 00 00 00  
+0007D0r 2                   ; Character $FA - · (middle dot)
+0007D0r 2  00 00 00 00      .byte $00, $00, $00, $00, $10, $00, $00, $00
+0007D4r 2  10 00 00 00  
+0007D8r 2                   ; Character $FB - √
+0007D8r 2  00 0C 0C 0C      .byte $00, $0C, $0C, $0C, $4C, $2C, $1C, $0C
+0007DCr 2  4C 2C 1C 0C  
+0007E0r 2                   ; Character $FC - ⁿ
+0007E0r 2  00 60 50 50      .byte $00, $60, $50, $50, $50, $00, $00, $00
+0007E4r 2  50 00 00 00  
+0007E8r 2                   ; Character $FD - ²
+0007E8r 2  00 60 10 20      .byte $00, $60, $10, $20, $40, $70, $00, $00
+0007ECr 2  40 70 00 00  
+0007F0r 2                   ; Character $FE - ■ (black square)
+0007F0r 2  00 00 38 38      .byte $00, $00, $38, $38, $38, $38, $00, $00
+0007F4r 2  38 38 00 00  
+0007F8r 2                   ; Character $FF - nbsp (non-breaking space, displayed as blank)
+0007F8r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $00, $00, $00
+0007FCr 2  00 00 00 00  
+000800r 2               
+000800r 1               .segment "CART"
 000000r 1               .include "Cart.asm"
 000000r 2               ; ***             ***
 000000r 2               ; ***    CART     ***
@@ -475,173 +1370,173 @@ Current file: BIOS.asm
 000000r 2               WOZ_MODE  = $2B               ; $00=XAM, $7F=STOR, $AE=BLOCK XAM
 000000r 2               WOZ_IN    = USER_VARS         ; Input buffer
 000000r 2               
-000000r 2               WOZ_MON:
+000000r 2               WozMon:
 000000r 2  A9 1B          lda     #$1B                ; Begin with escape
 000002r 2               
-000002r 2               WOZ_NOTCR:
+000002r 2               WozNotCr:
 000002r 2  C9 08          cmp     #$08                ; Backspace key?
-000004r 2  F0 18          beq     WOZ_BACKSPACE       ; Yes
+000004r 2  F0 18          beq     WozBackspace        ; Yes
 000006r 2  C9 1B          cmp     #$1B                ; ESC?
-000008r 2  F0 03          beq     WOZ_ESCAPE          ; Yes
+000008r 2  F0 03          beq     WozEscape           ; Yes
 00000Ar 2  C8             iny                         ; Advance text index
-00000Br 2  10 14          bpl     WOZ_NEXTCHAR        ; Auto ESC if line longer than 127
+00000Br 2  10 14          bpl     WozNextchar         ; Auto ESC if line longer than 127
 00000Dr 2               
-00000Dr 2               WOZ_ESCAPE:
+00000Dr 2               WozEscape:
 00000Dr 2  A9 5C          lda     #$5C                ; "\"
-00000Fr 2  20 rr rr       jsr     WOZ_ECHO            ; Output it
+00000Fr 2  20 rr rr       jsr     WozEcho             ; Output it
 000012r 2               
-000012r 2               WOZ_GETLINE:
+000012r 2               WozGetline:
 000012r 2  A9 0D          lda     #$0D                ; Send CR
-000014r 2  20 rr rr       jsr     WOZ_ECHO
+000014r 2  20 rr rr       jsr     WozEcho
 000017r 2  A9 0A          lda     #$0A                ; Send LF
-000019r 2  20 rr rr       jsr     WOZ_ECHO
+000019r 2  20 rr rr       jsr     WozEcho
 00001Cr 2               
 00001Cr 2  A0 01          ldy     #$01                ; Initialize text index
-00001Er 2               WOZ_BACKSPACE:
+00001Er 2               WozBackspace:
 00001Er 2  88             dey                         ; Back up text index
-00001Fr 2  30 F1          bmi     WOZ_GETLINE         ; Beyond start of line, reinitialize
+00001Fr 2  30 F1          bmi     WozGetline          ; Beyond start of line, reinitialize
 000021r 2               
-000021r 2               WOZ_NEXTCHAR:
-000021r 2  20 rr rr       jsr     CHRIN               ; Get next character
-000024r 2  90 FB          bcc     WOZ_NEXTCHAR        ; No character found
+000021r 2               WozNextchar:
+000021r 2  20 rr rr       jsr     Chrin               ; Get next character
+000024r 2  90 FB          bcc     WozNextchar         ; No character found
 000026r 2  99 00 04       sta     WOZ_IN,y            ; Add to text buffer
 000029r 2  C9 0D          cmp     #$0D                ; CR?
-00002Br 2  D0 D5          bne     WOZ_NOTCR           ; No
+00002Br 2  D0 D5          bne     WozNotCr            ; No
 00002Dr 2               
 00002Dr 2  A0 FF          ldy     #$FF                ; Reset text index
 00002Fr 2  A9 00          lda     #$00                ; For XAM mode
 000031r 2  AA             tax                         ; X=0
-000032r 2               WOZ_SETBLOCK:
+000032r 2               WozSetblock:
 000032r 2  0A             asl
-000033r 2               WOZ_SETSTOR:
+000033r 2               WozSetstor:
 000033r 2  0A             asl                         ; Leaves $7B if setting STOR mode
 000034r 2  85 2B          sta     WOZ_MODE            ; $00 = XAM, $74 = STOR, $B8 = BLOK XAM
-000036r 2               WOZ_BLSKIP:
+000036r 2               WozBlskip:
 000036r 2  C8             iny                         ; Advance text index
-000037r 2               WOZ_NEXTITEM:
+000037r 2               WozNextitem:
 000037r 2  B9 00 04       lda     WOZ_IN,y            ; Get character
 00003Ar 2  C9 0D          cmp     #$0D                ; CR?
-00003Cr 2  F0 D4          beq     WOZ_GETLINE         ; Yes, done this line
+00003Cr 2  F0 D4          beq     WozGetline          ; Yes, done this line
 00003Er 2  C9 2E          cmp     #$2E                ; "."?
-000040r 2  90 F4          bcc     WOZ_BLSKIP          ; Skip delimiter
-000042r 2  F0 EE          beq     WOZ_SETBLOCK        ; Set BLOCK XAM mode
+000040r 2  90 F4          bcc     WozBlskip           ; Skip delimiter
+000042r 2  F0 EE          beq     WozSetblock         ; Set BLOCK XAM mode
 000044r 2  C9 3A          cmp     #$3A                ; ":"?
-000046r 2  F0 EB          beq     WOZ_SETSTOR         ; Yes, set STOR mode
+000046r 2  F0 EB          beq     WozSetstor          ; Yes, set STOR mode
 000048r 2  C9 52          cmp     #$52                ; "R"?
-00004Ar 2  F0 3B          beq     WOZ_RUN             ; Yes, run user program
+00004Ar 2  F0 3B          beq     WozRun              ; Yes, run user program
 00004Cr 2  86 28          stx     WOZ_L               ; $00 -> L
 00004Er 2  86 29          stx     WOZ_H               ;    and H
 000050r 2  84 2A          sty     WOZ_YSAV            ; Save Y for comparison
 000052r 2               
-000052r 2               WOZ_NEXTHEX:
+000052r 2               WozNexthex:
 000052r 2  B9 00 04       lda     WOZ_IN,y            ; Get character for hex test
 000055r 2  49 30          eor     #$30                ; Map digits to $0-9
 000057r 2  C9 0A          cmp     #$0A                ; Digit?
-000059r 2  90 06          bcc     WOZ_DIG             ; Yes
+000059r 2  90 06          bcc     WozDig              ; Yes
 00005Br 2  69 88          adc     #$88                ; Map letter "A"-"F" to $FA-FF
 00005Dr 2  C9 FA          cmp     #$FA                ; Hex letter?
-00005Fr 2  90 11          bcc     WOZ_NOTHEX          ; No, character not hex
-000061r 2               WOZ_DIG:
+00005Fr 2  90 11          bcc     WozNothex           ; No, character not hex
+000061r 2               WozDig:
 000061r 2  0A             asl
 000062r 2  0A             asl                         ; Hex digit to MSD of A
 000063r 2  0A             asl
 000064r 2  0A             asl
 000065r 2               
 000065r 2  A2 04          ldx     #$04                ; Shift count
-000067r 2               WOZ_HEXSHIFT:
+000067r 2               WozHexshift:
 000067r 2  0A             asl                         ; Hex digit left, MSB to carry
 000068r 2  26 28          rol     WOZ_L               ; Rotate into LSD
 00006Ar 2  26 29          rol     WOZ_H               ; Rotate into MSD's
 00006Cr 2  CA             dex                         ; Done 4 shifts?
-00006Dr 2  D0 F8          bne     WOZ_HEXSHIFT        ; No, loop
+00006Dr 2  D0 F8          bne     WozHexshift         ; No, loop
 00006Fr 2  C8             iny                         ; Advance text index
-000070r 2  D0 E0          bne     WOZ_NEXTHEX         ; Always taken. Check next character for hex
+000070r 2  D0 E0          bne     WozNexthex          ; Always taken. Check next character for hex
 000072r 2               
-000072r 2               WOZ_NOTHEX:
+000072r 2               WozNothex:
 000072r 2  C4 2A          cpy     WOZ_YSAV            ; Check if L, H empty (no hex digits)
-000074r 2  F0 97          beq     WOZ_ESCAPE          ; Yes, generate ESC sequence
+000074r 2  F0 97          beq     WozEscape           ; Yes, generate ESC sequence
 000076r 2               
 000076r 2  24 2B          bit     WOZ_MODE            ; Test MODE byte
-000078r 2  50 16          bvc     WOZ_NOTSTOR         ; B6=0 is STOR, 1 is XAM and BLOCK XAM
+000078r 2  50 16          bvc     WozNotstor          ; B6=0 is STOR, 1 is XAM and BLOCK XAM
 00007Ar 2               
 00007Ar 2  A5 28          lda     WOZ_L               ; LSD's of hex data
 00007Cr 2  81 26          sta     (WOZ_STL,x)         ; Store current 'store index'
 00007Er 2  E6 26          inc     WOZ_STL             ; Increment store index
-000080r 2  D0 B5          bne     WOZ_NEXTITEM        ; Get next item (no carry)
+000080r 2  D0 B5          bne     WozNextitem         ; Get next item (no carry)
 000082r 2  E6 27          inc     WOZ_STH             ; Add carry to 'store index' high order
-000084r 2               WOZ_TONEXTITEM:
-000084r 2  4C rr rr       jmp     WOZ_NEXTITEM        ; Get next command item
+000084r 2               WozTonextitem:
+000084r 2  4C rr rr       jmp     WozNextitem         ; Get next command item
 000087r 2               
-000087r 2               WOZ_RUN:
-000087r 2  20 rr rr       jsr     WOZ_JUMP            ; Begin executing at XAM index
-00008Ar 2  4C rr rr       jmp     WOZ_MON             ; After returning we reset
-00008Dr 2               WOZ_JUMP:
+000087r 2               WozRun:
+000087r 2  20 rr rr       jsr     WozJump             ; Begin executing at XAM index
+00008Ar 2  4C rr rr       jmp     WozMon              ; After returning we reset
+00008Dr 2               WozJump:
 00008Dr 2  6C 24 00       jmp     (WOZ_XAML)          ; Run at current XAM index
 000090r 2               
-000090r 2               WOZ_NOTSTOR:
-000090r 2  30 30          bmi     WOZ_XAMNEXT         ; B7 = 0 for XAM, 1 for BLOCK XAM
+000090r 2               WozNotstor:
+000090r 2  30 30          bmi     WozXamnext          ; B7 = 0 for XAM, 1 for BLOCK XAM
 000092r 2               
 000092r 2  A2 02          ldx     #$02                ; Byte count
-000094r 2               WOZ_SETADR:
+000094r 2               WozSetadr:
 000094r 2  B5 27          lda     WOZ_L-1,x           ; Copy hex data to
 000096r 2  95 25          sta     WOZ_STL-1,x         ;  'store index'
 000098r 2  95 23          sta     WOZ_XAML-1,x        ; And to 'XAM index'
 00009Ar 2  CA             dex                         ; Next of 2 bytes
-00009Br 2  D0 F7          bne     WOZ_SETADR          ; Loop unless X = 0
+00009Br 2  D0 F7          bne     WozSetadr           ; Loop unless X = 0
 00009Dr 2               
-00009Dr 2               WOZ_NXTPRNT:
-00009Dr 2  D0 19          bne     WOZ_PRDATA          ; NE means no address to print
+00009Dr 2               WozNxtprnt:
+00009Dr 2  D0 19          bne     WozPrdata           ; NE means no address to print
 00009Fr 2  A9 0D          lda     #$0D                ; CR
-0000A1r 2  20 rr rr       jsr     WOZ_ECHO            ; Output it
+0000A1r 2  20 rr rr       jsr     WozEcho             ; Output it
 0000A4r 2  A9 0A          lda     #$0A                ; LF
-0000A6r 2  20 rr rr       jsr     WOZ_ECHO            ; Output it
+0000A6r 2  20 rr rr       jsr     WozEcho             ; Output it
 0000A9r 2  A5 25          lda     WOZ_XAMH            ; 'Examine index' high-order byte
-0000ABr 2  20 rr rr       jsr     WOZ_PRBYTE          ; Output it in hex format
+0000ABr 2  20 rr rr       jsr     WozPrbyte           ; Output it in hex format
 0000AEr 2  A5 24          lda     WOZ_XAML            ; Low-order 'examine index' byte
-0000B0r 2  20 rr rr       jsr     WOZ_PRBYTE          ; Output it in hex format
+0000B0r 2  20 rr rr       jsr     WozPrbyte           ; Output it in hex format
 0000B3r 2  A9 3A          lda     #$3A                ; ":"
-0000B5r 2  20 rr rr       jsr     WOZ_ECHO            ; Output it
+0000B5r 2  20 rr rr       jsr     WozEcho             ; Output it
 0000B8r 2               
-0000B8r 2               WOZ_PRDATA:
+0000B8r 2               WozPrdata:
 0000B8r 2  A9 20          lda     #$20                ; Blank
-0000BAr 2  20 rr rr       jsr     WOZ_ECHO            ; Output it
+0000BAr 2  20 rr rr       jsr     WozEcho             ; Output it
 0000BDr 2  A1 24          lda     (WOZ_XAML,x)        ; Get data byte at 'examine index'
-0000BFr 2  20 rr rr       jsr     WOZ_PRBYTE          ; Output it in hex format
-0000C2r 2               WOZ_XAMNEXT:
+0000BFr 2  20 rr rr       jsr     WozPrbyte           ; Output it in hex format
+0000C2r 2               WozXamnext:
 0000C2r 2  86 2B          stx     WOZ_MODE            ; 0 -> MODE (XAM mode)
 0000C4r 2  A5 24          lda     WOZ_XAML
 0000C6r 2  C5 28          cmp     WOZ_L               ; Compare 'examine index' to hex data
 0000C8r 2  A5 25          lda     WOZ_XAMH
 0000CAr 2  E5 29          sbc     WOZ_H
-0000CCr 2  B0 B6          bcs     WOZ_TONEXTITEM      ; Not less, so no more data to output
+0000CCr 2  B0 B6          bcs     WozTonextitem       ; Not less, so no more data to output
 0000CEr 2               
 0000CEr 2  E6 24          inc     WOZ_XAML
-0000D0r 2  D0 02          bne     WOZ_MOD8CHK         ; Increment 'examine index'
+0000D0r 2  D0 02          bne     WozMod8chk          ; Increment 'examine index'
 0000D2r 2  E6 25          inc     WOZ_XAMH
 0000D4r 2               
-0000D4r 2               WOZ_MOD8CHK:
+0000D4r 2               WozMod8chk:
 0000D4r 2  A5 24          lda     WOZ_XAML            ; Check low-order 'examine index' byte
 0000D6r 2  29 07          and     #$07                ; For MOD 8 = 0
-0000D8r 2  10 C3          bpl     WOZ_NXTPRNT         ; Always taken
+0000D8r 2  10 C3          bpl     WozNxtprnt          ; Always taken
 0000DAr 2               
-0000DAr 2               WOZ_PRBYTE:
+0000DAr 2               WozPrbyte:
 0000DAr 2  48             pha                         ; Save A for LSD
 0000DBr 2  4A             lsr
 0000DCr 2  4A             lsr
 0000DDr 2  4A             lsr                         ; MSD to LSD position
 0000DEr 2  4A             lsr
-0000DFr 2  20 rr rr       jsr     WOZ_PRHEX           ; Output hex digit
+0000DFr 2  20 rr rr       jsr     WozPrhex            ; Output hex digit
 0000E2r 2  68             pla                         ; Restore A
 0000E3r 2               
-0000E3r 2               WOZ_PRHEX:
+0000E3r 2               WozPrhex:
 0000E3r 2  29 0F          and     #$0F                ; Mask LSD for hex print
 0000E5r 2  09 30          ora     #$30                ; Add "0"
 0000E7r 2  C9 3A          cmp     #$3A                ; Digit?
-0000E9r 2  90 02          bcc     WOZ_ECHO            ; Yes, output it
+0000E9r 2  90 02          bcc     WozEcho             ; Yes, output it
 0000EBr 2  69 06          adc     #$06                ; Add offset for letter
 0000EDr 2               
-0000EDr 2               WOZ_ECHO:
-0000EDr 2  20 rr rr       jsr CHROUT                  ; Output the character
+0000EDr 2               WozEcho:
+0000EDr 2  20 rr rr       jsr Chrout                  ; Output the character
 0000F0r 2  60             rts                         ; Return
 0000F1r 2               
 0000F1r 1               .segment "VECTORS"
@@ -650,8 +1545,8 @@ Current file: BIOS.asm
 000000r 2               ; ***   VECTORS   ***
 000000r 2               ; ***             ***
 000000r 2               
-000000r 2  rr rr        .word   NMI_VEC           ; NMI vector
-000002r 2  rr rr        .word   RESET_VEC         ; RESET vector
-000004r 2  rr rr        .word   IRQ_VEC           ; IRQ vector
+000000r 2  rr rr        .word   NmiVec           ; NMI vector
+000002r 2  rr rr        .word   ResetVec         ; RESET vector
+000004r 2  rr rr        .word   IrqVec           ; IRQ vector
 000006r 2               
 000006r 1               

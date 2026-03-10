@@ -2,6 +2,6 @@
 ; ***   VECTORS   ***
 ; ***             ***
 
-.word   NMI_VEC           ; NMI vector
-.word   RESET_VEC         ; RESET vector
-.word   IRQ_VEC           ; IRQ vector
+.word   NmiVec           ; NMI vector
+.word   ResetVec         ; RESET vector
+.word   IrqVec           ; IRQ vector

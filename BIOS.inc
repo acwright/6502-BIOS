@@ -7,7 +7,6 @@ ZP                  := $00
 READ_PTR            := $00
 WRITE_PTR           := $01
 STR_PTR             := $02               ; $02-$03 - String pointer (2 bytes)
-KEYPAD_IN           := $0F               ; Keypad input buffer (1 byte)
 
 ; Stack
 STACK               := $0100             ; $0100-$01FF

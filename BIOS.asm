@@ -8,6 +8,8 @@
 
 .segment "KERNAL"
 .include "Kernal.asm"
+.segment "CHARACTERS"
+.include "Characters.asm"
 .segment "CART"
 .include "Cart.asm"
 .segment "WOZMON"

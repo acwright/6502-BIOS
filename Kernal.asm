@@ -15,6 +15,11 @@ Reset:
   lda #>Irq
   sta IRQ_PTR + 1
 
+  lda #<Break                   ; Initialize the BRK pointer
+  sta BRK_PTR
+  lda #>Break
+  sta BRK_PTR + 1
+
   lda #<Nmi                     ; Initialize the NMI pointer
   sta NMI_PTR
   lda #>Nmi
@@ -25,14 +30,26 @@ Reset:
   jsr InitSID                   ; Initialize the Sound Card (6581)
   jsr InitVideo                 ; Initialize the Video Card (TMS9918)
   jsr InitCharacters            ; Initialize the character set
+  jsr InitKB                    ; Initialize the keyboard (VIA)
 
   jsr Beep                      ; Play the startup beep
   jsr Splash                    ; Draw the splash screen
 
   cli                           ; Enable interrupts
+  brk                           ; Brk to Wozmon (for now)
 
-  jmp WozMon                    ; Jump to Wozmon
-
+; Initialize the Keyboard via VIA (IO 6)
+; Configures Port B as input, CB2 low (enable keyboard controller), CB1 falling-edge IRQ
+; Modifies: Flags, A
+InitKB:
+  lda #$00                      ; Port B all inputs (keyboard data bus)
+  sta GPIO_DDRB
+  lda #(GPIO_PCR_CB2_LO | GPIO_PCR_CB1_NEG) ; CB2 manual output low + CB1 falling edge
+  sta GPIO_PCR
+  lda #(GPIO_IER_SET | GPIO_INT_CB1)        ; Enable CB1 interrupt
+  sta GPIO_IER
+  rts
+  
 ; Initialize the Serial Card (6551)
 ; Modifies: Flags, A
 InitSC:
@@ -236,14 +253,32 @@ Splash:
 Nmi:
   rti
 
+; BRK Handler — default dispatches to WozMon
+; On entry the stack holds the processor-pushed state from the BRK:
+;   SP+1 = saved P, SP+2 = PCL (PC+2), SP+3 = PCH
+; State is saved to BRK_P/BRK_PCL/BRK_PCH for inspection by a custom handler.
+Break:
+  pla                           ; Pull saved P
+  sta BRK_P
+  pla                           ; Pull saved PCL (PC+2)
+  sta BRK_PCL
+  pla                           ; Pull saved PCH
+  sta BRK_PCH
+  jmp WozMon
+
 ; IRQ Handler
 Irq:
   pha
   phy
   phx
+  tsx                           ; Get stack pointer to check saved status register
+  lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
+  and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
+  bne @IrqBrk                   ; Branch if this was a BRK instruction
+@IrqSc:
   lda SC_STATUS
   and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-  beq @IrqExit                  ; If not, exit
+  beq @IrqCheckKB               ; If not, check keyboard
   lda SC_DATA                   ; Read the data from serial register
   jsr WriteBuffer               ; Store to the input buffer
   jsr BufferSize
@@ -251,11 +286,24 @@ Irq:
   bcc @IrqExit                  ; If not, exit
   lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
   sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+  bra @IrqExit
+@IrqCheckKB:
+  lda GPIO_IFR
+  and #GPIO_INT_CB1             ; Check if CB1 (keyboard data ready) caused the interrupt
+  beq @IrqExit                  ; If not, exit
+  lda GPIO_PORTB                ; Read ASCII byte from keyboard (also clears CB1 IFR flag)
+  jsr WriteBuffer               ; Store to the input buffer
 @IrqExit:
   plx
   ply
   pla
   rti
+@IrqBrk:
+  plx                           ; Restore saved registers
+  ply
+  pla
+  cli                           ; Re-enable interrupts — abandoning interrupt context
+  jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
 
 ; NMI Vector
 NmiVec:

@@ -19,6 +19,10 @@ KERNAL_VARS         := $0300             ; $0300-$03FF
 IRQ_PTR             := $0300             ; $0300-$0301
 BRK_PTR             := $0302             ; $0302-$0303
 NMI_PTR             := $0304             ; $0304-$0305
+                                         ; $0306-$030F Reserved for future pointers
+BRK_P               := $0310             ; Saved P at time of BRK
+BRK_PCL             := $0311             ; Saved PCL at time of BRK (points to BRK+2)
+BRK_PCH             := $0312             ; Saved PCH at time of BRK
 
 ; User Vars
 USER_VARS           := $0400             ; $0400-$07FF
@@ -122,6 +126,12 @@ GPIO_PCR            := $940C
 GPIO_IFR            := $940D
 GPIO_IER            := $940E
 GPIO_ORA            := $940F
+
+; Keyboard (VIA) Constants
+GPIO_PCR_CB2_LO     := %11000000         ; PCR CB2 mode = manual output low (enables keyboard controller)
+GPIO_PCR_CB1_NEG    := %00000000         ; PCR CB1 active on falling (high-to-low) edge
+GPIO_INT_CB1        := %00010000         ; IFR/IER bit 4 = CB1 interrupt flag/enable
+GPIO_IER_SET        := %10000000         ; IER bit 7 = set mode (1=set named bits, 0=clear)
 
 ; Sound Card (SID/ARMSID) | IO 7 | $9800-$981C
 SID_V1_FREQ_LO      := $9800             ; Voice 1 Frequency Low
@@ -288,3 +298,8 @@ LCD_RS              := %00100000    ; PORTA LCD REGISTER SELECT
 
 ; LCD Keypad Bits
 LCD_KEYPAD          := %00011111    ; PORTA LCD KEYPAD DATA
+
+; VTAC / Dev Output Board | IO 8 | $9C00
+VTAC_DATA           := $9C00        ; Write
+VTAC_STATUS         := $9C00        ; Read (Bit 7 only)
+VTAC_STATUS_BSY     := %10000000

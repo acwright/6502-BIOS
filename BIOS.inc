@@ -19,10 +19,16 @@ KERNAL_VARS         := $0300             ; $0300-$03FF
 IRQ_PTR             := $0300             ; $0300-$0301
 BRK_PTR             := $0302             ; $0302-$0303
 NMI_PTR             := $0304             ; $0304-$0305
-                                         ; $0306-$030F Reserved for future pointers
+IO_MODE             := $0306             ; Bit 0: 0=video, 1=serial output
+VID_CURSOR_X        := $0307             ; Video cursor column (0-39)
+VID_CURSOR_Y        := $0308             ; Video cursor row (0-23)
+VID_CURSOR_ADDR     := $0309             ; Video cursor VRAM address ($0309-$030A)
+                                         ; $030B-$030F Reserved
 BRK_P               := $0310             ; Saved P at time of BRK
 BRK_PCL             := $0311             ; Saved PCL at time of BRK (points to BRK+2)
 BRK_PCH             := $0312             ; Saved PCH at time of BRK
+                                         ; $0313-$031F Reserved
+SCROLL_BUF          := $0320             ; $0320-$0347 - 40-byte scroll temp buffer
 
 ; User Vars
 USER_VARS           := $0400             ; $0400-$07FF

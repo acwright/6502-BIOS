@@ -30,10 +30,16 @@ Current file: BIOS.asm
 000000r 2               IRQ_PTR             := $0300             ; $0300-$0301
 000000r 2               BRK_PTR             := $0302             ; $0302-$0303
 000000r 2               NMI_PTR             := $0304             ; $0304-$0305
-000000r 2                                                        ; $0306-$030F Reserved for future pointers
+000000r 2               IO_MODE             := $0306             ; Bit 0: 0=video, 1=serial output
+000000r 2               VID_CURSOR_X        := $0307             ; Video cursor column (0-39)
+000000r 2               VID_CURSOR_Y        := $0308             ; Video cursor row (0-23)
+000000r 2               VID_CURSOR_ADDR     := $0309             ; Video cursor VRAM address ($0309-$030A)
+000000r 2                                                        ; $030B-$030F Reserved
 000000r 2               BRK_P               := $0310             ; Saved P at time of BRK
 000000r 2               BRK_PCL             := $0311             ; Saved PCL at time of BRK (points to BRK+2)
 000000r 2               BRK_PCH             := $0312             ; Saved PCH at time of BRK
+000000r 2                                                        ; $0313-$031F Reserved
+000000r 2               SCROLL_BUF          := $0320             ; $0320-$0347 - 40-byte scroll temp buffer
 000000r 2               
 000000r 2               ; User Vars
 000000r 2               USER_VARS           := $0400             ; $0400-$07FF
@@ -189,324 +195,717 @@ Current file: BIOS.asm
 000000r 2               ; ***   KERNAL    ***
 000000r 2               ; ***             ***
 000000r 2               
-000000r 2               ; Main entry point
-000000r 2               Reset:
-000000r 2  D8             cld                           ; Clear decimal mode
-000001r 2  78             sei                           ; Disable interrupts
-000002r 2               
-000002r 2  A2 FF          ldx #$ff
-000004r 2  9A             txs                           ; Reset the stack pointer
-000005r 2               
-000005r 2  A9 rr          lda #<Irq                     ; Initialize the IRQ pointer
-000007r 2  8D 00 03       sta IRQ_PTR
-00000Ar 2  A9 rr          lda #>Irq
-00000Cr 2  8D 01 03       sta IRQ_PTR + 1
-00000Fr 2               
-00000Fr 2  A9 rr          lda #<Break                   ; Initialize the BRK pointer
-000011r 2  8D 02 03       sta BRK_PTR
-000014r 2  A9 rr          lda #>Break
-000016r 2  8D 03 03       sta BRK_PTR + 1
-000019r 2               
-000019r 2  A9 rr          lda #<Nmi                     ; Initialize the NMI pointer
-00001Br 2  8D 04 03       sta NMI_PTR
-00001Er 2  A9 rr          lda #>Nmi
-000020r 2  8D 05 03       sta NMI_PTR + 1
-000023r 2               
-000023r 2  20 rr rr       jsr InitBuffer                ; Initialize the input buffer
-000026r 2  20 rr rr       jsr InitSC                    ; Initialize the Serial Card (6551)
-000029r 2  20 rr rr       jsr InitSID                   ; Initialize the Sound Card (6581)
-00002Cr 2  20 rr rr       jsr InitVideo                 ; Initialize the Video Card (TMS9918)
-00002Fr 2  20 rr rr       jsr InitCharacters            ; Initialize the character set
-000032r 2  20 rr rr       jsr InitKB                    ; Initialize the keyboard (VIA)
-000035r 2               
-000035r 2  20 rr rr       jsr Beep                      ; Play the startup beep
-000038r 2  20 rr rr       jsr Splash                    ; Draw the splash screen
-00003Br 2               
-00003Br 2  58             cli                           ; Enable interrupts
-00003Cr 2  00             brk                           ; Brk to Wozmon (for now)
-00003Dr 2               
-00003Dr 2               ; Initialize the Keyboard via VIA (IO 6)
-00003Dr 2               ; Configures Port B as input, CB2 low (enable keyboard controller), CB1 falling-edge IRQ
-00003Dr 2               ; Modifies: Flags, A
-00003Dr 2               InitKB:
-00003Dr 2  A9 00          lda #$00                      ; Port B all inputs (keyboard data bus)
-00003Fr 2  8D 02 94       sta GPIO_DDRB
-000042r 2  A9 C0          lda #(GPIO_PCR_CB2_LO | GPIO_PCR_CB1_NEG) ; CB2 manual output low + CB1 falling edge
-000044r 2  8D 0C 94       sta GPIO_PCR
-000047r 2  A9 90          lda #(GPIO_IER_SET | GPIO_INT_CB1)        ; Enable CB1 interrupt
-000049r 2  8D 0E 94       sta GPIO_IER
-00004Cr 2  60             rts
-00004Dr 2               
-00004Dr 2               ; Initialize the Serial Card (6551)
-00004Dr 2               ; Modifies: Flags, A
-00004Dr 2               InitSC:
-00004Dr 2  A9 1F          lda     #$1F                  ; 8-N-1, 19200 baud
-00004Fr 2  8D 03 90       sta     SC_CTRL
-000052r 2  A9 09          lda     #$09                  ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-000054r 2  8D 02 90       sta     SC_CMD
-000057r 2  60             rts
-000058r 2               
-000058r 2               ; Initialze the Sound Card (6581)
-000058r 2               ; Modifies: Flags, A, X
-000058r 2               InitSID:
-000058r 2  A9 00          lda #$00
-00005Ar 2  A2 1D          ldx #$1D                      ; Clear all 29 SID registers
-00005Cr 2               @InitSIDLoop:
-00005Cr 2  9D 00 98       sta SID_V1_FREQ_LO,x          ; Clear register
-00005Fr 2  CA             dex
-000060r 2  10 FA          bpl @InitSIDLoop              ; Loop until all registers cleared
-000062r 2  A9 0F          lda #$0F                      ; Set volume to maximum
-000064r 2  8D 18 98       sta SID_MODE_VOL
-000067r 2  60             rts
-000068r 2               
-000068r 2               ; Initialize the Video Card (TMS9918)
-000068r 2               ; Modifies: Flags, A, X
-000068r 2               InitVideo:
-000068r 2  A2 00          ldx #$00                      ; Start with register 0
-00006Ar 2               @InitVideoLoop:
-00006Ar 2  BD rr rr       lda @InitVideoRegData,x       ; Load register value
-00006Dr 2  8D 01 9C       sta VC_REG                    ; Write data byte
-000070r 2  8A             txa
-000071r 2  09 80          ora #$80                      ; Set bit 7 to indicate register write
-000073r 2  8D 01 9C       sta VC_REG                    ; Write register number
-000076r 2  E8             inx
-000077r 2  E0 08          cpx #$08                      ; Check if all 8 registers written
-000079r 2  D0 EF          bne @InitVideoLoop            ; Continue until done
-00007Br 2  60             rts
-00007Cr 2               @InitVideoRegData:
-00007Cr 2  00             .byte $00                     ; R0: Mode control (no external video)
-00007Dr 2  D0             .byte $D0                     ; R1: 16K, display on, interrupt off, text mode M1
-00007Er 2  00             .byte $00                     ; R2: Name table at $0000 (0x00 * 0x400)
-00007Fr 2  00             .byte $00                     ; R3: Color table (not used in text mode)
-000080r 2  01             .byte $01                     ; R4: Pattern table at $0800 (0x01 * 0x800)
-000081r 2  00             .byte $00                     ; R5: Sprite attribute table (not used in text mode)
-000082r 2  00             .byte $00                     ; R6: Sprite pattern table (not used in text mode)
-000083r 2  F0             .byte $F0                     ; R7: White text on black background
-000084r 2               
-000084r 2               ; Initialize the character set
-000084r 2               ; Modifies: Flags, A, X, Y
-000084r 2               InitCharacters:
-000084r 2                 ; Set VRAM write address to $0800 (pattern table base)
-000084r 2  A9 00          lda #$00                      ; Low byte of address
-000086r 2  8D 01 9C       sta VC_REG
-000089r 2  A9 48          lda #$48                      ; High byte ($08) OR $40 for write mode
-00008Br 2  8D 01 9C       sta VC_REG
-00008Er 2                 ; Set up source pointer
-00008Er 2  A9 rr          lda #<CharacterSet
-000090r 2  85 02          sta STR_PTR                   ; Use STR_PTR ($02-$03) for character set pointer
-000092r 2  A9 rr          lda #>CharacterSet
-000094r 2  85 03          sta STR_PTR + 1
-000096r 2                 ; Copy 2048 bytes (8 pages of 256 bytes each)
-000096r 2  A2 08          ldx #$08                      ; 8 pages to copy
-000098r 2  A0 00          ldy #$00                      ; Byte counter within page
-00009Ar 2               @InitCharPageLoop:
-00009Ar 2  B1 02          lda (STR_PTR),y               ; Load from character set
-00009Cr 2  8D 00 9C       sta VC_DATA                   ; Write to VRAM
-00009Fr 2  C8             iny
-0000A0r 2  D0 F8          bne @InitCharPageLoop         ; Loop until page complete (256 bytes)
-0000A2r 2  E6 03          inc STR_PTR + 1               ; Move to next page
-0000A4r 2  CA             dex
-0000A5r 2  D0 F3          bne @InitCharPageLoop         ; Loop for all 8 pages
-0000A7r 2  60             rts
-0000A8r 2               
-0000A8r 2               ; Initialize the INPUT_BUFFER
-0000A8r 2               ; Modifies: Flags, A
-0000A8r 2               InitBuffer:
-0000A8r 2  A9 00          lda #$00
-0000AAr 2  85 00          sta READ_PTR                  ; Init read and write pointers
-0000ACr 2  85 01          sta WRITE_PTR
-0000AEr 2  60             rts
-0000AFr 2               
-0000AFr 2               ; Write a character from the A register to the INPUT_BUFFER
-0000AFr 2               ; Modifies: Flags, X
-0000AFr 2               WriteBuffer:
-0000AFr 2  A6 01          ldx WRITE_PTR
-0000B1r 2  9D 00 02       sta INPUT_BUFFER,x
-0000B4r 2  E6 01          inc WRITE_PTR
-0000B6r 2  60             rts
-0000B7r 2               
-0000B7r 2               ; Read a character from the INPUT_BUFFER and store it in A register
-0000B7r 2               ; Modifies: Flags, X, A
-0000B7r 2               ReadBuffer:
-0000B7r 2  A6 00          ldx READ_PTR
-0000B9r 2  BD 00 02       lda INPUT_BUFFER,x
-0000BCr 2  E6 00          inc READ_PTR
-0000BEr 2  60             rts
-0000BFr 2               
-0000BFr 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
-0000BFr 2               ; Modifies: Flags, A
-0000BFr 2               BufferSize:
-0000BFr 2  A5 01          lda WRITE_PTR
-0000C1r 2  38             sec
-0000C2r 2  E5 00          sbc READ_PTR
-0000C4r 2  60             rts
-0000C5r 2               
-0000C5r 2               ; Get a character from the INPUT_BUFFER if available
-0000C5r 2               ; On return, carry flag indicates whether a character was available
-0000C5r 2               ; If character available the character will be in the A register
-0000C5r 2               ; Modifies: Flags, A
-0000C5r 2               Chrin:
-0000C5r 2  DA             phx
-0000C6r 2  20 rr rr       jsr BufferSize                ; Check for character available
-0000C9r 2  F0 1E          beq @ChrinNoChar              ; Branch if no character available
-0000CBr 2  20 rr rr       jsr ReadBuffer                ; Read the character from the buffer
-0000CEr 2  20 rr rr       jsr Chrout                    ; Echo
-0000D1r 2  48             pha
-0000D2r 2  20 rr rr       jsr BufferSize
-0000D5r 2  C9 B0          cmp #$B0                      ; Check if buffer is mostly full
-0000D7r 2  90 07          bcc @ChrinNotFull             ; Branch if buffer size < $B0
-0000D9r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-0000DBr 2  8D 02 90       sta SC_CMD
-0000DEr 2  80 05          bra @ChrinExit
-0000E0r 2               @ChrinNotFull:
-0000E0r 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-0000E2r 2  8D 02 90       sta SC_CMD
-0000E5r 2               @ChrinExit:
-0000E5r 2  68             pla
-0000E6r 2  FA             plx
-0000E7r 2  38             sec
-0000E8r 2  60             rts
-0000E9r 2               @ChrinNoChar:
-0000E9r 2  FA             plx
-0000EAr 2  18             clc
-0000EBr 2  60             rts
-0000ECr 2               
-0000ECr 2               ; Output a character from the A register to the Serial Card
-0000ECr 2               ; Modifies: Flags
-0000ECr 2               Chrout:
-0000ECr 2  8D 00 90       sta SC_DATA
-0000EFr 2  48             pha
-0000F0r 2               @ChroutWait:
-0000F0r 2  AD 01 90       lda SC_STATUS
-0000F3r 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
-0000F5r 2  F0 F9          beq @ChroutWait               ; Loop if TX buffer not empty
-0000F7r 2  68             pla
-0000F8r 2  60             rts
-0000F9r 2               
-0000F9r 2               ; Play a short beep sound
-0000F9r 2               ; Modifies: Flags, A, X, Y
-0000F9r 2               Beep:
-0000F9r 2  A9 09          lda #$09                      ; Set Attack = 0, Decay = 9 (fast)
-0000FBr 2  8D 05 98       sta SID_V1_AD
-0000FEr 2  A9 00          lda #$00                      ; Set Sustain = 0, Release = 0
-000100r 2  8D 06 98       sta SID_V1_SR
-000103r 2  A9 20          lda #$20                      ; Frequency low byte (~8000 Hz / 1000 Hz tone)
-000105r 2  8D 00 98       sta SID_V1_FREQ_LO
-000108r 2  A9 1F          lda #$1F                      ; Frequency high byte (for ~1000 Hz)
-00010Ar 2  8D 01 98       sta SID_V1_FREQ_HI
-00010Dr 2  A9 11          lda #$11                      ; Triangle wave + Gate on
-00010Fr 2  8D 04 98       sta SID_V1_CTRL
-000112r 2                 ; Delay for beep duration
-000112r 2  A2 F0          ldx #$F0                      ; Outer loop counter
-000114r 2               @BeepDelay1:
-000114r 2  A0 FF          ldy #$FF                      ; Inner loop counter
-000116r 2               @BeepDelay2:
-000116r 2  88             dey
-000117r 2  D0 FD          bne @BeepDelay2
-000119r 2  CA             dex
-00011Ar 2  D0 F8          bne @BeepDelay1
-00011Cr 2  A9 10          lda #$10                      ; Gate off (stop sound)
-00011Er 2  8D 04 98       sta SID_V1_CTRL
-000121r 2  60             rts
-000122r 2               
-000122r 2               ; Draw the splash screen
-000122r 2               ; Modifies: Flags, A, X, Y
-000122r 2               Splash:
-000122r 2                 ; Set VRAM write address to center of screen
-000122r 2                 ; Name table base = $0000, center position = row 11, col 10
-000122r 2                 ; Address = $0000 + (11 * 40) + 6 = $01B8 + $0A = $01C2
-000122r 2  A9 C2          lda #$C2                      ; Low byte of address
-000124r 2  8D 01 9C       sta VC_REG
-000127r 2  A9 41          lda #$41                      ; High byte ($01) OR $40 for write mode
-000129r 2  8D 01 9C       sta VC_REG
-00012Cr 2                 ; Set up string pointer
-00012Cr 2  A9 rr          lda #<@SplashText
-00012Er 2  85 02          sta STR_PTR
-000130r 2  A9 rr          lda #>@SplashText
-000132r 2  85 03          sta STR_PTR + 1
-000134r 2                 ; Write string to VRAM
-000134r 2  A0 00          ldy #$00
-000136r 2               @SplashLoop:
-000136r 2  B1 02          lda (STR_PTR),y
-000138r 2  F0 06          beq @SplashDone               ; Exit if null terminator
-00013Ar 2  8D 00 9C       sta VC_DATA                   ; Write character to VRAM
-00013Dr 2  C8             iny
-00013Er 2  D0 F6          bne @SplashLoop
-000140r 2               @SplashDone:
-000140r 2  60             rts
-000141r 2  2D 2D 20 54  @SplashText: .asciiz "-- The 'COB' v1.0 --"
-000145r 2  68 65 20 27  
-000149r 2  43 4F 42 27  
-000156r 2               
-000156r 2               ; NMI Handler
-000156r 2               Nmi:
-000156r 2  40             rti
-000157r 2               
-000157r 2               ; BRK Handler — default dispatches to WozMon
-000157r 2               ; On entry the stack holds the processor-pushed state from the BRK:
-000157r 2               ;   SP+1 = saved P, SP+2 = PCL (PC+2), SP+3 = PCH
-000157r 2               ; State is saved to BRK_P/BRK_PCL/BRK_PCH for inspection by a custom handler.
-000157r 2               Break:
-000157r 2  68             pla                           ; Pull saved P
-000158r 2  8D 10 03       sta BRK_P
-00015Br 2  68             pla                           ; Pull saved PCL (PC+2)
-00015Cr 2  8D 11 03       sta BRK_PCL
-00015Fr 2  68             pla                           ; Pull saved PCH
-000160r 2  8D 12 03       sta BRK_PCH
-000163r 2  4C rr rr       jmp WozMon
-000166r 2               
-000166r 2               ; IRQ Handler
-000166r 2               Irq:
+000000r 2               ; === Kernal Jump Table ($A000-$A0FF) ===
+000000r 2               ; 85 slots of 3-byte JMP instructions plus 1 padding byte
+000000r 2               ; Provides stable entry points for external code and cartridges
+000000r 2               
+000000r 2  4C rr rr     Chrout:         jmp ChroutDispatch    ; $A000 - Output char (dispatched by IO_MODE)
+000003r 2  4C rr rr     Chrin:          jmp ChrinImpl         ; $A003 - Input char from buffer
+000006r 2  4C rr rr     WriteBuffer:    jmp WriteBufferImpl   ; $A006 - Write byte to input buffer
+000009r 2  4C rr rr     ReadBuffer:     jmp ReadBufferImpl    ; $A009 - Read byte from input buffer
+00000Cr 2  4C rr rr     BufferSize:     jmp BufferSizeImpl    ; $A00C - Get buffer count
+00000Fr 2  4C rr rr     InitVideo:      jmp InitVideoImpl     ; $A00F - Initialize TMS9918
+000012r 2  4C rr rr     InitKB:         jmp InitKBImpl        ; $A012 - Initialize GPIO/VIA keyboard
+000015r 2  4C rr rr     InitSC:         jmp InitSCImpl        ; $A015 - Initialize serial 6551
+000018r 2  4C rr rr     InitSID:        jmp InitSIDImpl       ; $A018 - Initialize SID
+00001Br 2  4C rr rr     Beep:           jmp BeepImpl          ; $A01B - Play beep tone
+00001Er 2  4C rr rr     VideoClear:     jmp VideoClearImpl    ; $A01E - Clear video screen
+000021r 2  4C rr rr     VideoPutChar:   jmp VideoPutCharImpl  ; $A021 - Write char at cursor
+000024r 2  4C rr rr     VideoSetCursor: jmp VideoSetCursorImpl; $A024 - Set cursor (X=col, Y=row)
+000027r 2  4C rr rr     VideoGetCursor: jmp VideoGetCursorImpl; $A027 - Get cursor position
+00002Ar 2  4C rr rr     VideoScroll:    jmp VideoScrollImpl   ; $A02A - Scroll screen up one line
+00002Dr 2  4C rr rr     SerialChrout:   jmp SerialChroutImpl  ; $A02D - Direct serial output (bypass IO_MODE)
+000030r 2  4C rr rr     ReadJoystick1:  jmp UnimplementedStub ; $A030 - Read joystick 1
+000033r 2  4C rr rr     ReadJoystick2:  jmp UnimplementedStub ; $A033 - Read joystick 2
+000036r 2  4C rr rr     RtcReadTime:    jmp UnimplementedStub ; $A036 - Read RTC time
+000039r 2  4C rr rr     RtcReadDate:    jmp UnimplementedStub ; $A039 - Read RTC date
+00003Cr 2  4C rr rr     RtcWriteTime:   jmp UnimplementedStub ; $A03C - Set RTC time
+00003Fr 2  4C rr rr     RtcWriteDate:   jmp UnimplementedStub ; $A03F - Set RTC date
+000042r 2  4C rr rr     StReadSector:   jmp UnimplementedStub ; $A042 - Read CF sector
+000045r 2  4C rr rr     StWriteSector:  jmp UnimplementedStub ; $A045 - Write CF sector
+000048r 2  4C rr rr     StWaitReady:    jmp UnimplementedStub ; $A048 - Wait CF ready
+00004Br 2  4C rr rr     SetIOMode:      jmp SetIOModeImpl     ; $A04B - Set IO_MODE
+00004Er 2  4C rr rr     GetIOMode:      jmp GetIOModeImpl     ; $A04E - Get IO_MODE
+000051r 2               
+000051r 2               ; Reserved entries ($A051-$A0FE)
+000051r 2  4C rr rr 4C  .repeat 58
+000055r 2  rr rr 4C rr  
+000059r 2  rr 4C rr rr  
+0000FFr 2                               jmp UnimplementedStub
+0000FFr 2               .endrepeat
+0000FFr 2  00           .byte $00                             ; Pad to 256 bytes ($A0FF)
+000100r 2               
+000100r 2               ; === Kernal Implementation ===
+000100r 2               
+000100r 2               ; Stub for unimplemented jump table entries
+000100r 2               UnimplementedStub:
+000100r 2  60             rts
+000101r 2               
+000101r 2               ; Chrout dispatcher — routes output based on IO_MODE
+000101r 2               ; Input: A = character to output
+000101r 2               ; Modifies: Flags
+000101r 2               ChroutDispatch:
+000101r 2  48             pha
+000102r 2  AD 06 03       lda IO_MODE
+000105r 2  29 01          and #$01                      ; Bit 0: 0=video, 1=serial
+000107r 2  D0 04          bne @Serial
+000109r 2  68             pla
+00010Ar 2  4C rr rr       jmp VideoChroutImpl
+00010Dr 2               @Serial:
+00010Dr 2  68             pla
+00010Er 2  4C rr rr       jmp SerialChroutImpl
+000111r 2               
+000111r 2               ; Set IO_MODE
+000111r 2               ; Input: A = mode (bit 0: 0=video, 1=serial)
+000111r 2               SetIOModeImpl:
+000111r 2  8D 06 03       sta IO_MODE
+000114r 2  60             rts
+000115r 2               
+000115r 2               ; Get IO_MODE
+000115r 2               ; Output: A = current IO_MODE
+000115r 2               GetIOModeImpl:
+000115r 2  AD 06 03       lda IO_MODE
+000118r 2  60             rts
+000119r 2               
+000119r 2               ; === TMS9918 Video Driver ===
+000119r 2               
+000119r 2               ; VideoClear — Fill name table (960 bytes at VRAM $0000) with spaces, reset cursor to (0,0)
+000119r 2               ; Modifies: Flags, A, X, Y
+000119r 2               VideoClearImpl:
+000119r 2                 ; Set VRAM write address to $0000 (name table base)
+000119r 2  A9 00          lda #$00
+00011Br 2  8D 01 9C       sta VC_REG
+00011Er 2  A9 40          lda #$40                      ; High byte $00 OR $40 for write mode
+000120r 2  8D 01 9C       sta VC_REG
+000123r 2                 ; Fill 960 bytes with space ($20) — 3 full pages + 192 bytes
+000123r 2  A9 20          lda #$20
+000125r 2  A0 00          ldy #$00
+000127r 2  A2 03          ldx #$03                      ; 3 full pages (768 bytes)
+000129r 2               @VideoClearPage:
+000129r 2  8D 00 9C       sta VC_DATA
+00012Cr 2  C8             iny
+00012Dr 2  D0 FA          bne @VideoClearPage
+00012Fr 2  CA             dex
+000130r 2  D0 F7          bne @VideoClearPage
+000132r 2                 ; Remaining 192 bytes (960 - 768)
+000132r 2  A0 C0          ldy #192
+000134r 2               @VideoClearRem:
+000134r 2  8D 00 9C       sta VC_DATA
+000137r 2  88             dey
+000138r 2  D0 FA          bne @VideoClearRem
+00013Ar 2                 ; Reset cursor to (0,0)
+00013Ar 2  9C 07 03       stz VID_CURSOR_X
+00013Dr 2  9C 08 03       stz VID_CURSOR_Y
+000140r 2  9C 09 03       stz VID_CURSOR_ADDR
+000143r 2  9C 0A 03       stz VID_CURSOR_ADDR + 1
+000146r 2  60             rts
+000147r 2               
+000147r 2               ; VideoSetCursor — Set cursor position
+000147r 2               ; Input: X = column (0-39), Y = row (0-23)
+000147r 2               ; Calculates VRAM address = Y * 40 + X and stores in VID_CURSOR_ADDR
+000147r 2               ; Modifies: Flags, A
+000147r 2               VideoSetCursorImpl:
+000147r 2  8E 07 03       stx VID_CURSOR_X
+00014Ar 2  8C 08 03       sty VID_CURSOR_Y
+00014Dr 2                 ; Calculate VRAM address = Y * 40 + X
+00014Dr 2                 ; Y * 40 = Y * 32 + Y * 8
+00014Dr 2  A9 00          lda #$00
+00014Fr 2  8D 0A 03       sta VID_CURSOR_ADDR + 1       ; Clear high byte
+000152r 2  98             tya                           ; A = row
+000153r 2                 ; Multiply by 8: shift left 3
+000153r 2  0A             asl a
+000154r 2  2E 0A 03       rol VID_CURSOR_ADDR + 1
+000157r 2  0A             asl a
+000158r 2  2E 0A 03       rol VID_CURSOR_ADDR + 1
+00015Br 2  0A             asl a
+00015Cr 2  2E 0A 03       rol VID_CURSOR_ADDR + 1
+00015Fr 2  8D 09 03       sta VID_CURSOR_ADDR           ; Store Y*8 low byte
+000162r 2                 ; Save Y*8 for later addition
+000162r 2  48             pha
+000163r 2  AD 0A 03       lda VID_CURSOR_ADDR + 1
 000166r 2  48             pha
-000167r 2  5A             phy
-000168r 2  DA             phx
-000169r 2  BA             tsx                           ; Get stack pointer to check saved status register
-00016Ar 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
-00016Dr 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
-00016Fr 2  D0 2C          bne @IrqBrk                   ; Branch if this was a BRK instruction
-000171r 2               @IrqSc:
-000171r 2  AD 01 90       lda SC_STATUS
-000174r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-000176r 2  F0 14          beq @IrqCheckKB               ; If not, check keyboard
-000178r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
-00017Br 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-00017Er 2  20 rr rr       jsr BufferSize
-000181r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-000183r 2  90 14          bcc @IrqExit                  ; If not, exit
-000185r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000187r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-00018Ar 2  80 0D          bra @IrqExit
-00018Cr 2               @IrqCheckKB:
-00018Cr 2  AD 0D 94       lda GPIO_IFR
-00018Fr 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (keyboard data ready) caused the interrupt
-000191r 2  F0 06          beq @IrqExit                  ; If not, exit
-000193r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from keyboard (also clears CB1 IFR flag)
-000196r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000199r 2               @IrqExit:
-000199r 2  FA             plx
-00019Ar 2  7A             ply
-00019Br 2  68             pla
-00019Cr 2  40             rti
-00019Dr 2               @IrqBrk:
-00019Dr 2  FA             plx                           ; Restore saved registers
-00019Er 2  7A             ply
-00019Fr 2  68             pla
-0001A0r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
-0001A1r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
-0001A4r 2               
-0001A4r 2               ; NMI Vector
-0001A4r 2               NmiVec:
-0001A4r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
-0001A7r 2               
-0001A7r 2               ; Reset Vector
-0001A7r 2               ResetVec:
-0001A7r 2  4C rr rr       jmp Reset                     ; Initialize the system
-0001AAr 2               
-0001AAr 2               ; IRQ Vector
-0001AAr 2               IrqVec:
-0001AAr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
-0001ADr 2               
-0001ADr 1               .segment "CHARS"
+000167r 2                 ; Multiply original row by 32: shift left 5 total (Y*8 << 2)
+000167r 2  AD 09 03       lda VID_CURSOR_ADDR
+00016Ar 2  0A             asl a
+00016Br 2  2E 0A 03       rol VID_CURSOR_ADDR + 1
+00016Er 2  0A             asl a
+00016Fr 2  2E 0A 03       rol VID_CURSOR_ADDR + 1
+000172r 2  8D 09 03       sta VID_CURSOR_ADDR           ; Now holds Y*32 low byte
+000175r 2                 ; Add Y*8 + Y*32
+000175r 2  68             pla                           ; Restore Y*8 high byte
+000176r 2  6D 0A 03       adc VID_CURSOR_ADDR + 1       ; Carry still valid from last rol
+000179r 2  8D 0A 03       sta VID_CURSOR_ADDR + 1
+00017Cr 2  68             pla                           ; Restore Y*8 low byte
+00017Dr 2  18             clc
+00017Er 2  6D 09 03       adc VID_CURSOR_ADDR
+000181r 2  8D 09 03       sta VID_CURSOR_ADDR
+000184r 2  90 03          bcc @NoCarry
+000186r 2  EE 0A 03       inc VID_CURSOR_ADDR + 1
+000189r 2               @NoCarry:
+000189r 2                 ; Add X (column)
+000189r 2  8A             txa
+00018Ar 2  18             clc
+00018Br 2  6D 09 03       adc VID_CURSOR_ADDR
+00018Er 2  8D 09 03       sta VID_CURSOR_ADDR
+000191r 2  90 03          bcc @SetCursorDone
+000193r 2  EE 0A 03       inc VID_CURSOR_ADDR + 1
+000196r 2               @SetCursorDone:
+000196r 2  60             rts
+000197r 2               
+000197r 2               ; VideoGetCursor — Get cursor position
+000197r 2               ; Output: X = column (0-39), Y = row (0-23)
+000197r 2               ; Modifies: Flags
+000197r 2               VideoGetCursorImpl:
+000197r 2  AE 07 03       ldx VID_CURSOR_X
+00019Ar 2  AC 08 03       ldy VID_CURSOR_Y
+00019Dr 2  60             rts
+00019Er 2               
+00019Er 2               ; VideoPutChar — Write a single character to VRAM at VID_CURSOR_ADDR
+00019Er 2               ; Input: A = character to write
+00019Er 2               ; Modifies: Flags
+00019Er 2               VideoPutCharImpl:
+00019Er 2  48             pha
+00019Fr 2                 ; Set VRAM write address from VID_CURSOR_ADDR
+00019Fr 2  AD 09 03       lda VID_CURSOR_ADDR
+0001A2r 2  8D 01 9C       sta VC_REG                    ; Low byte of address
+0001A5r 2  AD 0A 03       lda VID_CURSOR_ADDR + 1
+0001A8r 2  09 40          ora #$40                      ; Set bit 6 for write mode
+0001AAr 2  8D 01 9C       sta VC_REG                    ; High byte with write flag
+0001ADr 2  68             pla
+0001AEr 2  8D 00 9C       sta VC_DATA                   ; Write character to VRAM
+0001B1r 2  60             rts
+0001B2r 2               
+0001B2r 2               ; VideoScroll — Scroll screen up one line
+0001B2r 2               ; Copies VRAM rows 1-23 to rows 0-22 (920 bytes), clears row 23 with spaces
+0001B2r 2               ; Uses SCROLL_BUF ($0320, 40 bytes) as temporary storage
+0001B2r 2               ; Modifies: Flags, A, X, Y
+0001B2r 2               VideoScrollImpl:
+0001B2r 2                 ; Save STR_PTR (may be in use by caller, e.g. VideoPrintStr)
+0001B2r 2  A5 02          lda STR_PTR
+0001B4r 2  48             pha
+0001B5r 2  A5 03          lda STR_PTR + 1
+0001B7r 2  48             pha
+0001B8r 2                 ; Source starts at row 1 (VRAM offset 40=$28), dest at row 0 (offset 0)
+0001B8r 2                 ; We process 23 rows, copying each row up by one
+0001B8r 2  A9 28          lda #<40                      ; Source address low = 40 (row 1)
+0001BAr 2  85 02          sta STR_PTR
+0001BCr 2  A9 00          lda #>40
+0001BEr 2  85 03          sta STR_PTR + 1
+0001C0r 2               
+0001C0r 2  A2 17          ldx #23                       ; 23 rows to copy
+0001C2r 2               @ScrollRowLoop:
+0001C2r 2  DA             phx                           ; Save row counter
+0001C3r 2               
+0001C3r 2                 ; Set VRAM read address (source row)
+0001C3r 2  A5 02          lda STR_PTR
+0001C5r 2  8D 01 9C       sta VC_REG
+0001C8r 2  A5 03          lda STR_PTR + 1
+0001CAr 2  8D 01 9C       sta VC_REG                    ; Bit 6 clear = read mode
+0001CDr 2                 ; Read 40 bytes into SCROLL_BUF
+0001CDr 2  A0 00          ldy #$00
+0001CFr 2               @ScrollRead:
+0001CFr 2  AD 00 9C       lda VC_DATA
+0001D2r 2  99 20 03       sta SCROLL_BUF,y
+0001D5r 2  C8             iny
+0001D6r 2  C0 28          cpy #40
+0001D8r 2  D0 F5          bne @ScrollRead
+0001DAr 2               
+0001DAr 2                 ; Set VRAM write address (dest = source - 40)
+0001DAr 2  A5 02          lda STR_PTR
+0001DCr 2  38             sec
+0001DDr 2  E9 28          sbc #40
+0001DFr 2  8D 01 9C       sta VC_REG                    ; Dest address low
+0001E2r 2  A5 03          lda STR_PTR + 1
+0001E4r 2  E9 00          sbc #$00
+0001E6r 2  09 40          ora #$40                      ; Set bit 6 for write mode
+0001E8r 2  8D 01 9C       sta VC_REG                    ; Dest address high
+0001EBr 2               
+0001EBr 2                 ; Write 40 bytes from SCROLL_BUF
+0001EBr 2  A0 00          ldy #$00
+0001EDr 2               @ScrollWrite:
+0001EDr 2  B9 20 03       lda SCROLL_BUF,y
+0001F0r 2  8D 00 9C       sta VC_DATA
+0001F3r 2  C8             iny
+0001F4r 2  C0 28          cpy #40
+0001F6r 2  D0 F5          bne @ScrollWrite
+0001F8r 2               
+0001F8r 2                 ; Advance source pointer by 40 for next row
+0001F8r 2  A5 02          lda STR_PTR
+0001FAr 2  18             clc
+0001FBr 2  69 28          adc #40
+0001FDr 2  85 02          sta STR_PTR
+0001FFr 2  90 02          bcc @ScrollNoCarry
+000201r 2  E6 03          inc STR_PTR + 1
+000203r 2               @ScrollNoCarry:
+000203r 2  FA             plx                           ; Restore row counter
+000204r 2  CA             dex
+000205r 2  D0 BB          bne @ScrollRowLoop
+000207r 2               
+000207r 2                 ; Clear bottom row (row 23) with spaces
+000207r 2                 ; Row 23 address = 23 * 40 = 920 = $0398
+000207r 2  A9 98          lda #$98                      ; Low byte of $0398
+000209r 2  8D 01 9C       sta VC_REG
+00020Cr 2  A9 03          lda #$03
+00020Er 2  09 40          ora #$40                      ; Write mode
+000210r 2  8D 01 9C       sta VC_REG
+000213r 2  A9 20          lda #$20                      ; Space character
+000215r 2  A0 28          ldy #40
+000217r 2               @ScrollClearBottom:
+000217r 2  8D 00 9C       sta VC_DATA
+00021Ar 2  88             dey
+00021Br 2  D0 FA          bne @ScrollClearBottom
+00021Dr 2                 ; Restore STR_PTR
+00021Dr 2  68             pla
+00021Er 2  85 03          sta STR_PTR + 1
+000220r 2  68             pla
+000221r 2  85 02          sta STR_PTR
+000223r 2  60             rts
+000224r 2               
+000224r 2               ; VideoChrout — Output character to video display
+000224r 2               ; Handles control characters: CR ($0D), LF ($0A), BS ($08), BEL ($07)
+000224r 2               ; Auto-wraps at column 40, auto-scrolls at row 24
+000224r 2               ; Input: A = character to output
+000224r 2               ; Preserves: A, X, Y (callers like ChrinImpl, BasPrintStr and Wozmon depend on this)
+000224r 2               ; Modifies: Flags
+000224r 2               VideoChroutImpl:
+000224r 2  48             pha
+000225r 2  DA             phx
+000226r 2  5A             phy
+000227r 2  C9 0D          cmp #$0D                      ; Carriage Return?
+000229r 2  F0 43          beq @VideoCR
+00022Br 2  C9 0A          cmp #$0A                      ; Line Feed?
+00022Dr 2  F0 4C          beq @VideoLF
+00022Fr 2  C9 08          cmp #$08                      ; Backspace?
+000231r 2  F0 65          beq @VideoBS
+000233r 2  C9 07          cmp #$07                      ; Bell?
+000235r 2  F0 79          beq @VideoBEL
+000237r 2                 ; Regular printable character — write at cursor and advance
+000237r 2  20 rr rr       jsr VideoPutChar              ; Write char to VRAM at cursor
+00023Ar 2                 ; Advance cursor
+00023Ar 2  EE 07 03       inc VID_CURSOR_X
+00023Dr 2                 ; Increment VRAM address
+00023Dr 2  EE 09 03       inc VID_CURSOR_ADDR
+000240r 2  D0 03          bne @CheckWrap
+000242r 2  EE 0A 03       inc VID_CURSOR_ADDR + 1
+000245r 2               @CheckWrap:
+000245r 2  AD 07 03       lda VID_CURSOR_X
+000248r 2  C9 28          cmp #40                       ; Past last column?
+00024Ar 2  90 1E          bcc @VideoChroutDone          ; No, done
+00024Cr 2                 ; Auto-wrap: CR + LF
+00024Cr 2  9C 07 03       stz VID_CURSOR_X
+00024Fr 2  EE 08 03       inc VID_CURSOR_Y
+000252r 2  AD 08 03       lda VID_CURSOR_Y
+000255r 2  C9 18          cmp #24                       ; Past last row?
+000257r 2  90 08          bcc @WrapRecalc
+000259r 2                 ; Need to scroll
+000259r 2  20 rr rr       jsr VideoScroll
+00025Cr 2  A9 17          lda #23
+00025Er 2  8D 08 03       sta VID_CURSOR_Y
+000261r 2               @WrapRecalc:
+000261r 2  AE 07 03       ldx VID_CURSOR_X
+000264r 2  AC 08 03       ldy VID_CURSOR_Y
+000267r 2  20 rr rr       jsr VideoSetCursor            ; Recalculate VRAM address
+00026Ar 2               @VideoChroutDone:
+00026Ar 2  7A             ply
+00026Br 2  FA             plx
+00026Cr 2  68             pla
+00026Dr 2  60             rts
+00026Er 2               
+00026Er 2               @VideoCR:
+00026Er 2  9C 07 03       stz VID_CURSOR_X              ; Column = 0
+000271r 2  A2 00          ldx #$00
+000273r 2  AC 08 03       ldy VID_CURSOR_Y
+000276r 2  20 rr rr       jsr VideoSetCursor            ; Recalculate VRAM address
+000279r 2  80 EF          bra @VideoChroutDone
+00027Br 2               
+00027Br 2               @VideoLF:
+00027Br 2  EE 08 03       inc VID_CURSOR_Y
+00027Er 2  AD 08 03       lda VID_CURSOR_Y
+000281r 2  C9 18          cmp #24                       ; Past last row?
+000283r 2  90 08          bcc @LFRecalc
+000285r 2  20 rr rr       jsr VideoScroll
+000288r 2  A9 17          lda #23
+00028Ar 2  8D 08 03       sta VID_CURSOR_Y
+00028Dr 2               @LFRecalc:
+00028Dr 2  AE 07 03       ldx VID_CURSOR_X
+000290r 2  AC 08 03       ldy VID_CURSOR_Y
+000293r 2  20 rr rr       jsr VideoSetCursor
+000296r 2  80 D2          bra @VideoChroutDone
+000298r 2               
+000298r 2               @VideoBS:
+000298r 2  AD 07 03       lda VID_CURSOR_X
+00029Br 2  F0 CD          beq @VideoChroutDone          ; Already at column 0, ignore
+00029Dr 2  CE 07 03       dec VID_CURSOR_X
+0002A0r 2  AE 07 03       ldx VID_CURSOR_X
+0002A3r 2  AC 08 03       ldy VID_CURSOR_Y
+0002A6r 2  20 rr rr       jsr VideoSetCursor            ; Recalculate VRAM address
+0002A9r 2  A9 20          lda #$20                      ; Write space to erase character
+0002ABr 2  20 rr rr       jsr VideoPutChar
+0002AEr 2  80 BA          bra @VideoChroutDone
+0002B0r 2               
+0002B0r 2               @VideoBEL:
+0002B0r 2  20 rr rr       jsr Beep
+0002B3r 2  80 B5          bra @VideoChroutDone
+0002B5r 2               
+0002B5r 2               ; VideoPrintStr — Print null-terminated string to video
+0002B5r 2               ; Input: STR_PTR ($02-$03) points to string
+0002B5r 2               ; Modifies: Flags, A, X, Y
+0002B5r 2               VideoPrintStrImpl:
+0002B5r 2  A0 00          ldy #$00
+0002B7r 2               @VideoPrintStrLoop:
+0002B7r 2  B1 02          lda (STR_PTR),y
+0002B9r 2  F0 08          beq @VideoPrintStrDone        ; Exit on null terminator
+0002BBr 2  5A             phy
+0002BCr 2  20 rr rr       jsr VideoChroutImpl           ; Output character via video
+0002BFr 2  7A             ply
+0002C0r 2  C8             iny
+0002C1r 2  D0 F4          bne @VideoPrintStrLoop        ; Max 256 chars per string
+0002C3r 2               @VideoPrintStrDone:
+0002C3r 2  60             rts
+0002C4r 2               
+0002C4r 2               ; Main entry point
+0002C4r 2               Reset:
+0002C4r 2  D8             cld                           ; Clear decimal mode
+0002C5r 2  78             sei                           ; Disable interrupts
+0002C6r 2               
+0002C6r 2  A2 FF          ldx #$ff
+0002C8r 2  9A             txs                           ; Reset the stack pointer
+0002C9r 2               
+0002C9r 2  A9 rr          lda #<Irq                     ; Initialize the IRQ pointer
+0002CBr 2  8D 00 03       sta IRQ_PTR
+0002CEr 2  A9 rr          lda #>Irq
+0002D0r 2  8D 01 03       sta IRQ_PTR + 1
+0002D3r 2               
+0002D3r 2  A9 rr          lda #<Break                   ; Initialize the BRK pointer
+0002D5r 2  8D 02 03       sta BRK_PTR
+0002D8r 2  A9 rr          lda #>Break
+0002DAr 2  8D 03 03       sta BRK_PTR + 1
+0002DDr 2               
+0002DDr 2  A9 rr          lda #<Nmi                     ; Initialize the NMI pointer
+0002DFr 2  8D 04 03       sta NMI_PTR
+0002E2r 2  A9 rr          lda #>Nmi
+0002E4r 2  8D 05 03       sta NMI_PTR + 1
+0002E7r 2               
+0002E7r 2  20 rr rr       jsr InitBuffer                ; Initialize the input buffer
+0002EAr 2  20 rr rr       jsr InitSC                    ; Initialize the Serial Card (6551)
+0002EDr 2  20 rr rr       jsr InitSID                   ; Initialize the Sound Card (6581)
+0002F0r 2  20 rr rr       jsr InitVideo                 ; Initialize the Video Card (TMS9918)
+0002F3r 2  20 rr rr       jsr InitCharacters            ; Initialize the character set
+0002F6r 2  20 rr rr       jsr InitKB                    ; Initialize the keyboard (VIA)
+0002F9r 2               
+0002F9r 2  A9 00          lda #$00                      ; Default to video output mode
+0002FBr 2  8D 06 03       sta IO_MODE
+0002FEr 2  9C 07 03       stz VID_CURSOR_X              ; Initialize video cursor state
+000301r 2  9C 08 03       stz VID_CURSOR_Y
+000304r 2  9C 09 03       stz VID_CURSOR_ADDR
+000307r 2  9C 0A 03       stz VID_CURSOR_ADDR + 1
+00030Ar 2               
+00030Ar 2  20 rr rr       jsr Beep                      ; Play the startup beep
+00030Dr 2  20 rr rr       jsr Splash                    ; Draw the splash screen
+000310r 2               
+000310r 2  58             cli                           ; Enable interrupts
+000311r 2               
+000311r 2                 ; Boot menu — wait for keypress
+000311r 2               @BootWait:
+000311r 2  20 rr rr       jsr BufferSize
+000314r 2  F0 FB          beq @BootWait                 ; Loop until a key is pressed
+000316r 2  20 rr rr       jsr ReadBuffer                ; Read the keypress
+000319r 2  C9 0D          cmp #$0D                      ; ENTER?
+00031Br 2  F0 06          beq @BootBASIC
+00031Dr 2  C9 1B          cmp #$1B                      ; ESC?
+00031Fr 2  F0 08          beq @BootMonitor
+000321r 2  80 EE          bra @BootWait                 ; Ignore other keys
+000323r 2               @BootBASIC:
+000323r 2  20 rr rr       jsr VideoClear                ; Clear screen before entering BASIC
+000326r 2  4C rr rr       jmp BasEntry
+000329r 2               @BootMonitor:
+000329r 2  20 rr rr       jsr VideoClear                ; Clear screen before entering Monitor
+00032Cr 2  4C rr rr       jmp WozMon
+00032Fr 2               
+00032Fr 2               ; Initialize the Keyboard via VIA (IO 6)
+00032Fr 2               ; Configures Port B as input, CB2 low (enable keyboard controller), CB1 falling-edge IRQ
+00032Fr 2               ; Modifies: Flags, A
+00032Fr 2               InitKBImpl:
+00032Fr 2  A9 00          lda #$00                      ; Port B all inputs (keyboard data bus)
+000331r 2  8D 02 94       sta GPIO_DDRB
+000334r 2  A9 C0          lda #(GPIO_PCR_CB2_LO | GPIO_PCR_CB1_NEG) ; CB2 manual output low + CB1 falling edge
+000336r 2  8D 0C 94       sta GPIO_PCR
+000339r 2  A9 90          lda #(GPIO_IER_SET | GPIO_INT_CB1)        ; Enable CB1 interrupt
+00033Br 2  8D 0E 94       sta GPIO_IER
+00033Er 2  60             rts
+00033Fr 2               
+00033Fr 2               ; Initialize the Serial Card (6551)
+00033Fr 2               ; Modifies: Flags, A
+00033Fr 2               InitSCImpl:
+00033Fr 2  A9 1F          lda     #$1F                  ; 8-N-1, 19200 baud
+000341r 2  8D 03 90       sta     SC_CTRL
+000344r 2  A9 09          lda     #$09                  ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+000346r 2  8D 02 90       sta     SC_CMD
+000349r 2  60             rts
+00034Ar 2               
+00034Ar 2               ; Initialze the Sound Card (6581)
+00034Ar 2               ; Modifies: Flags, A, X
+00034Ar 2               InitSIDImpl:
+00034Ar 2  A9 00          lda #$00
+00034Cr 2  A2 1D          ldx #$1D                      ; Clear all 29 SID registers
+00034Er 2               @InitSIDLoop:
+00034Er 2  9D 00 98       sta SID_V1_FREQ_LO,x          ; Clear register
+000351r 2  CA             dex
+000352r 2  10 FA          bpl @InitSIDLoop              ; Loop until all registers cleared
+000354r 2  A9 0F          lda #$0F                      ; Set volume to maximum
+000356r 2  8D 18 98       sta SID_MODE_VOL
+000359r 2  60             rts
+00035Ar 2               
+00035Ar 2               ; Initialize the Video Card (TMS9918)
+00035Ar 2               ; Modifies: Flags, A, X
+00035Ar 2               InitVideoImpl:
+00035Ar 2  A2 00          ldx #$00                      ; Start with register 0
+00035Cr 2               @InitVideoLoop:
+00035Cr 2  BD rr rr       lda @InitVideoRegData,x       ; Load register value
+00035Fr 2  8D 01 9C       sta VC_REG                    ; Write data byte
+000362r 2  8A             txa
+000363r 2  09 80          ora #$80                      ; Set bit 7 to indicate register write
+000365r 2  8D 01 9C       sta VC_REG                    ; Write register number
+000368r 2  E8             inx
+000369r 2  E0 08          cpx #$08                      ; Check if all 8 registers written
+00036Br 2  D0 EF          bne @InitVideoLoop            ; Continue until done
+00036Dr 2  60             rts
+00036Er 2               @InitVideoRegData:
+00036Er 2  00             .byte $00                     ; R0: Mode control (no external video)
+00036Fr 2  D0             .byte $D0                     ; R1: 16K, display on, interrupt off, text mode M1
+000370r 2  00             .byte $00                     ; R2: Name table at $0000 (0x00 * 0x400)
+000371r 2  00             .byte $00                     ; R3: Color table (not used in text mode)
+000372r 2  01             .byte $01                     ; R4: Pattern table at $0800 (0x01 * 0x800)
+000373r 2  00             .byte $00                     ; R5: Sprite attribute table (not used in text mode)
+000374r 2  00             .byte $00                     ; R6: Sprite pattern table (not used in text mode)
+000375r 2  F0             .byte $F0                     ; R7: White text on black background
+000376r 2               
+000376r 2               ; Initialize the character set
+000376r 2               ; Modifies: Flags, A, X, Y
+000376r 2               InitCharacters:
+000376r 2                 ; Set VRAM write address to $0800 (pattern table base)
+000376r 2  A9 00          lda #$00                      ; Low byte of address
+000378r 2  8D 01 9C       sta VC_REG
+00037Br 2  A9 48          lda #$48                      ; High byte ($08) OR $40 for write mode
+00037Dr 2  8D 01 9C       sta VC_REG
+000380r 2                 ; Set up source pointer
+000380r 2  A9 rr          lda #<CharacterSet
+000382r 2  85 02          sta STR_PTR                   ; Use STR_PTR ($02-$03) for character set pointer
+000384r 2  A9 rr          lda #>CharacterSet
+000386r 2  85 03          sta STR_PTR + 1
+000388r 2                 ; Copy 2048 bytes (8 pages of 256 bytes each)
+000388r 2  A2 08          ldx #$08                      ; 8 pages to copy
+00038Ar 2  A0 00          ldy #$00                      ; Byte counter within page
+00038Cr 2               @InitCharPageLoop:
+00038Cr 2  B1 02          lda (STR_PTR),y               ; Load from character set
+00038Er 2  8D 00 9C       sta VC_DATA                   ; Write to VRAM
+000391r 2  C8             iny
+000392r 2  D0 F8          bne @InitCharPageLoop         ; Loop until page complete (256 bytes)
+000394r 2  E6 03          inc STR_PTR + 1               ; Move to next page
+000396r 2  CA             dex
+000397r 2  D0 F3          bne @InitCharPageLoop         ; Loop for all 8 pages
+000399r 2  60             rts
+00039Ar 2               
+00039Ar 2               ; Initialize the INPUT_BUFFER
+00039Ar 2               ; Modifies: Flags, A
+00039Ar 2               InitBuffer:
+00039Ar 2  A9 00          lda #$00
+00039Cr 2  85 00          sta READ_PTR                  ; Init read and write pointers
+00039Er 2  85 01          sta WRITE_PTR
+0003A0r 2  60             rts
+0003A1r 2               
+0003A1r 2               ; Write a character from the A register to the INPUT_BUFFER
+0003A1r 2               ; Modifies: Flags, X
+0003A1r 2               WriteBufferImpl:
+0003A1r 2  A6 01          ldx WRITE_PTR
+0003A3r 2  9D 00 02       sta INPUT_BUFFER,x
+0003A6r 2  E6 01          inc WRITE_PTR
+0003A8r 2  60             rts
+0003A9r 2               
+0003A9r 2               ; Read a character from the INPUT_BUFFER and store it in A register
+0003A9r 2               ; Modifies: Flags, X, A
+0003A9r 2               ReadBufferImpl:
+0003A9r 2  A6 00          ldx READ_PTR
+0003ABr 2  BD 00 02       lda INPUT_BUFFER,x
+0003AEr 2  E6 00          inc READ_PTR
+0003B0r 2  60             rts
+0003B1r 2               
+0003B1r 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
+0003B1r 2               ; Modifies: Flags, A
+0003B1r 2               BufferSizeImpl:
+0003B1r 2  A5 01          lda WRITE_PTR
+0003B3r 2  38             sec
+0003B4r 2  E5 00          sbc READ_PTR
+0003B6r 2  60             rts
+0003B7r 2               
+0003B7r 2               ; Get a character from the INPUT_BUFFER if available
+0003B7r 2               ; On return, carry flag indicates whether a character was available
+0003B7r 2               ; If character available the character will be in the A register
+0003B7r 2               ; Modifies: Flags, A
+0003B7r 2               ChrinImpl:
+0003B7r 2  DA             phx
+0003B8r 2  20 rr rr       jsr BufferSize                ; Check for character available
+0003BBr 2  F0 1E          beq @ChrinNoChar              ; Branch if no character available
+0003BDr 2  20 rr rr       jsr ReadBuffer                ; Read the character from the buffer
+0003C0r 2  20 rr rr       jsr Chrout                    ; Echo
+0003C3r 2  48             pha
+0003C4r 2  20 rr rr       jsr BufferSize
+0003C7r 2  C9 B0          cmp #$B0                      ; Check if buffer is mostly full
+0003C9r 2  90 07          bcc @ChrinNotFull             ; Branch if buffer size < $B0
+0003CBr 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+0003CDr 2  8D 02 90       sta SC_CMD
+0003D0r 2  80 05          bra @ChrinExit
+0003D2r 2               @ChrinNotFull:
+0003D2r 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+0003D4r 2  8D 02 90       sta SC_CMD
+0003D7r 2               @ChrinExit:
+0003D7r 2  68             pla
+0003D8r 2  FA             plx
+0003D9r 2  38             sec
+0003DAr 2  60             rts
+0003DBr 2               @ChrinNoChar:
+0003DBr 2  FA             plx
+0003DCr 2  18             clc
+0003DDr 2  60             rts
+0003DEr 2               
+0003DEr 2               ; Output a character from the A register to the Serial Card
+0003DEr 2               ; Modifies: Flags
+0003DEr 2               SerialChroutImpl:
+0003DEr 2  8D 00 90       sta SC_DATA
+0003E1r 2  48             pha
+0003E2r 2               @ChroutWait:
+0003E2r 2  AD 01 90       lda SC_STATUS
+0003E5r 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
+0003E7r 2  F0 F9          beq @ChroutWait               ; Loop if TX buffer not empty
+0003E9r 2  68             pla
+0003EAr 2  60             rts
+0003EBr 2               
+0003EBr 2               ; Play a short beep sound
+0003EBr 2               ; Modifies: Flags, A, X, Y
+0003EBr 2               BeepImpl:
+0003EBr 2  A9 09          lda #$09                      ; Set Attack = 0, Decay = 9 (fast)
+0003EDr 2  8D 05 98       sta SID_V1_AD
+0003F0r 2  A9 00          lda #$00                      ; Set Sustain = 0, Release = 0
+0003F2r 2  8D 06 98       sta SID_V1_SR
+0003F5r 2  A9 20          lda #$20                      ; Frequency low byte (~8000 Hz / 1000 Hz tone)
+0003F7r 2  8D 00 98       sta SID_V1_FREQ_LO
+0003FAr 2  A9 1F          lda #$1F                      ; Frequency high byte (for ~1000 Hz)
+0003FCr 2  8D 01 98       sta SID_V1_FREQ_HI
+0003FFr 2  A9 11          lda #$11                      ; Triangle wave + Gate on
+000401r 2  8D 04 98       sta SID_V1_CTRL
+000404r 2                 ; Delay for beep duration
+000404r 2  A2 F0          ldx #$F0                      ; Outer loop counter
+000406r 2               @BeepDelay1:
+000406r 2  A0 FF          ldy #$FF                      ; Inner loop counter
+000408r 2               @BeepDelay2:
+000408r 2  88             dey
+000409r 2  D0 FD          bne @BeepDelay2
+00040Br 2  CA             dex
+00040Cr 2  D0 F8          bne @BeepDelay1
+00040Er 2  A9 10          lda #$10                      ; Gate off (stop sound)
+000410r 2  8D 04 98       sta SID_V1_CTRL
+000413r 2  60             rts
+000414r 2               
+000414r 2               ; Draw the splash screen
+000414r 2               ; Uses video output to display centered title and boot menu
+000414r 2               ; Modifies: Flags, A, X, Y
+000414r 2               Splash:
+000414r 2  20 rr rr       jsr VideoClear                ; Clear the video screen
+000417r 2                 ; Position cursor at row 10, col 10 for title
+000417r 2  A2 0A          ldx #10
+000419r 2  A0 0A          ldy #10
+00041Br 2  20 rr rr       jsr VideoSetCursor
+00041Er 2  A9 rr          lda #<@SplashTitle
+000420r 2  85 02          sta STR_PTR
+000422r 2  A9 rr          lda #>@SplashTitle
+000424r 2  85 03          sta STR_PTR + 1
+000426r 2  20 rr rr       jsr VideoPrintStrImpl
+000429r 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
+000429r 2  A2 08          ldx #8
+00042Br 2  A0 0C          ldy #12
+00042Dr 2  20 rr rr       jsr VideoSetCursor
+000430r 2  A9 rr          lda #<@SplashMenu
+000432r 2  85 02          sta STR_PTR
+000434r 2  A9 rr          lda #>@SplashMenu
+000436r 2  85 03          sta STR_PTR + 1
+000438r 2  20 rr rr       jsr VideoPrintStrImpl
+00043Br 2  60             rts
+00043Cr 2  2D 2D 20 54  @SplashTitle: .asciiz "-- The 'COB' v1.0 --"
+000440r 2  68 65 20 27  
+000444r 2  43 4F 42 27  
+000451r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
+000455r 2  52 3D 42 41  
+000459r 2  53 49 43 20  
+00046Ar 2               
+00046Ar 2               ; NMI Handler
+00046Ar 2               Nmi:
+00046Ar 2  40             rti
+00046Br 2               
+00046Br 2               ; BRK Handler — default dispatches to WozMon
+00046Br 2               ; On entry the stack holds the processor-pushed state from the BRK:
+00046Br 2               ;   SP+1 = saved P, SP+2 = PCL (PC+2), SP+3 = PCH
+00046Br 2               ; State is saved to BRK_P/BRK_PCL/BRK_PCH for inspection by a custom handler.
+00046Br 2               Break:
+00046Br 2  68             pla                           ; Pull saved P
+00046Cr 2  8D 10 03       sta BRK_P
+00046Fr 2  68             pla                           ; Pull saved PCL (PC+2)
+000470r 2  8D 11 03       sta BRK_PCL
+000473r 2  68             pla                           ; Pull saved PCH
+000474r 2  8D 12 03       sta BRK_PCH
+000477r 2  4C rr rr       jmp WozMon
+00047Ar 2               
+00047Ar 2               ; IRQ Handler
+00047Ar 2               Irq:
+00047Ar 2  48             pha
+00047Br 2  5A             phy
+00047Cr 2  DA             phx
+00047Dr 2  BA             tsx                           ; Get stack pointer to check saved status register
+00047Er 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
+000481r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
+000483r 2  D0 2C          bne @IrqBrk                   ; Branch if this was a BRK instruction
+000485r 2               @IrqSc:
+000485r 2  AD 01 90       lda SC_STATUS
+000488r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+00048Ar 2  F0 14          beq @IrqCheckKB               ; If not, check keyboard
+00048Cr 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
+00048Fr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000492r 2  20 rr rr       jsr BufferSize
+000495r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
+000497r 2  90 14          bcc @IrqExit                  ; If not, exit
+000499r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+00049Br 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+00049Er 2  80 0D          bra @IrqExit
+0004A0r 2               @IrqCheckKB:
+0004A0r 2  AD 0D 94       lda GPIO_IFR
+0004A3r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (keyboard data ready) caused the interrupt
+0004A5r 2  F0 06          beq @IrqExit                  ; If not, exit
+0004A7r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from keyboard (also clears CB1 IFR flag)
+0004AAr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+0004ADr 2               @IrqExit:
+0004ADr 2  FA             plx
+0004AEr 2  7A             ply
+0004AFr 2  68             pla
+0004B0r 2  40             rti
+0004B1r 2               @IrqBrk:
+0004B1r 2  FA             plx                           ; Restore saved registers
+0004B2r 2  7A             ply
+0004B3r 2  68             pla
+0004B4r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
+0004B5r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+0004B8r 2               
+0004B8r 2               ; NMI Vector
+0004B8r 2               NmiVec:
+0004B8r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
+0004BBr 2               
+0004BBr 2               ; Reset Vector
+0004BBr 2               ResetVec:
+0004BBr 2  4C rr rr       jmp Reset                     ; Initialize the system
+0004BEr 2               
+0004BEr 2               ; IRQ Vector
+0004BEr 2               IrqVec:
+0004BEr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+0004C1r 2               
+0004C1r 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; IBM Code Page 437 Character Set
 000000r 2               ; 6x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)

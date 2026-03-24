@@ -43,11 +43,11 @@ Current file: BIOS.asm
 000000r 2               
 000000r 2               ; RAM Card | IO 1 | $8000-$83FF
 000000r 2               RAM_DATA_L          := $8000             ; R/W ($8000-$83FE)
-000000r 2               RAM_BANK_L          := $83FF             ; Write-only RAM bank latch, value ($00-$FF) sets which of 256 ~1K banks of RAM is selected in both H or L
+000000r 2               RAM_BANK_L          := $83FF             ; Write-only RAM bank latch, value ($00-$FF) sets which of 256 ~1K banks of RAM is selected
 000000r 2               
 000000r 2               ; RAM Card | IO 2 | $8400-$87FF
 000000r 2               RAM_DATA_H          := $8400             ; R/W ($8400-$87FE)
-000000r 2               RAM_BANK_H          := $87FF             ; Write-only RAM bank latch, value ($00-$FF) sets which of 256 ~1K banks of RAM is selected in both H or L
+000000r 2               RAM_BANK_H          := $87FF             ; Write-only RAM bank latch, value ($00-$FF) sets which of 256 ~1K banks of RAM is selected
 000000r 2               
 000000r 2               ; RTC Card | IO 3 | $8800-$881F
 000000r 2               RTC_SEC             := $8800
@@ -94,17 +94,6 @@ Current file: BIOS.asm
 000000r 2               ST_STATUS_RDY       := %01000000
 000000r 2               ST_STATUS_BSY       := %10000000
 000000r 2               
-000000r 2               ; Storage Card Pro | IO 4 | $8C00-$8C01
-000000r 2               STP_DATA            := $8C00             ; R/W
-000000r 2               STP_CTRL            := $8C01             ; R/W
-000000r 2               STP_CTRL_BUSY       := %10000000
-000000r 2               STP_CTRL_CD         := %01000000
-000000r 2               STP_CTRL_WP         := %00100000
-000000r 2               STP_CTRL_SS         := %00011000
-000000r 2               STP_CTRL_AUTO_TX    := %00000100
-000000r 2               STP_CTRL_SLOW_CLK   := %00000010
-000000r 2               STP_CTRL_SELECT     := %00000001
-000000r 2               
 000000r 2               ; Serial Card / Serial Card Pro | IO 5 | $9000-$9003
 000000r 2               SC_DATA             := $9000             ; R/W
 000000r 2               SC_RESET            := $9001             ; Write
@@ -137,7 +126,6 @@ Current file: BIOS.asm
 000000r 2               GPIO_IFR            := $940D
 000000r 2               GPIO_IER            := $940E
 000000r 2               GPIO_ORA            := $940F
-000000r 2               
 000000r 2               ; Keyboard (VIA) Constants
 000000r 2               GPIO_PCR_CB2_LO     := %11000000         ; PCR CB2 mode = manual output low (enables keyboard controller)
 000000r 2               GPIO_PCR_CB1_NEG    := %00000000         ; PCR CB1 active on falling (high-to-low) edge
@@ -152,7 +140,6 @@ Current file: BIOS.asm
 000000r 2               SID_V1_CTRL         := $9804             ; Voice 1 Control Register
 000000r 2               SID_V1_AD           := $9805             ; Voice 1 Attack/Decay
 000000r 2               SID_V1_SR           := $9806             ; Voice 1 Sustain/Release
-000000r 2               
 000000r 2               SID_V2_FREQ_LO      := $9807             ; Voice 2 Frequency Low
 000000r 2               SID_V2_FREQ_HI      := $9808             ; Voice 2 Frequency High
 000000r 2               SID_V2_PW_LO        := $9809             ; Voice 2 Pulse Width Low
@@ -160,7 +147,6 @@ Current file: BIOS.asm
 000000r 2               SID_V2_CTRL         := $980B             ; Voice 2 Control Register
 000000r 2               SID_V2_AD           := $980C             ; Voice 2 Attack/Decay
 000000r 2               SID_V2_SR           := $980D             ; Voice 2 Sustain/Release
-000000r 2               
 000000r 2               SID_V3_FREQ_LO      := $980E             ; Voice 3 Frequency Low
 000000r 2               SID_V3_FREQ_HI      := $980F             ; Voice 3 Frequency High
 000000r 2               SID_V3_PW_LO        := $9810             ; Voice 3 Pulse Width Low
@@ -168,7 +154,6 @@ Current file: BIOS.asm
 000000r 2               SID_V3_CTRL         := $9812             ; Voice 3 Control Register
 000000r 2               SID_V3_AD           := $9813             ; Voice 3 Attack/Decay
 000000r 2               SID_V3_SR           := $9814             ; Voice 3 Sustain/Release
-000000r 2               
 000000r 2               SID_FC_LO           := $9815             ; Filter Cutoff Low
 000000r 2               SID_FC_HI           := $9816             ; Filter Cutoff High
 000000r 2               SID_RES_FILT        := $9817             ; Resonance/Filter
@@ -177,7 +162,6 @@ Current file: BIOS.asm
 000000r 2               SID_PADDLE_Y        := $981A             ; Paddle Y (Read-only)
 000000r 2               SID_OSC3            := $981B             ; Oscillator 3 (Read-only)
 000000r 2               SID_ENV3            := $981C             ; Envelope 3 (Read-only)
-000000r 2               
 000000r 2               ; SID Control Register Bits
 000000r 2               SID_CTRL_GATE       := %00000001         ; Gate bit
 000000r 2               SID_CTRL_SYNC       := %00000010         ; Sync bit
@@ -187,7 +171,6 @@ Current file: BIOS.asm
 000000r 2               SID_CTRL_SAWTOOTH   := %00100000         ; Sawtooth waveform
 000000r 2               SID_CTRL_PULSE      := %01000000         ; Pulse waveform
 000000r 2               SID_CTRL_NOISE      := %10000000         ; Noise waveform
-000000r 2               
 000000r 2               ; SID Filter Mode Bits
 000000r 2               SID_FILT_LP         := %00010000         ; Low-pass filter
 000000r 2               SID_FILT_BP         := %00100000         ; Band-pass filter
@@ -198,122 +181,6 @@ Current file: BIOS.asm
 000000r 2               VC_DATA             := $9C00             ; R/W
 000000r 2               VC_REG              := $9C01             ; Write
 000000r 2               VC_STATUS           := $9C01             ; Read
-000000r 2               
-000000r 2               ; VERA | IO 8 | $9C00-$9C1F
-000000r 2               VERA_ADDR_LOW       := $9C00
-000000r 2               VERA_ADDR_MID       := $9C01
-000000r 2               VERA_ADDR_HIGH      := $9C02
-000000r 2               VERA_DATA0          := $9C03
-000000r 2               VERA_DATA1          := $9C04
-000000r 2               VERA_CTRL           := $9C05
-000000r 2               VERA_IEN            := $9C06
-000000r 2               VERA_ISR            := $9C07
-000000r 2               VERA_IRQLINE_L      := $9C08             ; Write
-000000r 2               VERA_SCANLINE_L     := $9C08             ; Read
-000000r 2               
-000000r 2               ; Display Composer registers (DCSEL=0)
-000000r 2               VERA_DC_VIDEO       := $9C09             ; DCSEL=0
-000000r 2               VERA_DC_HSCALE      := $9C0A             ; DCSEL=0
-000000r 2               VERA_DC_VSCALE      := $9C0B             ; DCSEL=0
-000000r 2               VERA_DC_BORDER      := $9C0C             ; DCSEL=0
-000000r 2               
-000000r 2               ; Display Composer active area (DCSEL=1)
-000000r 2               VERA_DC_HSTART      := $9C09             ; DCSEL=1
-000000r 2               VERA_DC_HSTOP       := $9C0A             ; DCSEL=1
-000000r 2               VERA_DC_VSTART      := $9C0B             ; DCSEL=1
-000000r 2               VERA_DC_VSTOP       := $9C0C             ; DCSEL=1
-000000r 2               
-000000r 2               ; VERA FX Control registers (DCSEL=2)
-000000r 2               VERA_FX_CTRL        := $9C09             ; DCSEL=2
-000000r 2               VERA_FX_TILEBASE    := $9C0A             ; DCSEL=2 (Write)
-000000r 2               VERA_FX_MAPBASE     := $9C0B             ; DCSEL=2 (Write)
-000000r 2               VERA_FX_MULT        := $9C0C             ; DCSEL=2 (Write)
-000000r 2               
-000000r 2               ; VERA FX Increment registers (DCSEL=3)
-000000r 2               VERA_FX_X_INCR_L    := $9C09             ; DCSEL=3 (Write)
-000000r 2               VERA_FX_X_INCR_H    := $9C0A             ; DCSEL=3 (Write)
-000000r 2               VERA_FX_Y_INCR_L    := $9C0B             ; DCSEL=3 (Write)
-000000r 2               VERA_FX_Y_INCR_H    := $9C0C             ; DCSEL=3 (Write)
-000000r 2               
-000000r 2               ; VERA FX Position registers (DCSEL=4)
-000000r 2               VERA_FX_X_POS_L     := $9C09             ; DCSEL=4 (Write)
-000000r 2               VERA_FX_X_POS_H     := $9C0A             ; DCSEL=4 (Write)
-000000r 2               VERA_FX_Y_POS_L     := $9C0B             ; DCSEL=4 (Write)
-000000r 2               VERA_FX_Y_POS_H     := $9C0C             ; DCSEL=4 (Write)
-000000r 2               
-000000r 2               ; VERA FX Sub-pixel position / Polygon fill (DCSEL=5)
-000000r 2               VERA_FX_X_POS_S     := $9C09             ; DCSEL=5 (Write)
-000000r 2               VERA_FX_Y_POS_S     := $9C0A             ; DCSEL=5 (Write)
-000000r 2               VERA_FX_POLY_FILL_L := $9C0B             ; DCSEL=5 (Read)
-000000r 2               VERA_FX_POLY_FILL_H := $9C0C             ; DCSEL=5 (Read)
-000000r 2               
-000000r 2               ; VERA FX Cache / Accumulator (DCSEL=6)
-000000r 2               VERA_FX_CACHE_L     := $9C09             ; DCSEL=6 (Write)
-000000r 2               VERA_FX_ACCUM_RESET := $9C09             ; DCSEL=6 (Read)
-000000r 2               VERA_FX_CACHE_M     := $9C0A             ; DCSEL=6 (Write)
-000000r 2               VERA_FX_ACCUM       := $9C0A             ; DCSEL=6 (Read)
-000000r 2               VERA_FX_CACHE_H     := $9C0B             ; DCSEL=6 (Write)
-000000r 2               VERA_FX_CACHE_U     := $9C0C             ; DCSEL=6 (Write)
-000000r 2               
-000000r 2               ; VERA Version registers (DCSEL=63)
-000000r 2               VERA_DC_VER0        := $9C09             ; DCSEL=63 (Read) - ASCII 'V'
-000000r 2               VERA_DC_VER1        := $9C0A             ; DCSEL=63 (Read) - Major version
-000000r 2               VERA_DC_VER2        := $9C0B             ; DCSEL=63 (Read) - Minor version
-000000r 2               VERA_DC_VER3        := $9C0C             ; DCSEL=63 (Read) - Build number
-000000r 2               
-000000r 2               ; Layer 0/1 registers
-000000r 2               VERA_L0_CONFIG      := $9C0D
-000000r 2               VERA_L0_MAPBASE     := $9C0E
-000000r 2               VERA_L0_TILEBASE    := $9C0F
-000000r 2               VERA_L0_HSCROLL_L   := $9C10
-000000r 2               VERA_L0_HSCROLL_H   := $9C11
-000000r 2               VERA_L0_VSCROLL_L   := $9C12
-000000r 2               VERA_L0_VSCROLL_H   := $9C13
-000000r 2               VERA_L1_CONFIG      := $9C14
-000000r 2               VERA_L1_MAPBASE     := $9C15
-000000r 2               VERA_L1_TILEBASE    := $9C16
-000000r 2               VERA_L1_HSCROLL_L   := $9C17
-000000r 2               VERA_L1_HSCROLL_H   := $9C18
-000000r 2               VERA_L1_VSCROLL_L   := $9C19
-000000r 2               VERA_L1_VSCROLL_H   := $9C1A
-000000r 2               
-000000r 2               ; Audio and SPI registers
-000000r 2               VERA_AUDIO_CTRL     := $9C1B
-000000r 2               VERA_AUDIO_RATE     := $9C1C
-000000r 2               VERA_AUDIO_DATA     := $9C1D
-000000r 2               VERA_SPI_DATA       := $9C1E
-000000r 2               VERA_SPI_CTRL       := $9C1F
-000000r 2               
-000000r 2               ; LCD Card / LCD Board / Keypad LCD Helper / Keypad Helper | IO 8 | $9C00-$9C0F
-000000r 2               LCD_PORTB           := $9C00
-000000r 2               LCD_PORTA           := $9C01
-000000r 2               LCD_DDRB            := $9C02
-000000r 2               LCD_DDRA            := $9C03
-000000r 2               LCD_T1CL            := $9C04
-000000r 2               LCD_T1CH            := $9C05
-000000r 2               LCD_T1LL            := $9C06
-000000r 2               LCD_T1LH            := $9C07
-000000r 2               LCD_T2CL            := $9C08
-000000r 2               LCD_T2CH            := $9C09
-000000r 2               LCD_SR              := $9C0A
-000000r 2               LCD_ACR             := $9C0B
-000000r 2               LCD_PCR             := $9C0C
-000000r 2               LCD_IFR             := $9C0D
-000000r 2               LCD_IER             := $9C0E
-000000r 2               LCD_ORA             := $9C0F
-000000r 2               
-000000r 2               ; LCD Bits
-000000r 2               LCD_E               := %10000000    ; PORTA LCD ENABLE
-000000r 2               LCD_RW              := %01000000    ; PORTA LCD R/W
-000000r 2               LCD_RS              := %00100000    ; PORTA LCD REGISTER SELECT
-000000r 2               
-000000r 2               ; LCD Keypad Bits
-000000r 2               LCD_KEYPAD          := %00011111    ; PORTA LCD KEYPAD DATA
-000000r 2               
-000000r 2               ; VTAC / Dev Output Board | IO 8 | $9C00
-000000r 2               VTAC_DATA           := $9C00        ; Write
-000000r 2               VTAC_STATUS         := $9C00        ; Read (Bit 7 only)
-000000r 2               VTAC_STATUS_BSY     := %10000000
 000000r 2               
 000000r 1               
 000000r 1               .segment "KERNAL"
@@ -1411,8 +1278,8 @@ Current file: BIOS.asm
 0007F8r 2  00 00 00 00      .byte $00, $00, $00, $00, $00, $00, $00, $00
 0007FCr 2  00 00 00 00  
 000800r 2               
-000800r 1               .segment "CART"
-000000r 1               .include "Cart.asm"
+000800r 1               .segment "MONITOR"
+000000r 1               .include "Monitor.asm"
 000000r 2               ; ***             ***
 000000r 2               ; ***    CART     ***
 000000r 2               ; ***             ***

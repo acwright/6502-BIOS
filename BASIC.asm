@@ -105,6 +105,10 @@ TOK_OR              = $98
 TOK_MOD             = $99
 
 TOK_BRK             = $9D
+TOK_SYS             = $9E
+TOK_LOAD            = $9F
+TOK_SAVE            = $A0
+TOK_DIR             = $A1
 
 ; Multi-char operator tokens
 TOK_GE              = $9A               ; >=
@@ -2196,41 +2200,81 @@ BasExecLine:
 
   ; Dispatch based on token/character
   cmp #TOK_PRINT
-  beq @JmpPrint
-  cmp #TOK_INPUT
-  beq @JmpInput
-  cmp #TOK_GOTO
-  beq @JmpGoto
-  cmp #TOK_GOSUB
-  beq @JmpGosub
-  cmp #TOK_RETURN
-  beq @JmpReturn
-  cmp #TOK_IF
-  beq @JmpIf
-  cmp #TOK_FOR
-  beq @JmpFor
-  cmp #TOK_NEXT
-  beq @JmpNext
-  cmp #TOK_REM
+  bne :+
+  jmp @JmpPrint
+: cmp #TOK_INPUT
+  bne :+
+  jmp @JmpInput
+: cmp #TOK_GOTO
+  bne :+
+  jmp @JmpGoto
+: cmp #TOK_GOSUB
+  bne :+
+  jmp @JmpGosub
+: cmp #TOK_RETURN
+  bne :+
+  jmp @JmpReturn
+: cmp #TOK_IF
+  bne :+
+  jmp @JmpIf
+: cmp #TOK_FOR
+  bne :+
+  jmp @JmpFor
+: cmp #TOK_NEXT
+  bne :+
+  jmp @JmpNext
+: cmp #TOK_REM
   bne @NotRem
   rts                            ; REM — skip rest of line
 @NotRem:
   cmp #TOK_END
-  beq @JmpEnd
+  bne @NotEnd
+  jmp @JmpEnd
+@NotEnd:
   cmp #TOK_LIST
-  beq @JmpList
+  bne @NotList
+  jmp @JmpList
+@NotList:
   cmp #TOK_RUN
-  beq @JmpRun
+  bne @NotRun
+  jmp @JmpRun
+@NotRun:
   cmp #TOK_NEW
-  beq @JmpNew
+  bne @NotNew
+  jmp @JmpNew
+@NotNew:
   cmp #TOK_CLR
-  beq @JmpClrCmd
+  bne @NotClr
+  jmp @JmpClrCmd
+@NotClr:
   cmp #TOK_POKE
-  beq @JmpPoke
+  bne @NotPoke
+  jmp @JmpPoke
+@NotPoke:
   cmp #TOK_LET
-  beq @JmpLet
+  bne @NotLet
+  jmp @JmpLet
+@NotLet:
   cmp #TOK_BRK
-  beq @JmpBrk
+  bne @NotBrk
+  jmp @JmpBrk
+@NotBrk:
+  cmp #TOK_SYS
+  bne @NotSys
+  jmp @JmpSys
+@NotSys:
+  cmp #TOK_LOAD
+  bne @NotLoad
+  jmp @JmpLoad
+@NotLoad:
+  cmp #TOK_SAVE
+  bne @NotSave
+  jmp @JmpSave
+@NotSave:
+  cmp #TOK_DIR
+  bne @NotDir
+  jmp @JmpDir
+@NotDir:
 
   ; Check for implicit LET: A-Z followed by =
   cmp #'A'
@@ -2294,6 +2338,22 @@ BasExecLine:
   bra @ExecCheckMore
 @JmpBrk:
   jmp BasCmdBrk
+@JmpSys:
+  jsr BasAdvTxtPtr
+  jsr BasCmdSys
+  bra @ExecCheckMore
+@JmpLoad:
+  jsr BasAdvTxtPtr
+  jsr BasCmdLoad
+  bra @ExecCheckMore
+@JmpSave:
+  jsr BasAdvTxtPtr
+  jsr BasCmdSave
+  bra @ExecCheckMore
+@JmpDir:
+  jsr BasAdvTxtPtr
+  jsr BasCmdDir
+  bra @ExecCheckMore
 
 @ExecCheckMore:
   ; Check for ':' statement separator
@@ -2990,6 +3050,141 @@ BasCmdEnd:
   stz BAS_FLAGS                  ; Clear run flag
   rts                            ; Returns to BasRunLoop which checks flags
 
+; --- SYS ---
+; SYS <address> — Call machine code at 16-bit address, RTS returns to BASIC
+BasCmdSys:
+  jsr BasExpr                    ; Evaluate address expression → BAS_ACC
+  ; Use BAS_TMP2 as the indirect jump target
+  lda BAS_ACC
+  sta BAS_TMP2
+  lda BAS_ACC + 1
+  sta BAS_TMP2 + 1
+  jmp (BAS_TMP2)                 ; JSR-like: callee RTSes back to caller
+
+; --- LOAD ---
+; LOAD "filename" — Load from CF filesystem
+; LOAD (no arg)   — Load via serial Intel HEX
+BasCmdLoad:
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #CH_QUOTE
+  beq @LoadCF
+
+  ; No filename — serial Intel HEX load
+  jsr HexLoad
+  bcs @LoadErr
+  ; Update BAS_PRGEND from HEX_PTR (points past last byte written)
+  lda HEX_PTR
+  sta BAS_PRGEND
+  lda HEX_PTR + 1
+  sta BAS_PRGEND + 1
+  rts
+
+@LoadCF:
+  ; Parse quoted filename into STR_PTR for FsLoadFile
+  jsr BasAdvTxtPtr               ; Skip opening quote
+  ; Point STR_PTR at current position in tokenized text
+  lda BAS_TXTPTR
+  sta STR_PTR
+  lda BAS_TXTPTR + 1
+  sta STR_PTR + 1
+  ; Advance TXTPTR past the filename to closing quote
+@LoadScanName:
+  jsr BasGetTokChar
+  beq @LoadNameDone              ; End of line (unterminated — use what we have)
+  cmp #CH_QUOTE
+  beq @LoadNameEnd
+  jsr BasAdvTxtPtr
+  bra @LoadScanName
+@LoadNameEnd:
+  ; Null-terminate the filename in the token buffer (overwrite closing quote)
+  ldy #$00
+  lda #$00
+  sta (BAS_TXTPTR),y
+  jsr BasAdvTxtPtr               ; Skip past the closing quote
+@LoadNameDone:
+  ; Call filesystem load
+  jsr FsLoadFile
+  bcs @LoadErr
+  ; Update BAS_PRGEND: PROGRAM_START + FS_FILE_SIZE
+  lda #<PROGRAM_START
+  clc
+  adc FS_FILE_SIZE
+  sta BAS_PRGEND
+  lda #>PROGRAM_START
+  adc FS_FILE_SIZE + 1
+  sta BAS_PRGEND + 1
+  rts
+
+@LoadErr:
+  lda #<BasStrLoadErr
+  sta BAS_TMP1
+  lda #>BasStrLoadErr
+  sta BAS_TMP1 + 1
+  jsr BasPrintStr
+  rts
+
+; --- SAVE ---
+; SAVE "filename" — Save to CF filesystem
+; SAVE (no arg)   — Save via serial Intel HEX
+BasCmdSave:
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #CH_QUOTE
+  beq @SaveCF
+
+  ; No filename — serial Intel HEX save
+  jsr HexSave
+  rts
+
+@SaveCF:
+  ; Parse quoted filename into STR_PTR for FsSaveFile
+  jsr BasAdvTxtPtr               ; Skip opening quote
+  lda BAS_TXTPTR
+  sta STR_PTR
+  lda BAS_TXTPTR + 1
+  sta STR_PTR + 1
+  ; Advance TXTPTR past the filename to closing quote
+@SaveScanName:
+  jsr BasGetTokChar
+  beq @SaveNameDone
+  cmp #CH_QUOTE
+  beq @SaveNameEnd
+  jsr BasAdvTxtPtr
+  bra @SaveScanName
+@SaveNameEnd:
+  ldy #$00
+  lda #$00
+  sta (BAS_TXTPTR),y
+  jsr BasAdvTxtPtr               ; Skip past the closing quote
+@SaveNameDone:
+  ; Calculate file size = BAS_PRGEND - PROGRAM_START
+  lda BAS_PRGEND
+  sec
+  sbc #<PROGRAM_START
+  sta FS_FILE_SIZE
+  lda BAS_PRGEND + 1
+  sbc #>PROGRAM_START
+  sta FS_FILE_SIZE + 1
+  ; Call filesystem save
+  jsr FsSaveFile
+  bcs @SaveErr
+  rts
+
+@SaveErr:
+  lda #<BasStrSaveErr
+  sta BAS_TMP1
+  lda #>BasStrSaveErr
+  sta BAS_TMP1 + 1
+  jsr BasPrintStr
+  rts
+
+; --- DIR ---
+; DIR — Print directory listing from CF
+BasCmdDir:
+  jsr FsDirectory
+  rts
+
 ; --- BRK ---
 BasCmdBrk:
   stz BAS_FLAGS                  ; Clear run flag
@@ -3126,6 +3321,8 @@ BasKeywordTable:
   .byte "NEXT",   $00, TOK_NEXT
   .byte "PEEK",   $00, TOK_PEEK
   .byte "POKE",   $00, TOK_POKE
+  .byte "SAVE",   $00, TOK_SAVE
+  .byte "LOAD",   $00, TOK_LOAD
   .byte "LIST",   $00, TOK_LIST
   .byte "LET",    $00, TOK_LET
   .byte "FOR",    $00, TOK_FOR
@@ -3139,6 +3336,8 @@ BasKeywordTable:
   .byte "NOT",    $00, TOK_NOT
   .byte "AND",    $00, TOK_AND
   .byte "MOD",    $00, TOK_MOD
+  .byte "SYS",    $00, TOK_SYS
+  .byte "DIR",    $00, TOK_DIR
   .byte "BRK",    $00, TOK_BRK
   .byte "IF",     $00, TOK_IF
   .byte "TO",     $00, TOK_TO
@@ -3156,4 +3355,6 @@ BasStrError:    .byte " ERROR", $00
 BasStrIn:       .byte " IN ", $00
 BasStrRedo:     .byte "?REDO", CH_CR, CH_LF, $00
 BasStrPrompt:   .byte "? ", $00
+BasStrLoadErr:  .byte CH_CR, CH_LF, "?LOAD ERROR", CH_CR, CH_LF, $00
+BasStrSaveErr:  .byte CH_CR, CH_LF, "?SAVE ERROR", CH_CR, CH_LF, $00
 

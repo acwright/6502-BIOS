@@ -6,38 +6,42 @@
 ; 85 slots of 3-byte JMP instructions plus 1 padding byte
 ; Provides stable entry points for external code and cartridges
 
-Chrout:         jmp ChroutDispatch    ; $A000 - Output char (dispatched by IO_MODE)
-Chrin:          jmp ChrinImpl         ; $A003 - Input char from buffer
-WriteBuffer:    jmp WriteBufferImpl   ; $A006 - Write byte to input buffer
-ReadBuffer:     jmp ReadBufferImpl    ; $A009 - Read byte from input buffer
-BufferSize:     jmp BufferSizeImpl    ; $A00C - Get buffer count
-InitVideo:      jmp InitVideoImpl     ; $A00F - Initialize TMS9918
-InitKB:         jmp InitKBImpl        ; $A012 - Initialize GPIO/VIA keyboard
-InitSC:         jmp InitSCImpl        ; $A015 - Initialize serial 6551
-InitSID:        jmp InitSIDImpl       ; $A018 - Initialize SID
-Beep:           jmp BeepImpl          ; $A01B - Play beep tone
-VideoClear:     jmp VideoClearImpl    ; $A01E - Clear video screen
-VideoPutChar:   jmp VideoPutCharImpl  ; $A021 - Write char at cursor
-VideoSetCursor: jmp VideoSetCursorImpl; $A024 - Set cursor (X=col, Y=row)
-VideoGetCursor: jmp VideoGetCursorImpl; $A027 - Get cursor position
-VideoScroll:    jmp VideoScrollImpl   ; $A02A - Scroll screen up one line
-SerialChrout:   jmp SerialChroutImpl  ; $A02D - Direct serial output (bypass IO_MODE)
-ReadJoystick1:  jmp ReadJoystick1Impl  ; $A030 - Read joystick 1
-ReadJoystick2:  jmp ReadJoystick2Impl  ; $A033 - Read joystick 2
-RtcReadTime:    jmp RtcReadTimeImpl   ; $A036 - Read RTC time
-RtcReadDate:    jmp RtcReadDateImpl   ; $A039 - Read RTC date
-RtcWriteTime:   jmp RtcWriteTimeImpl  ; $A03C - Set RTC time
-RtcWriteDate:   jmp RtcWriteDateImpl  ; $A03F - Set RTC date
-RtcReadPRAM:    jmp RtcReadPRAMImpl   ; $A042 - Read PRAM byte
-RtcWritePRAM:   jmp RtcWritePRAMImpl  ; $A045 - Write PRAM byte
-StReadSector:   jmp StReadSectorImpl  ; $A048 - Read CF sector
-StWriteSector:  jmp StWriteSectorImpl ; $A04B - Write CF sector
-StWaitReady:    jmp StWaitReadyImpl   ; $A04E - Wait CF ready
-SetIOMode:      jmp SetIOModeImpl     ; $A051 - Set IO_MODE
-GetIOMode:      jmp GetIOModeImpl     ; $A054 - Get IO_MODE
+Chrout:         jmp ChroutDispatch      ; $A000 - Output char (dispatched by IO_MODE)
+Chrin:          jmp ChrinImpl           ; $A003 - Input char from buffer
+WriteBuffer:    jmp WriteBufferImpl     ; $A006 - Write byte to input buffer
+ReadBuffer:     jmp ReadBufferImpl      ; $A009 - Read byte from input buffer
+BufferSize:     jmp BufferSizeImpl      ; $A00C - Get buffer count
+InitVideo:      jmp InitVideoImpl       ; $A00F - Initialize TMS9918
+InitKB:         jmp InitKBImpl          ; $A012 - Initialize GPIO/VIA keyboard
+InitSC:         jmp InitSCImpl          ; $A015 - Initialize serial 6551
+InitSID:        jmp InitSIDImpl         ; $A018 - Initialize SID
+Beep:           jmp BeepImpl            ; $A01B - Play beep tone
+VideoClear:     jmp VideoClearImpl      ; $A01E - Clear video screen
+VideoPutChar:   jmp VideoPutCharImpl    ; $A021 - Write char at cursor
+VideoSetCursor: jmp VideoSetCursorImpl  ; $A024 - Set cursor (X=col, Y=row)
+VideoGetCursor: jmp VideoGetCursorImpl  ; $A027 - Get cursor position
+VideoScroll:    jmp VideoScrollImpl     ; $A02A - Scroll screen up one line
+SerialChrout:   jmp SerialChroutImpl    ; $A02D - Direct serial output (bypass IO_MODE)
+ReadJoystick1:  jmp ReadJoystick1Impl   ; $A030 - Read joystick 1
+ReadJoystick2:  jmp ReadJoystick2Impl   ; $A033 - Read joystick 2
+RtcReadTime:    jmp RtcReadTimeImpl     ; $A036 - Read RTC time
+RtcReadDate:    jmp RtcReadDateImpl     ; $A039 - Read RTC date
+RtcWriteTime:   jmp RtcWriteTimeImpl    ; $A03C - Set RTC time
+RtcWriteDate:   jmp RtcWriteDateImpl    ; $A03F - Set RTC date
+RtcReadPRAM:    jmp RtcReadPRAMImpl     ; $A042 - Read PRAM byte
+RtcWritePRAM:   jmp RtcWritePRAMImpl    ; $A045 - Write PRAM byte
+StReadSector:   jmp StReadSectorImpl    ; $A048 - Read CF sector
+StWriteSector:  jmp StWriteSectorImpl   ; $A04B - Write CF sector
+StWaitReady:    jmp StWaitReadyImpl     ; $A04E - Wait CF ready
+SetIOMode:      jmp SetIOModeImpl       ; $A051 - Set IO_MODE
+GetIOMode:      jmp GetIOModeImpl       ; $A054 - Get IO_MODE
+HexLoad:        jmp HexLoadImpl         ; $A057 - Load Intel HEX via serial
+HexSave:        jmp HexSaveImpl         ; $A05A - Save Intel HEX via serial
+SidPlayNote:    jmp SidPlayNoteImpl     ; $A05D - Play note (A=voice, X=freqLo, Y=freqHi)
+SidSilence:     jmp SidSilenceImpl      ; $A060 - Silence all voices
 
-; Reserved entries ($A057-$A0FE)
-.repeat 56
+; Reserved entries ($A063-$A0FE)
+.repeat 52
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -428,7 +432,7 @@ Reset:
   jmp BasEntry
 @BootMonitor:
   jsr VideoClear                ; Clear screen before entering Monitor
-  jmp WozMon
+  jmp MonitorEntry
 
 ; Initialize the Keyboard via VIA (IO 6)
 ; Configures Port B (matrix) and Port A (PS/2) as inputs
@@ -594,19 +598,76 @@ SerialChroutImpl:
   pla
   rts
 
-; Play a short beep sound
-; Modifies: Flags, A, X, Y
-BeepImpl:
-  lda #$09                      ; Set Attack = 0, Decay = 9 (fast)
+; SidPlayNote — Play a note on a SID voice
+; Input: A = voice (0-2), X = frequency low byte, Y = frequency high byte
+; Uses triangle waveform with standard ADSR (Attack=0, Decay=9, Sustain=A, Release=2)
+; Modifies: Flags, A
+SidPlayNoteImpl:
+  cmp #$01
+  beq @Voice2
+  cmp #$02
+  beq @Voice3
+  ; Voice 0
+  stx SID_V1_FREQ_LO
+  sty SID_V1_FREQ_HI
+  lda #$09                      ; Attack = 0, Decay = 9
   sta SID_V1_AD
-  lda #$00                      ; Set Sustain = 0, Release = 0
+  lda #$A2                      ; Sustain = A, Release = 2
   sta SID_V1_SR
-  lda #$20                      ; Frequency low byte (~8000 Hz / 1000 Hz tone)
-  sta SID_V1_FREQ_LO
-  lda #$1F                      ; Frequency high byte (for ~1000 Hz)
-  sta SID_V1_FREQ_HI
   lda #$11                      ; Triangle wave + Gate on
   sta SID_V1_CTRL
+  rts
+@Voice2:
+  stx SID_V2_FREQ_LO
+  sty SID_V2_FREQ_HI
+  lda #$09
+  sta SID_V2_AD
+  lda #$A2
+  sta SID_V2_SR
+  lda #$11
+  sta SID_V2_CTRL
+  rts
+@Voice3:
+  stx SID_V3_FREQ_LO
+  sty SID_V3_FREQ_HI
+  lda #$09
+  sta SID_V3_AD
+  lda #$A2
+  sta SID_V3_SR
+  lda #$11
+  sta SID_V3_CTRL
+  rts
+
+; SidSilence — Silence all 3 SID voices
+; Gates off all voices and zeros their frequencies
+; Modifies: Flags, A
+SidSilenceImpl:
+  lda #$10                      ; Triangle wave, Gate off
+  sta SID_V1_CTRL
+  sta SID_V2_CTRL
+  sta SID_V3_CTRL
+  lda #$00
+  sta SID_V1_FREQ_LO
+  sta SID_V1_FREQ_HI
+  sta SID_V2_FREQ_LO
+  sta SID_V2_FREQ_HI
+  sta SID_V3_FREQ_LO
+  sta SID_V3_FREQ_HI
+  rts
+
+; Play a short beep sound
+; Uses SidPlayNote on voice 0 with ~1000 Hz tone, then silences
+; Modifies: Flags, A, X, Y
+BeepImpl:
+  lda #$00                      ; Voice 0
+  ldx #$20                      ; Frequency low byte (~1000 Hz)
+  ldy #$1F                      ; Frequency high byte
+  jsr SidPlayNote
+  ; Override ADSR for beep: fast decay, no sustain
+  lda #$09                      ; Attack = 0, Decay = 9
+  sta SID_V1_AD
+  lda #$00                      ; Sustain = 0, Release = 0
+  sta SID_V1_SR
   ; Delay for beep duration
   ldx #$F0                      ; Outer loop counter
 @BeepDelay1:
@@ -616,8 +677,7 @@ BeepImpl:
   bne @BeepDelay2
   dex
   bne @BeepDelay1
-  lda #$10                      ; Gate off (stop sound)
-  sta SID_V1_CTRL
+  jsr SidSilence                ; Gate off all voices
   rts
 
 ; KBDisable — Disable both keyboard encoders for raw port access
@@ -1525,6 +1585,416 @@ FsSaveFile:
   sec
   rts
 
+; === Serial Intel HEX LOAD/SAVE ===
+; Intel HEX record format: :LLAAAATT[DD...]CC
+;   : = start code
+;   LL = byte count (2 hex digits)
+;   AAAA = address (4 hex digits, big-endian)
+;   TT = record type (00=data, 01=EOF)
+;   DD = data bytes (2 hex digits each)
+;   CC = checksum (two's complement of sum of all bytes LL..DD)
+
+; --- Hex Conversion Utilities ---
+
+; HexToNibble — Convert ASCII hex char to 4-bit value
+; Input: A = ASCII hex character ('0'-'9', 'A'-'F', 'a'-'f')
+; Output: A = 0-15, Carry clear = valid, Carry set = invalid
+; Modifies: Flags
+HexToNibble:
+  cmp #'0'
+  bcc @HexNibInvalid
+  cmp #'9' + 1
+  bcc @HexNibDigit              ; '0'-'9'
+  cmp #'A'
+  bcc @HexNibInvalid
+  cmp #'F' + 1
+  bcc @HexNibAlpha              ; 'A'-'F'
+  cmp #'a'
+  bcc @HexNibInvalid
+  cmp #'f' + 1
+  bcs @HexNibInvalid
+  ; 'a'-'f': subtract $57 to get 10-15
+  sec
+  sbc #$57
+  clc
+  rts
+@HexNibDigit:
+  sec
+  sbc #'0'                      ; Convert '0'-'9' → 0-9
+  clc
+  rts
+@HexNibAlpha:
+  sec
+  sbc #$37                      ; Convert 'A'-'F' → 10-15
+  clc
+  rts
+@HexNibInvalid:
+  sec
+  rts
+
+; NibbleToHex — Convert 4-bit value to ASCII hex character
+; Input: A = value (low nibble only, 0-15)
+; Output: A = ASCII hex character ('0'-'9', 'A'-'F')
+; Modifies: Flags
+NibbleToHex:
+  and #$0F
+  cmp #$0A
+  bcc @NibHexDigit
+  clc
+  adc #$37                      ; 10-15 → 'A'-'F'
+  rts
+@NibHexDigit:
+  clc
+  adc #'0'                      ; 0-9 → '0'-'9'
+  rts
+
+; SerialPrintHexByte — Print a byte as 2 hex ASCII chars to serial
+; Input: A = byte to print
+; Modifies: Flags, A
+SerialPrintHexByte:
+  pha
+  lsr a                         ; Shift high nibble down
+  lsr a
+  lsr a
+  lsr a
+  jsr NibbleToHex
+  jsr SerialChrout              ; Print high nibble
+  pla
+  pha
+  jsr NibbleToHex               ; Low nibble (and #$0F inside NibbleToHex)
+  jsr SerialChrout              ; Print low nibble
+  pla
+  rts
+
+; SerialReadHexByte — Read 2 hex ASCII chars from serial, return byte
+; Blocks until 2 valid hex chars received
+; Output: A = byte value, Carry clear = success, Carry set = invalid char
+; Also adds result to HEX_CHKSUM
+; Modifies: Flags, A
+SerialReadHexByte:
+  ; Wait for first hex char (high nibble)
+@SrHexWait1:
+  jsr BufferSize
+  beq @SrHexWait1
+  jsr ReadBuffer
+  jsr HexToNibble
+  bcs @SrHexErr                 ; Invalid hex char
+  asl a                         ; Shift to high nibble
+  asl a
+  asl a
+  asl a
+  sta HEX_RECTYPE               ; Temp storage for high nibble (reuse HEX_RECTYPE briefly)
+  ; Wait for second hex char (low nibble)
+@SrHexWait2:
+  jsr BufferSize
+  beq @SrHexWait2
+  jsr ReadBuffer
+  jsr HexToNibble
+  bcs @SrHexErr
+  ora HEX_RECTYPE               ; Combine high and low nibbles
+  ; Add to running checksum
+  pha
+  clc
+  adc HEX_CHKSUM
+  sta HEX_CHKSUM
+  pla
+  clc                           ; Success
+  rts
+@SrHexErr:
+  sec
+  rts
+
+; --- Intel HEX Load ---
+
+; HexLoadImpl — Receive Intel HEX records via serial and write to memory
+; Switches IO_MODE to serial, parses records, validates checksums
+; On data records (type $00): writes bytes to addresses specified in records
+; On EOF record (type $01): finishes loading
+; Output: Carry clear = success, Carry set = error (checksum fail or parse error)
+;         On success, HEX_ADDR contains the last address written + 1
+; Modifies: Flags, A, X, Y
+HexLoadImpl:
+  ; Save and switch IO_MODE to serial
+  lda IO_MODE
+  sta HEX_IO_SAVE
+  lda #$01                      ; Serial mode
+  sta IO_MODE
+  ; Print prompt
+  lda #$0D
+  jsr SerialChrout
+  lda #$0A
+  jsr SerialChrout
+  lda #<@HexLoadMsg
+  sta STR_PTR
+  lda #>@HexLoadMsg
+  sta STR_PTR + 1
+  jsr @SerialPrintStr
+
+@HexLoadRecord:
+  ; Wait for start code ':'
+@HexWaitColon:
+  jsr BufferSize
+  beq @HexWaitColon
+  jsr ReadBuffer
+  cmp #':'
+  bne @HexWaitColon             ; Ignore chars until ':'
+  ; Reset checksum
+  stz HEX_CHKSUM
+  ; Read byte count (LL)
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  sta HEX_BYTECNT
+  ; Read address high byte (AA)
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  sta HEX_PTR + 1
+  ; Read address low byte (AA)
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  sta HEX_PTR
+  ; Read record type (TT)
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  sta HEX_RECTYPE
+  ; Check record type
+  cmp #$01                      ; EOF record?
+  beq @HexLoadEOF
+  cmp #$00                      ; Data record?
+  bne @HexLoadFail              ; Unknown record type — error
+  ; Data record — read data bytes
+  ldy #$00
+@HexLoadData:
+  cpy HEX_BYTECNT
+  beq @HexLoadChecksum          ; All data bytes read
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  sta (HEX_PTR),y               ; Write byte to target address
+  iny
+  bra @HexLoadData
+@HexLoadChecksum:
+  ; Read checksum byte
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  ; Verify: running checksum (including checksum byte) should be $00
+  lda HEX_CHKSUM
+  bne @HexLoadFail              ; Checksum error
+  ; Advance HEX_PTR by byte count for tracking end position
+  lda HEX_PTR
+  clc
+  adc HEX_BYTECNT
+  sta HEX_PTR
+  bcc @HexLoadNoCarry
+  inc HEX_PTR + 1
+@HexLoadNoCarry:
+  ; Print '.' progress indicator
+  lda #'.'
+  jsr SerialChrout
+  bra @HexLoadRecord            ; Next record
+@HexLoadEOF:
+  ; EOF record — read and verify checksum
+  jsr SerialReadHexByte
+  bcs @HexLoadFail
+  lda HEX_CHKSUM
+  bne @HexLoadFail              ; Checksum error on EOF
+  ; Print success message
+  lda #$0D
+  jsr SerialChrout
+  lda #$0A
+  jsr SerialChrout
+  lda #<@HexOkMsg
+  sta STR_PTR
+  lda #>@HexOkMsg
+  sta STR_PTR + 1
+  jsr @SerialPrintStr
+  ; Restore IO_MODE
+  lda HEX_IO_SAVE
+  sta IO_MODE
+  clc                           ; Success
+  rts
+@HexLoadFail:
+  ; Print error message
+  lda #$0D
+  jsr SerialChrout
+  lda #$0A
+  jsr SerialChrout
+  lda #<@HexErrMsg
+  sta STR_PTR
+  lda #>@HexErrMsg
+  sta STR_PTR + 1
+  jsr @SerialPrintStr
+  ; Restore IO_MODE
+  lda HEX_IO_SAVE
+  sta IO_MODE
+  sec                           ; Error
+  rts
+
+; Internal: print null-terminated string via serial
+; Input: STR_PTR points to string
+@SerialPrintStr:
+  ldy #$00
+@SerialPrintLoop:
+  lda (STR_PTR),y
+  beq @SerialPrintDone
+  jsr SerialChrout
+  iny
+  bne @SerialPrintLoop
+@SerialPrintDone:
+  rts
+
+@HexLoadMsg: .asciiz "READY TO RECEIVE"
+@HexOkMsg:   .asciiz "OK"
+@HexErrMsg:  .asciiz "ERROR"
+
+; --- Intel HEX Save ---
+
+; HexSaveImpl — Transmit program memory as Intel HEX records via serial
+; Generates 16-byte data records from PROGRAM_START ($0800) to BAS_PRGEND
+; Ends with EOF record :00000001FF
+; Output: Carry clear = success
+; Modifies: Flags, A, X, Y
+HexSaveImpl:
+  ; Save and switch IO_MODE to serial
+  lda IO_MODE
+  sta HEX_IO_SAVE
+  lda #$01
+  sta IO_MODE
+  ; Print CRLF
+  lda #$0D
+  jsr SerialChrout
+  lda #$0A
+  jsr SerialChrout
+  ; Initialize save pointer
+  lda #<PROGRAM_START
+  sta HEX_PTR
+  lda #>PROGRAM_START
+  sta HEX_PTR + 1
+  ; Calculate remaining bytes = BAS_PRGEND - PROGRAM_START
+  lda z:BAS_PRGEND
+  sec
+  sbc #<PROGRAM_START
+  sta HEX_REMAIN
+  lda z:BAS_PRGEND + 1
+  sbc #>PROGRAM_START
+  sta HEX_REMAIN + 1
+  ; Check for zero-length program
+  ora HEX_REMAIN
+  bne @HexSaveRecord
+  jmp @HexSaveEOF
+@HexSaveRecord:
+  ; Determine byte count for this record: min(16, HEX_REMAIN)
+  lda HEX_REMAIN + 1
+  bne @HexSave16                ; High byte > 0, at least 256 remaining
+  lda HEX_REMAIN
+  cmp #17
+  bcc @HexSavePartial           ; Less than 17 bytes, use actual count
+@HexSave16:
+  lda #16
+  bra @HexSaveEmit
+@HexSavePartial:
+  lda HEX_REMAIN                ; Use actual remaining count
+@HexSaveEmit:
+  sta HEX_BYTECNT
+  ; Reset checksum
+  stz HEX_CHKSUM
+  ; Print start code
+  lda #':'
+  jsr SerialChrout
+  ; Print byte count
+  lda HEX_BYTECNT
+  clc
+  adc HEX_CHKSUM
+  sta HEX_CHKSUM
+  lda HEX_BYTECNT
+  jsr SerialPrintHexByte
+  ; Print address (high byte first)
+  lda HEX_PTR + 1
+  clc
+  adc HEX_CHKSUM
+  sta HEX_CHKSUM
+  lda HEX_PTR + 1
+  jsr SerialPrintHexByte
+  ; Address low byte
+  lda HEX_PTR
+  clc
+  adc HEX_CHKSUM
+  sta HEX_CHKSUM
+  lda HEX_PTR
+  jsr SerialPrintHexByte
+  ; Print record type 00 (data)
+  lda #$00
+  jsr SerialPrintHexByte        ; Prints "00", checksum unaffected (adding 0)
+  ; Print data bytes
+  ldy #$00
+@HexSaveData:
+  cpy HEX_BYTECNT
+  beq @HexSaveChksum
+  lda (HEX_PTR),y
+  pha
+  clc
+  adc HEX_CHKSUM
+  sta HEX_CHKSUM
+  pla
+  jsr SerialPrintHexByte
+  iny
+  bra @HexSaveData
+@HexSaveChksum:
+  ; Print checksum = two's complement of running sum
+  lda HEX_CHKSUM
+  eor #$FF
+  clc
+  adc #$01                      ; Two's complement
+  jsr SerialPrintHexByte
+  ; Print CRLF after record
+  lda #$0D
+  jsr SerialChrout
+  lda #$0A
+  jsr SerialChrout
+  ; Advance save pointer
+  lda HEX_PTR
+  clc
+  adc HEX_BYTECNT
+  sta HEX_PTR
+  bcc @HexSaveNoCarry
+  inc HEX_PTR + 1
+@HexSaveNoCarry:
+  ; Subtract from remaining
+  lda HEX_REMAIN
+  sec
+  sbc HEX_BYTECNT
+  sta HEX_REMAIN
+  bcs @HexSaveNoBorrow
+  dec HEX_REMAIN + 1
+@HexSaveNoBorrow:
+  ; Check if done
+  lda HEX_REMAIN
+  ora HEX_REMAIN + 1
+  beq @HexSaveDone
+  jmp @HexSaveRecord            ; More bytes to send
+@HexSaveDone:
+@HexSaveEOF:
+  ; Send EOF record :00000001FF
+  lda #':'
+  jsr SerialChrout
+  lda #$00
+  jsr SerialPrintHexByte        ; Byte count = 0
+  lda #$00
+  jsr SerialPrintHexByte        ; Address high = 0
+  lda #$00
+  jsr SerialPrintHexByte        ; Address low = 0
+  lda #$01
+  jsr SerialPrintHexByte        ; Type = 01 (EOF)
+  lda #$FF
+  jsr SerialPrintHexByte        ; Checksum = FF
+  lda #$0D
+  jsr SerialChrout
+  lda #$0A
+  jsr SerialChrout
+  ; Restore IO_MODE
+  lda HEX_IO_SAVE
+  sta IO_MODE
+  clc                           ; Success
+  rts
+
 ; Draw the splash screen
 ; Uses video output to display centered title and boot menu
 ; Modifies: Flags, A, X, Y
@@ -1567,7 +2037,7 @@ Break:
   sta BRK_PCL
   pla                           ; Pull saved PCH
   sta BRK_PCH
-  jmp WozMon
+  jmp MonitorEntry
 
 ; IRQ Handler
 Irq:

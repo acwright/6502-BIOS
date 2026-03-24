@@ -17,12 +17,22 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 1: Kernal Restructure & Jump Table
+## Phase 1: Kernal Restructure & Jump Table — COMPLETE
 
 *Foundation — everything depends on this.*
 
 1. Define jump table at `$A000-$A0FF` in Kernal.asm — 85 slots of 3-byte `jmp` instructions, unused slots → `jmp UnimplementedStub`
-2. Add Kernal state variables in `$0306-$032F` of KERNAL_VARS: `IO_MODE` ($0306, bit 0 = output device: 0=video/1=serial), `VID_CURSOR_X` ($0307), `VID_CURSOR_Y` ($0308), `VID_CURSOR_ADDR` ($0309-$030A)
+2. Add Kernal state variables in `$0306-$035A` of KERNAL_VARS:
+   - `IO_MODE` ($0306, bit 0 = output device: 0=video/1=serial, default=video)
+   - `VID_CURSOR_X` ($0307), `VID_CURSOR_Y` ($0308), `VID_CURSOR_ADDR` ($0309-$030A)
+   - `RTC_BUF_CENT` ($030B), `RTC_TMP` ($030C — BCD conversion scratch)
+   - `HEX_CHKSUM` ($030D), `HEX_BYTECNT` ($030E), `HEX_RECTYPE` ($030F)
+   - `BRK_P` ($0310), `BRK_PCL` ($0311), `BRK_PCH` ($0312)
+   - `HEX_REMAIN` ($0317-$0318), `HEX_IO_SAVE` ($0319)
+   - `SCROLL_BUF` ($0320-$0347 — 40-byte video scroll temp buffer)
+   - `FS_START_SEC` ($0348-$0349), `FS_FILE_SIZE` ($034A-$034B), `FS_SEC_COUNT` ($034C), `FS_DIR_IDX` ($034D), `FS_NEXT_SEC` ($034E-$034F), `FS_FNAME_BUF` ($0350-$035A)
+   - `FS_SECTOR_BUF` = $0600 (512B sector buffer, overlaps BAS_TOKBUF/BAS_STRBUF — safe during LOAD/SAVE/DIR)
+   - ZP additions: `CF_BUF_PTR` ($24-$25), `CF_LBA` ($26-$29), `HEX_PTR` ($2A-$2B)
 3. Refactor `Chrout` to dispatch based on `IO_MODE` → `VideoChrout` or `SerialChrout`
 4. `Chrin` — no changes needed (already reads from `INPUT_BUFFER` regardless of source)
 5. Update BIOS.inc with new variable addresses
@@ -61,7 +71,12 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 | $A04E | `StWaitReady` | Wait CF ready |
 | $A051 | `SetIOMode` | Set IO_MODE |
 | $A054 | `GetIOMode` | Get IO_MODE |
-| $A057-$A0FF | Reserved | `jmp UnimplementedStub` |
+| $A057 | `HexLoad` | Load Intel HEX via serial |
+| $A05A | `HexSave` | Save Intel HEX via serial |
+| $A05D | `SidPlayNote` | Play note (A=voice 0-2, X=freqLo, Y=freqHi) |
+| $A060 | `SidSilence` | Silence all 3 voices |
+| $A063-$A0FE | Reserved | `jmp UnimplementedStub` (52 slots) |
+| $A0FF | (pad) | `.byte $00` — pad to 256 bytes |
 
 ### Relevant Files
 - Kernal.asm — primary file: add jump table, refactor Chrout/Chrin, add IO_MODE
@@ -72,10 +87,11 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 - Assemble with `make` — confirm no segment overflow errors
 - Verify jump table entries appear at correct addresses in BIOS.lst
 - Confirm existing `Reset` flow still works (init hardware → splash → BASIC)
+- **Actual segment usage**: KERNAL $0C14 of $1800 (~51%)
 
 ---
 
-## Phase 2: TMS9918 Video Driver
+## Phase 2: TMS9918 Video Driver — COMPLETE
 
 *Depends on: Phase 1*
 
@@ -105,7 +121,7 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 3: Keyboard & Joystick Input
+## Phase 3: Keyboard & Joystick Input — COMPLETE
 
 *Depends on: Phase 1. Parallel with Phase 2.*
 
@@ -130,7 +146,7 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 4: RTC Routines
+## Phase 4: RTC Routines — COMPLETE
 
 *Depends on: Phase 1. Parallel with Phase 3.*
 
@@ -150,7 +166,7 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 5: CompactFlash Storage Driver
+## Phase 5: CompactFlash Storage Driver — COMPLETE
 
 *Depends on: Phase 1.*
 
@@ -174,16 +190,22 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 6: Serial Intel HEX LOAD/SAVE
+## Phase 6: Serial Intel HEX LOAD/SAVE — COMPLETE
 
 *Depends on: Phase 1.*
 
 1. Implement `HexLoad` — switch IO_MODE to serial, parse incoming Intel HEX records (type $00=data, $01=EOF), validate checksums, write data to specified addresses ($0800+), abort on checksum error
 2. Implement `HexSave` — generate Intel HEX records (16 bytes/record) from $0800 to PRGEND, transmit via `SerialChrout`, end with EOF record `:00000001FF`
 3. Add byte↔hex ASCII conversion utilities (reusable by Monitor future work too)
+   - `HexToNibble` — ASCII hex → 4-bit value, carry set on invalid
+   - `NibbleToHex` — 4-bit value → ASCII hex char
+   - `SerialPrintHexByte` — prints byte as 2 hex ASCII chars
+   - `SerialReadHexByte` — reads 2 hex chars from buffer, accumulates checksum
+4. Add `HexLoad` ($A057) and `HexSave` ($A05A) to the Kernal jump table
 
 ### Relevant Files
 - Kernal.asm — add HexLoad, HexSave, hex conversion utilities
+- Kernal.asm (jump table) — HexLoad at $A057, HexSave at $A05A
 
 ### Verification
 - Generate test Intel HEX file on host computer
@@ -193,7 +215,7 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 7: BASIC Enhancements
+## Phase 7: BASIC Enhancements — COMPLETE
 
 *Depends on: Phases 5 & 6.*
 
@@ -219,7 +241,7 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 8: Monitor Stub
+## Phase 8: Monitor Stub — COMPLETE
 
 *Parallel with other phases. Minimal dependency.*
 
@@ -238,16 +260,18 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 
 ---
 
-## Phase 9: Sound Enhancements
+## Phase 9: Sound Enhancements — COMPLETE
 
 *Parallel with other phases.*
 
 1. Implement `SidPlayNote` — A=voice(0-2), X=freqLo, Y=freqHi; set frequency regs, gate on with triangle waveform, standard ADSR
 2. Implement `SidSilence` — gate off all 3 voices, zero frequencies
 3. Refactor `Beep` to use `SidPlayNote` internally with short delay then silence
+4. Add `SidPlayNote` ($A05D) and `SidSilence` ($A060) to the Kernal jump table
 
 ### Relevant Files
-- Kernal.asm — add SID routines
+- Kernal.asm — add SID routines (SidPlayNoteImpl, SidSilenceImpl, BeepImpl)
+- Kernal.asm (jump table) — SidPlayNote at $A05D, SidSilence at $A060
 
 ### Verification
 - Beep at boot — confirm audible tone
@@ -258,15 +282,15 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 ## Dependency Graph
 
 ```
-Phase 1 (Jump Table & IO_MODE)
-  ├─→ Phase 2 (Video Driver)
-  ├─→ Phase 3 (Keyboard/Joystick)    ← parallel with 2
-  ├─→ Phase 4 (RTC)                  ← parallel with 2, 3
-  ├─→ Phase 5 (CF Storage)           ← parallel with 2, 3, 4
-  ├─→ Phase 6 (Serial Intel HEX)     ← parallel with 2-5
-  ├─→ Phase 8 (Monitor Stub)         ← parallel, minimal deps
-  └─→ Phase 9 (Sound)                ← parallel, minimal deps
-Phase 7 (BASIC Enhancements)          ← depends on 5 & 6
+Phase 1 (Jump Table & IO_MODE)        ✓ COMPLETE
+  ├─→ Phase 2 (Video Driver)          ✓ COMPLETE
+  ├─→ Phase 3 (Keyboard/Joystick)     ✓ COMPLETE  ← parallel with 2
+  ├─→ Phase 4 (RTC)                   ✓ COMPLETE  ← parallel with 2, 3
+  ├─→ Phase 5 (CF Storage)            ✓ COMPLETE  ← parallel with 2, 3, 4
+  ├─→ Phase 6 (Serial Intel HEX)      ✓ COMPLETE  ← parallel with 2-5
+  ├─→ Phase 8 (Monitor Stub)          ✓ COMPLETE  ← parallel, minimal deps
+  └─→ Phase 9 (Sound)                 ✓ COMPLETE  ← parallel, minimal deps
+Phase 7 (BASIC Enhancements)          ✓ COMPLETE  ← depends on 5 & 6
 ```
 
 ---
@@ -278,8 +302,8 @@ Phase 7 (BASIC Enhancements)          ← depends on 5 & 6
 | Kernal.asm | Jump table, video driver, keyboard/joystick, RTC, CF storage, serial HEX, sound, boot flow — majority of new code |
 | BASIC.asm | New tokens (SYS/LOAD/SAVE/DIR), keyword table, command handlers |
 | Monitor.asm | Stub entry points → Wozmon redirect |
-| BIOS.inc | New Kernal variable addresses ($0306-$032F), new constants |
-| BIOS.cfg | Verify/adjust segment sizes if Kernal grows |
+| BIOS.inc | New Kernal variable addresses ($0306-$035A), ZP additions ($24-$2B), new constants |
+| BIOS.cfg | Verified — segment sizes unchanged (KERNAL ~51%, BASIC ~56% utilized) |
 | Chars.asm | No changes |
 | Wozmon.asm | No changes |
 | Vectors.asm | No changes |

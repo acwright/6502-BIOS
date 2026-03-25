@@ -27,3 +27,6 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test binaries
+tests/*.bin

@@ -699,8 +699,14 @@ SidSilenceImpl:
 
 ; Play a short beep sound
 ; Uses SidPlayNote on voice 0 with ~1000 Hz tone, then silences
+; Skips silently if SID is absent
 ; Modifies: Flags, A, X, Y
 BeepImpl:
+  lda HW_PRESENT
+  and #HW_SID
+  bne @BeepStart
+  rts                           ; No SID — skip silently
+@BeepStart:
   lda #$00                      ; Voice 0
   ldx #$20                      ; Frequency low byte (~1000 Hz)
   ldy #$1F                      ; Frequency high byte
@@ -2106,8 +2112,14 @@ AsciiSaveImpl:
 
 ; Draw the splash screen
 ; Uses video output to display centered title and boot menu
+; Skips if video card is absent
 ; Modifies: Flags, A, X, Y
 Splash:
+  lda HW_PRESENT
+  and #HW_VID
+  bne @SplashStart
+  rts                           ; No video — skip
+@SplashStart:
   jsr VideoClear                ; Clear the video screen
   ; Position cursor at row 10, col 10 for title
   ldx #10

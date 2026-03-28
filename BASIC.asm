@@ -109,6 +109,7 @@ TOK_SYS             = $9E
 TOK_LOAD            = $9F
 TOK_SAVE            = $A0
 TOK_DIR             = $A1
+TOK_DEL             = $A2
 
 ; Multi-char operator tokens
 TOK_GE              = $9A               ; >=
@@ -2275,6 +2276,10 @@ BasExecLine:
   bne @NotDir
   jmp @JmpDir
 @NotDir:
+  cmp #TOK_DEL
+  bne @NotDel
+  jmp @JmpDel
+@NotDel:
 
   ; Check for implicit LET: A-Z followed by =
   cmp #'A'
@@ -2291,7 +2296,7 @@ BasExecLine:
 @JmpPrint:
   jsr BasAdvTxtPtr
   jsr BasCmdPrint
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpInput:
   jsr BasAdvTxtPtr
   jsr BasCmdInput
@@ -2353,6 +2358,10 @@ BasExecLine:
 @JmpDir:
   jsr BasAdvTxtPtr
   jsr BasCmdDir
+  bra @ExecCheckMore
+@JmpDel:
+  jsr BasAdvTxtPtr
+  jsr BasCmdDel
   bra @ExecCheckMore
 
 @ExecCheckMore:
@@ -3189,6 +3198,47 @@ BasCmdDir:
   jsr FsDirectory
   rts
 
+; --- DEL ---
+; DEL "filename" — Delete a file from CF
+BasCmdDel:
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #CH_QUOTE
+  bne @DelErr
+
+  ; Parse quoted filename into STR_PTR for FsDeleteFile
+  jsr BasAdvTxtPtr               ; Skip opening quote
+  lda BAS_TXTPTR
+  sta STR_PTR
+  lda BAS_TXTPTR + 1
+  sta STR_PTR + 1
+  ; Advance TXTPTR past the filename to closing quote
+@DelScanName:
+  jsr BasGetTokChar
+  beq @DelNameDone
+  cmp #CH_QUOTE
+  beq @DelNameEnd
+  jsr BasAdvTxtPtr
+  bra @DelScanName
+@DelNameEnd:
+  ldy #$00
+  lda #$00
+  sta (BAS_TXTPTR),y
+  jsr BasAdvTxtPtr               ; Skip past the closing quote
+@DelNameDone:
+  ; Call filesystem delete
+  jsr FsDeleteFile
+  bcs @DelErr
+  rts
+
+@DelErr:
+  lda #<BasStrDelErr
+  sta BAS_TMP1
+  lda #>BasStrDelErr
+  sta BAS_TMP1 + 1
+  jsr BasPrintStr
+  rts
+
 ; --- BRK ---
 BasCmdBrk:
   stz BAS_FLAGS                  ; Clear run flag
@@ -3342,6 +3392,7 @@ BasKeywordTable:
   .byte "MOD",    $00, TOK_MOD
   .byte "SYS",    $00, TOK_SYS
   .byte "DIR",    $00, TOK_DIR
+  .byte "DEL",    $00, TOK_DEL
   .byte "BRK",    $00, TOK_BRK
   .byte "IF",     $00, TOK_IF
   .byte "TO",     $00, TOK_TO
@@ -3361,4 +3412,5 @@ BasStrRedo:     .byte "?REDO", CH_CR, CH_LF, $00
 BasStrPrompt:   .byte "? ", $00
 BasStrLoadErr:  .byte CH_CR, CH_LF, "?LOAD ERROR", CH_CR, CH_LF, $00
 BasStrSaveErr:  .byte CH_CR, CH_LF, "?SAVE ERROR", CH_CR, CH_LF, $00
+BasStrDelErr:   .byte CH_CR, CH_LF, "?DEL ERROR", CH_CR, CH_LF, $00
 

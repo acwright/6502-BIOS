@@ -39,9 +39,10 @@ AsciiLoad:      jmp AsciiLoadImpl       ; $A057 - Load raw binary via serial
 AsciiSave:      jmp AsciiSaveImpl       ; $A05A - Save raw binary via serial
 SidPlayNote:    jmp SidPlayNoteImpl     ; $A05D - Play note (A=voice, X=freqLo, Y=freqHi)
 SidSilence:     jmp SidSilenceImpl      ; $A060 - Silence all voices
+FsDeleteFile:   jmp FsDeleteFileImpl    ; $A063 - Delete file from CF
 
-; Reserved entries ($A063-$A0FE)
-.repeat 52
+; Reserved entries ($A066-$A0FE)
+.repeat 51
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -1592,6 +1593,28 @@ FsSaveFile:
 @FsSaveSecErr:
   plx                           ; Balance stack
 @FsSaveErr:
+  sec
+  rts
+
+; FsDeleteFile — Delete a file from the CompactFlash filesystem
+; Input: STR_PTR ($02-$03) points to null-terminated filename
+; Output: Carry clear = success, Carry set = file not found or error
+; Modifies: Flags, A, X, Y, CF_LBA, CF_BUF_PTR
+FsDeleteFileImpl:
+  jsr FsParseName               ; Parse filename into FS_FNAME_BUF
+  jsr FsReadDir                 ; Read directory sector
+  bcs @FsDelErr
+  jsr FsFindFile                ; Search for filename
+  bcs @FsDelErr                 ; Not found
+  ; Clear the flags byte to mark entry as unused
+  ldy #FS_ENTRY_FLAGS
+  lda #$00
+  sta (CF_BUF_PTR),y
+  ; Write updated directory back to CF
+  jsr FsWriteDir
+  ; Carry already set/clear from FsWriteDir
+  rts
+@FsDelErr:
   sec
   rts
 

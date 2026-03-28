@@ -31,6 +31,7 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 | `LOAD` (no arg) | Receive a program over the serial port (raw binary) |
 | `SAVE` (no arg) | Transmit the current program over the serial port (raw binary) |
 | `DIR` | List all files stored on CompactFlash |
+| `DEL "name"` | Delete a named file from CompactFlash and reclaim its directory entry |
 
 ### Video
 
@@ -132,6 +133,9 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A054` | `GetIOMode` | Get `IO_MODE` → `A` |
 | `$A057` | `AsciiLoad` | Receive raw binary over serial into `$0800` |
 | `$A05A` | `AsciiSave` | Send current program as raw binary over serial |
+| `$A05D` | `SidPlayNote` | Play note: `A`=voice, `X`=freqLo, `Y`=freqHi |
+| `$A060` | `SidSilence` | Silence all SID voices |
+| `$A063` | `FsDeleteFile` | Delete a file from CompactFlash by name |
 
 ---
 

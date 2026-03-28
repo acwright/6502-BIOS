@@ -271,11 +271,12 @@ Current file: BIOS.asm
 00005Ar 2  4C rr rr     AsciiSave:      jmp AsciiSaveImpl       ; $A05A - Save raw binary via serial
 00005Dr 2  4C rr rr     SidPlayNote:    jmp SidPlayNoteImpl     ; $A05D - Play note (A=voice, X=freqLo, Y=freqHi)
 000060r 2  4C rr rr     SidSilence:     jmp SidSilenceImpl      ; $A060 - Silence all voices
-000063r 2               
-000063r 2               ; Reserved entries ($A063-$A0FE)
-000063r 2  4C rr rr 4C  .repeat 52
-000067r 2  rr rr 4C rr  
-00006Br 2  rr 4C rr rr  
+000063r 2  4C rr rr     FsDeleteFile:   jmp FsDeleteFileImpl    ; $A063 - Delete file from CF
+000066r 2               
+000066r 2               ; Reserved entries ($A066-$A0FE)
+000066r 2  4C rr rr 4C  .repeat 51
+00006Ar 2  rr rr 4C rr  
+00006Er 2  rr 4C rr rr  
 0000FFr 2                               jmp UnimplementedStub
 0000FFr 2               .endrepeat
 0000FFr 2  00           .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -1829,280 +1830,302 @@ Current file: BIOS.asm
 000953r 2  38             sec
 000954r 2  60             rts
 000955r 2               
-000955r 2               ; === Serial ASCII LOAD/SAVE ===
-000955r 2               ; Plain binary transfer protocol over serial
-000955r 2               ; Load: receives 2-byte size (lo/hi) then raw data bytes into PROGRAM_START
-000955r 2               ; Save: sends 2-byte size (lo/hi) then raw data bytes from PROGRAM_START
-000955r 2               
-000955r 2               ; --- ASCII Load ---
-000955r 2               
-000955r 2               ; AsciiLoadImpl — Receive raw binary data via serial into program memory
-000955r 2               ; Switches IO_MODE to serial, receives 2-byte size then raw data bytes
-000955r 2               ; Data is written starting at PROGRAM_START ($0800)
-000955r 2               ; Output: Carry clear = success, XFER_PTR points past last byte written
-000955r 2               ; Modifies: Flags, A, X, Y
-000955r 2               AsciiLoadImpl:
-000955r 2                 ; Save and switch IO_MODE to serial
-000955r 2  AD 06 03       lda IO_MODE
-000958r 2  8D 19 03       sta XFER_IO_SAVE
-00095Br 2  A9 01          lda #$01                      ; Serial mode
-00095Dr 2  8D 06 03       sta IO_MODE
-000960r 2                 ; Print prompt
-000960r 2  A9 0D          lda #$0D
-000962r 2  20 rr rr       jsr SerialChrout
-000965r 2  A9 0A          lda #$0A
-000967r 2  20 rr rr       jsr SerialChrout
-00096Ar 2  A9 rr          lda #<@AsciiLoadMsg
-00096Cr 2  85 02          sta STR_PTR
-00096Er 2  A9 rr          lda #>@AsciiLoadMsg
-000970r 2  85 03          sta STR_PTR + 1
-000972r 2  20 rr rr       jsr @SerialPrintStr
-000975r 2                 ; Read 2-byte size (low byte first)
-000975r 2               @AsciiWaitSzLo:
-000975r 2  20 rr rr       jsr BufferSize
-000978r 2  F0 FB          beq @AsciiWaitSzLo
-00097Ar 2  20 rr rr       jsr ReadBuffer
-00097Dr 2  8D 17 03       sta XFER_REMAIN
-000980r 2               @AsciiWaitSzHi:
-000980r 2  20 rr rr       jsr BufferSize
-000983r 2  F0 FB          beq @AsciiWaitSzHi
-000985r 2  20 rr rr       jsr ReadBuffer
-000988r 2  8D 18 03       sta XFER_REMAIN + 1
-00098Br 2                 ; Initialize write pointer to PROGRAM_START
-00098Br 2  A9 00          lda #<PROGRAM_START
-00098Dr 2  85 2A          sta XFER_PTR
-00098Fr 2  A9 08          lda #>PROGRAM_START
-000991r 2  85 2B          sta XFER_PTR + 1
-000993r 2                 ; Check for zero-length transfer
-000993r 2  AD 17 03       lda XFER_REMAIN
-000996r 2  0D 18 03       ora XFER_REMAIN + 1
-000999r 2  F0 25          beq @AsciiLoadOk
-00099Br 2                 ; Receive data bytes (Y stays 0, pointer is advanced each byte)
-00099Br 2  A0 00          ldy #$00
-00099Dr 2               @AsciiLoadByte:
-00099Dr 2  20 rr rr       jsr BufferSize
-0009A0r 2  F0 FB          beq @AsciiLoadByte
-0009A2r 2  20 rr rr       jsr ReadBuffer
-0009A5r 2  91 2A          sta (XFER_PTR),y              ; Write byte to target address
-0009A7r 2                 ; Advance write pointer
-0009A7r 2  E6 2A          inc XFER_PTR
-0009A9r 2  D0 02          bne @AsciiLoadNoPage
-0009ABr 2  E6 2B          inc XFER_PTR + 1
-0009ADr 2               @AsciiLoadNoPage:
-0009ADr 2                 ; Decrement remaining count
-0009ADr 2  AD 17 03       lda XFER_REMAIN
-0009B0r 2  D0 03          bne @AsciiLoadDecLo
-0009B2r 2  CE 18 03       dec XFER_REMAIN + 1
-0009B5r 2               @AsciiLoadDecLo:
-0009B5r 2  CE 17 03       dec XFER_REMAIN
-0009B8r 2                 ; Check if done
-0009B8r 2  AD 17 03       lda XFER_REMAIN
-0009BBr 2  0D 18 03       ora XFER_REMAIN + 1
-0009BEr 2  D0 DD          bne @AsciiLoadByte
-0009C0r 2               @AsciiLoadOk:
-0009C0r 2                 ; XFER_PTR now points past last byte written
-0009C0r 2                 ; Print success message
-0009C0r 2  A9 0D          lda #$0D
-0009C2r 2  20 rr rr       jsr SerialChrout
-0009C5r 2  A9 0A          lda #$0A
-0009C7r 2  20 rr rr       jsr SerialChrout
-0009CAr 2  A9 rr          lda #<@AsciiOkMsg
-0009CCr 2  85 02          sta STR_PTR
-0009CEr 2  A9 rr          lda #>@AsciiOkMsg
-0009D0r 2  85 03          sta STR_PTR + 1
-0009D2r 2  20 rr rr       jsr @SerialPrintStr
-0009D5r 2                 ; Restore IO_MODE
-0009D5r 2  AD 19 03       lda XFER_IO_SAVE
-0009D8r 2  8D 06 03       sta IO_MODE
-0009DBr 2  18             clc                           ; Success
-0009DCr 2  60             rts
-0009DDr 2               
-0009DDr 2               ; Internal: print null-terminated string via serial
-0009DDr 2               ; Input: STR_PTR points to string
-0009DDr 2               @SerialPrintStr:
-0009DDr 2  A0 00          ldy #$00
-0009DFr 2               @SerialPrintLoop:
-0009DFr 2  B1 02          lda (STR_PTR),y
-0009E1r 2  F0 06          beq @SerialPrintDone
-0009E3r 2  20 rr rr       jsr SerialChrout
-0009E6r 2  C8             iny
-0009E7r 2  D0 F6          bne @SerialPrintLoop
-0009E9r 2               @SerialPrintDone:
-0009E9r 2  60             rts
-0009EAr 2               
-0009EAr 2  52 45 41 44  @AsciiLoadMsg: .asciiz "READY TO RECEIVE"
-0009EEr 2  59 20 54 4F  
-0009F2r 2  20 52 45 43  
-0009FBr 2  4F 4B 00     @AsciiOkMsg:   .asciiz "OK"
-0009FEr 2               
-0009FEr 2               ; --- ASCII Save ---
-0009FEr 2               
-0009FEr 2               ; AsciiSaveImpl — Transmit program memory as raw binary via serial
-0009FEr 2               ; Sends 2-byte size (lo/hi) then raw data bytes from PROGRAM_START to BAS_PRGEND
-0009FEr 2               ; Output: Carry clear = success
-0009FEr 2               ; Modifies: Flags, A, X, Y
-0009FEr 2               AsciiSaveImpl:
-0009FEr 2                 ; Save and switch IO_MODE to serial
-0009FEr 2  AD 06 03       lda IO_MODE
-000A01r 2  8D 19 03       sta XFER_IO_SAVE
-000A04r 2  A9 01          lda #$01
-000A06r 2  8D 06 03       sta IO_MODE
-000A09r 2                 ; Initialize save pointer
-000A09r 2  A9 00          lda #<PROGRAM_START
-000A0Br 2  85 2A          sta XFER_PTR
-000A0Dr 2  A9 08          lda #>PROGRAM_START
-000A0Fr 2  85 2B          sta XFER_PTR + 1
-000A11r 2                 ; Calculate remaining bytes = BAS_PRGEND - PROGRAM_START
-000A11r 2  A5 12          lda z:BAS_PRGEND
-000A13r 2  38             sec
-000A14r 2  E9 00          sbc #<PROGRAM_START
-000A16r 2  8D 17 03       sta XFER_REMAIN
-000A19r 2  A5 13          lda z:BAS_PRGEND + 1
-000A1Br 2  E9 08          sbc #>PROGRAM_START
-000A1Dr 2  8D 18 03       sta XFER_REMAIN + 1
-000A20r 2                 ; Send 2-byte size (low byte first)
-000A20r 2  AD 17 03       lda XFER_REMAIN
-000A23r 2  20 rr rr       jsr SerialChrout
-000A26r 2  AD 18 03       lda XFER_REMAIN + 1
-000A29r 2  20 rr rr       jsr SerialChrout
-000A2Cr 2                 ; Check for zero-length program
-000A2Cr 2  AD 17 03       lda XFER_REMAIN
-000A2Fr 2  0D 18 03       ora XFER_REMAIN + 1
-000A32r 2  F0 20          beq @AsciiSaveDone
-000A34r 2                 ; Send data bytes (Y stays 0, pointer is advanced each byte)
-000A34r 2  A0 00          ldy #$00
-000A36r 2               @AsciiSaveByte:
-000A36r 2  B1 2A          lda (XFER_PTR),y
-000A38r 2  20 rr rr       jsr SerialChrout
-000A3Br 2                 ; Advance read pointer
-000A3Br 2  E6 2A          inc XFER_PTR
-000A3Dr 2  D0 02          bne @AsciiSaveNoPage
-000A3Fr 2  E6 2B          inc XFER_PTR + 1
-000A41r 2               @AsciiSaveNoPage:
-000A41r 2                 ; Decrement remaining count
-000A41r 2  AD 17 03       lda XFER_REMAIN
-000A44r 2  D0 03          bne @AsciiSaveDecLo
-000A46r 2  CE 18 03       dec XFER_REMAIN + 1
-000A49r 2               @AsciiSaveDecLo:
-000A49r 2  CE 17 03       dec XFER_REMAIN
-000A4Cr 2                 ; Check if done
-000A4Cr 2  AD 17 03       lda XFER_REMAIN
-000A4Fr 2  0D 18 03       ora XFER_REMAIN + 1
-000A52r 2  D0 E2          bne @AsciiSaveByte
-000A54r 2               @AsciiSaveDone:
-000A54r 2                 ; Restore IO_MODE
-000A54r 2  AD 19 03       lda XFER_IO_SAVE
-000A57r 2  8D 06 03       sta IO_MODE
-000A5Ar 2  18             clc                           ; Success
-000A5Br 2  60             rts
-000A5Cr 2               
-000A5Cr 2               ; Draw the splash screen
-000A5Cr 2               ; Uses video output to display centered title and boot menu
-000A5Cr 2               ; Modifies: Flags, A, X, Y
-000A5Cr 2               Splash:
-000A5Cr 2  20 rr rr       jsr VideoClear                ; Clear the video screen
-000A5Fr 2                 ; Position cursor at row 10, col 10 for title
-000A5Fr 2  A2 0A          ldx #10
-000A61r 2  A0 0A          ldy #10
-000A63r 2  20 rr rr       jsr VideoSetCursor
-000A66r 2  A9 rr          lda #<@SplashTitle
-000A68r 2  85 02          sta STR_PTR
-000A6Ar 2  A9 rr          lda #>@SplashTitle
-000A6Cr 2  85 03          sta STR_PTR + 1
-000A6Er 2  20 rr rr       jsr VideoPrintStrImpl
-000A71r 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
-000A71r 2  A2 08          ldx #8
-000A73r 2  A0 0C          ldy #12
-000A75r 2  20 rr rr       jsr VideoSetCursor
-000A78r 2  A9 rr          lda #<@SplashMenu
-000A7Ar 2  85 02          sta STR_PTR
-000A7Cr 2  A9 rr          lda #>@SplashMenu
-000A7Er 2  85 03          sta STR_PTR + 1
-000A80r 2  20 rr rr       jsr VideoPrintStrImpl
-000A83r 2  60             rts
-000A84r 2  2D 2D 20 54  @SplashTitle: .asciiz "-- The 'COB' v1.0 --"
-000A88r 2  68 65 20 27  
-000A8Cr 2  43 4F 42 27  
-000A99r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
-000A9Dr 2  52 3D 42 41  
-000AA1r 2  53 49 43 20  
-000AB2r 2               
-000AB2r 2               ; NMI Handler
-000AB2r 2               Nmi:
-000AB2r 2  40             rti
-000AB3r 2               
-000AB3r 2               ; BRK Handler — default dispatches to WozMon
-000AB3r 2               ; On entry the stack holds the processor-pushed state from the BRK:
-000AB3r 2               ;   SP+1 = saved P, SP+2 = PCL (PC+2), SP+3 = PCH
-000AB3r 2               ; State is saved to BRK_P/BRK_PCL/BRK_PCH for inspection by a custom handler.
-000AB3r 2               Break:
-000AB3r 2  68             pla                           ; Pull saved P
-000AB4r 2  8D 10 03       sta BRK_P
-000AB7r 2  68             pla                           ; Pull saved PCL (PC+2)
-000AB8r 2  8D 11 03       sta BRK_PCL
-000ABBr 2  68             pla                           ; Pull saved PCH
-000ABCr 2  8D 12 03       sta BRK_PCH
-000ABFr 2  4C rr rr       jmp MonitorEntry
-000AC2r 2               
-000AC2r 2               ; IRQ Handler
-000AC2r 2               Irq:
-000AC2r 2  48             pha
-000AC3r 2  5A             phy
-000AC4r 2  DA             phx
-000AC5r 2  BA             tsx                           ; Get stack pointer to check saved status register
-000AC6r 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
-000AC9r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
-000ACBr 2  D0 3B          bne @IrqBrk                   ; Branch if this was a BRK instruction
-000ACDr 2               @IrqSc:
-000ACDr 2  AD 01 90       lda SC_STATUS
-000AD0r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-000AD2r 2  F0 14          beq @IrqCheckKB               ; If not, check keyboard
-000AD4r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
-000AD7r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000ADAr 2  20 rr rr       jsr BufferSize
-000ADDr 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-000ADFr 2  90 23          bcc @IrqExit                  ; If not, exit
-000AE1r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000AE3r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-000AE6r 2  80 1C          bra @IrqExit
-000AE8r 2               @IrqCheckKB:
-000AE8r 2  AD 0D 94       lda GPIO_IFR
-000AEBr 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
-000AEDr 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
-000AEFr 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
-000AF2r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000AF5r 2  80 0D          bra @IrqExit
-000AF7r 2               @IrqCheckPS2:
-000AF7r 2  AD 0D 94       lda GPIO_IFR
-000AFAr 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
-000AFCr 2  F0 06          beq @IrqExit                  ; If not, exit
-000AFEr 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
-000B01r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000B04r 2               @IrqExit:
-000B04r 2  FA             plx
-000B05r 2  7A             ply
-000B06r 2  68             pla
-000B07r 2  40             rti
-000B08r 2               @IrqBrk:
-000B08r 2  FA             plx                           ; Restore saved registers
-000B09r 2  7A             ply
-000B0Ar 2  68             pla
-000B0Br 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
-000B0Cr 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
-000B0Fr 2               
-000B0Fr 2               ; NMI Vector
-000B0Fr 2               NmiVec:
-000B0Fr 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
-000B12r 2               
-000B12r 2               ; Reset Vector
-000B12r 2               ResetVec:
-000B12r 2  4C rr rr       jmp Reset                     ; Initialize the system
-000B15r 2               
-000B15r 2               ; IRQ Vector
-000B15r 2               IrqVec:
-000B15r 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
-000B18r 2               
-000B18r 1               .segment "CHARS"
+000955r 2               ; FsDeleteFile — Delete a file from the CompactFlash filesystem
+000955r 2               ; Input: STR_PTR ($02-$03) points to null-terminated filename
+000955r 2               ; Output: Carry clear = success, Carry set = file not found or error
+000955r 2               ; Modifies: Flags, A, X, Y, CF_LBA, CF_BUF_PTR
+000955r 2               FsDeleteFileImpl:
+000955r 2  20 rr rr       jsr FsParseName               ; Parse filename into FS_FNAME_BUF
+000958r 2  20 rr rr       jsr FsReadDir                 ; Read directory sector
+00095Br 2  B0 0F          bcs @FsDelErr
+00095Dr 2  20 rr rr       jsr FsFindFile                ; Search for filename
+000960r 2  B0 0A          bcs @FsDelErr                 ; Not found
+000962r 2                 ; Clear the flags byte to mark entry as unused
+000962r 2  A0 0B          ldy #FS_ENTRY_FLAGS
+000964r 2  A9 00          lda #$00
+000966r 2  91 24          sta (CF_BUF_PTR),y
+000968r 2                 ; Write updated directory back to CF
+000968r 2  20 rr rr       jsr FsWriteDir
+00096Br 2                 ; Carry already set/clear from FsWriteDir
+00096Br 2  60             rts
+00096Cr 2               @FsDelErr:
+00096Cr 2  38             sec
+00096Dr 2  60             rts
+00096Er 2               
+00096Er 2               ; === Serial ASCII LOAD/SAVE ===
+00096Er 2               ; Plain binary transfer protocol over serial
+00096Er 2               ; Load: receives 2-byte size (lo/hi) then raw data bytes into PROGRAM_START
+00096Er 2               ; Save: sends 2-byte size (lo/hi) then raw data bytes from PROGRAM_START
+00096Er 2               
+00096Er 2               ; --- ASCII Load ---
+00096Er 2               
+00096Er 2               ; AsciiLoadImpl — Receive raw binary data via serial into program memory
+00096Er 2               ; Switches IO_MODE to serial, receives 2-byte size then raw data bytes
+00096Er 2               ; Data is written starting at PROGRAM_START ($0800)
+00096Er 2               ; Output: Carry clear = success, XFER_PTR points past last byte written
+00096Er 2               ; Modifies: Flags, A, X, Y
+00096Er 2               AsciiLoadImpl:
+00096Er 2                 ; Save and switch IO_MODE to serial
+00096Er 2  AD 06 03       lda IO_MODE
+000971r 2  8D 19 03       sta XFER_IO_SAVE
+000974r 2  A9 01          lda #$01                      ; Serial mode
+000976r 2  8D 06 03       sta IO_MODE
+000979r 2                 ; Print prompt
+000979r 2  A9 0D          lda #$0D
+00097Br 2  20 rr rr       jsr SerialChrout
+00097Er 2  A9 0A          lda #$0A
+000980r 2  20 rr rr       jsr SerialChrout
+000983r 2  A9 rr          lda #<@AsciiLoadMsg
+000985r 2  85 02          sta STR_PTR
+000987r 2  A9 rr          lda #>@AsciiLoadMsg
+000989r 2  85 03          sta STR_PTR + 1
+00098Br 2  20 rr rr       jsr @SerialPrintStr
+00098Er 2                 ; Read 2-byte size (low byte first)
+00098Er 2               @AsciiWaitSzLo:
+00098Er 2  20 rr rr       jsr BufferSize
+000991r 2  F0 FB          beq @AsciiWaitSzLo
+000993r 2  20 rr rr       jsr ReadBuffer
+000996r 2  8D 17 03       sta XFER_REMAIN
+000999r 2               @AsciiWaitSzHi:
+000999r 2  20 rr rr       jsr BufferSize
+00099Cr 2  F0 FB          beq @AsciiWaitSzHi
+00099Er 2  20 rr rr       jsr ReadBuffer
+0009A1r 2  8D 18 03       sta XFER_REMAIN + 1
+0009A4r 2                 ; Initialize write pointer to PROGRAM_START
+0009A4r 2  A9 00          lda #<PROGRAM_START
+0009A6r 2  85 2A          sta XFER_PTR
+0009A8r 2  A9 08          lda #>PROGRAM_START
+0009AAr 2  85 2B          sta XFER_PTR + 1
+0009ACr 2                 ; Check for zero-length transfer
+0009ACr 2  AD 17 03       lda XFER_REMAIN
+0009AFr 2  0D 18 03       ora XFER_REMAIN + 1
+0009B2r 2  F0 25          beq @AsciiLoadOk
+0009B4r 2                 ; Receive data bytes (Y stays 0, pointer is advanced each byte)
+0009B4r 2  A0 00          ldy #$00
+0009B6r 2               @AsciiLoadByte:
+0009B6r 2  20 rr rr       jsr BufferSize
+0009B9r 2  F0 FB          beq @AsciiLoadByte
+0009BBr 2  20 rr rr       jsr ReadBuffer
+0009BEr 2  91 2A          sta (XFER_PTR),y              ; Write byte to target address
+0009C0r 2                 ; Advance write pointer
+0009C0r 2  E6 2A          inc XFER_PTR
+0009C2r 2  D0 02          bne @AsciiLoadNoPage
+0009C4r 2  E6 2B          inc XFER_PTR + 1
+0009C6r 2               @AsciiLoadNoPage:
+0009C6r 2                 ; Decrement remaining count
+0009C6r 2  AD 17 03       lda XFER_REMAIN
+0009C9r 2  D0 03          bne @AsciiLoadDecLo
+0009CBr 2  CE 18 03       dec XFER_REMAIN + 1
+0009CEr 2               @AsciiLoadDecLo:
+0009CEr 2  CE 17 03       dec XFER_REMAIN
+0009D1r 2                 ; Check if done
+0009D1r 2  AD 17 03       lda XFER_REMAIN
+0009D4r 2  0D 18 03       ora XFER_REMAIN + 1
+0009D7r 2  D0 DD          bne @AsciiLoadByte
+0009D9r 2               @AsciiLoadOk:
+0009D9r 2                 ; XFER_PTR now points past last byte written
+0009D9r 2                 ; Print success message
+0009D9r 2  A9 0D          lda #$0D
+0009DBr 2  20 rr rr       jsr SerialChrout
+0009DEr 2  A9 0A          lda #$0A
+0009E0r 2  20 rr rr       jsr SerialChrout
+0009E3r 2  A9 rr          lda #<@AsciiOkMsg
+0009E5r 2  85 02          sta STR_PTR
+0009E7r 2  A9 rr          lda #>@AsciiOkMsg
+0009E9r 2  85 03          sta STR_PTR + 1
+0009EBr 2  20 rr rr       jsr @SerialPrintStr
+0009EEr 2                 ; Restore IO_MODE
+0009EEr 2  AD 19 03       lda XFER_IO_SAVE
+0009F1r 2  8D 06 03       sta IO_MODE
+0009F4r 2  18             clc                           ; Success
+0009F5r 2  60             rts
+0009F6r 2               
+0009F6r 2               ; Internal: print null-terminated string via serial
+0009F6r 2               ; Input: STR_PTR points to string
+0009F6r 2               @SerialPrintStr:
+0009F6r 2  A0 00          ldy #$00
+0009F8r 2               @SerialPrintLoop:
+0009F8r 2  B1 02          lda (STR_PTR),y
+0009FAr 2  F0 06          beq @SerialPrintDone
+0009FCr 2  20 rr rr       jsr SerialChrout
+0009FFr 2  C8             iny
+000A00r 2  D0 F6          bne @SerialPrintLoop
+000A02r 2               @SerialPrintDone:
+000A02r 2  60             rts
+000A03r 2               
+000A03r 2  52 45 41 44  @AsciiLoadMsg: .asciiz "READY TO RECEIVE"
+000A07r 2  59 20 54 4F  
+000A0Br 2  20 52 45 43  
+000A14r 2  4F 4B 00     @AsciiOkMsg:   .asciiz "OK"
+000A17r 2               
+000A17r 2               ; --- ASCII Save ---
+000A17r 2               
+000A17r 2               ; AsciiSaveImpl — Transmit program memory as raw binary via serial
+000A17r 2               ; Sends 2-byte size (lo/hi) then raw data bytes from PROGRAM_START to BAS_PRGEND
+000A17r 2               ; Output: Carry clear = success
+000A17r 2               ; Modifies: Flags, A, X, Y
+000A17r 2               AsciiSaveImpl:
+000A17r 2                 ; Save and switch IO_MODE to serial
+000A17r 2  AD 06 03       lda IO_MODE
+000A1Ar 2  8D 19 03       sta XFER_IO_SAVE
+000A1Dr 2  A9 01          lda #$01
+000A1Fr 2  8D 06 03       sta IO_MODE
+000A22r 2                 ; Initialize save pointer
+000A22r 2  A9 00          lda #<PROGRAM_START
+000A24r 2  85 2A          sta XFER_PTR
+000A26r 2  A9 08          lda #>PROGRAM_START
+000A28r 2  85 2B          sta XFER_PTR + 1
+000A2Ar 2                 ; Calculate remaining bytes = BAS_PRGEND - PROGRAM_START
+000A2Ar 2  A5 12          lda z:BAS_PRGEND
+000A2Cr 2  38             sec
+000A2Dr 2  E9 00          sbc #<PROGRAM_START
+000A2Fr 2  8D 17 03       sta XFER_REMAIN
+000A32r 2  A5 13          lda z:BAS_PRGEND + 1
+000A34r 2  E9 08          sbc #>PROGRAM_START
+000A36r 2  8D 18 03       sta XFER_REMAIN + 1
+000A39r 2                 ; Send 2-byte size (low byte first)
+000A39r 2  AD 17 03       lda XFER_REMAIN
+000A3Cr 2  20 rr rr       jsr SerialChrout
+000A3Fr 2  AD 18 03       lda XFER_REMAIN + 1
+000A42r 2  20 rr rr       jsr SerialChrout
+000A45r 2                 ; Check for zero-length program
+000A45r 2  AD 17 03       lda XFER_REMAIN
+000A48r 2  0D 18 03       ora XFER_REMAIN + 1
+000A4Br 2  F0 20          beq @AsciiSaveDone
+000A4Dr 2                 ; Send data bytes (Y stays 0, pointer is advanced each byte)
+000A4Dr 2  A0 00          ldy #$00
+000A4Fr 2               @AsciiSaveByte:
+000A4Fr 2  B1 2A          lda (XFER_PTR),y
+000A51r 2  20 rr rr       jsr SerialChrout
+000A54r 2                 ; Advance read pointer
+000A54r 2  E6 2A          inc XFER_PTR
+000A56r 2  D0 02          bne @AsciiSaveNoPage
+000A58r 2  E6 2B          inc XFER_PTR + 1
+000A5Ar 2               @AsciiSaveNoPage:
+000A5Ar 2                 ; Decrement remaining count
+000A5Ar 2  AD 17 03       lda XFER_REMAIN
+000A5Dr 2  D0 03          bne @AsciiSaveDecLo
+000A5Fr 2  CE 18 03       dec XFER_REMAIN + 1
+000A62r 2               @AsciiSaveDecLo:
+000A62r 2  CE 17 03       dec XFER_REMAIN
+000A65r 2                 ; Check if done
+000A65r 2  AD 17 03       lda XFER_REMAIN
+000A68r 2  0D 18 03       ora XFER_REMAIN + 1
+000A6Br 2  D0 E2          bne @AsciiSaveByte
+000A6Dr 2               @AsciiSaveDone:
+000A6Dr 2                 ; Restore IO_MODE
+000A6Dr 2  AD 19 03       lda XFER_IO_SAVE
+000A70r 2  8D 06 03       sta IO_MODE
+000A73r 2  18             clc                           ; Success
+000A74r 2  60             rts
+000A75r 2               
+000A75r 2               ; Draw the splash screen
+000A75r 2               ; Uses video output to display centered title and boot menu
+000A75r 2               ; Modifies: Flags, A, X, Y
+000A75r 2               Splash:
+000A75r 2  20 rr rr       jsr VideoClear                ; Clear the video screen
+000A78r 2                 ; Position cursor at row 10, col 10 for title
+000A78r 2  A2 0A          ldx #10
+000A7Ar 2  A0 0A          ldy #10
+000A7Cr 2  20 rr rr       jsr VideoSetCursor
+000A7Fr 2  A9 rr          lda #<@SplashTitle
+000A81r 2  85 02          sta STR_PTR
+000A83r 2  A9 rr          lda #>@SplashTitle
+000A85r 2  85 03          sta STR_PTR + 1
+000A87r 2  20 rr rr       jsr VideoPrintStrImpl
+000A8Ar 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
+000A8Ar 2  A2 08          ldx #8
+000A8Cr 2  A0 0C          ldy #12
+000A8Er 2  20 rr rr       jsr VideoSetCursor
+000A91r 2  A9 rr          lda #<@SplashMenu
+000A93r 2  85 02          sta STR_PTR
+000A95r 2  A9 rr          lda #>@SplashMenu
+000A97r 2  85 03          sta STR_PTR + 1
+000A99r 2  20 rr rr       jsr VideoPrintStrImpl
+000A9Cr 2  60             rts
+000A9Dr 2  2D 2D 20 54  @SplashTitle: .asciiz "-- The 'COB' v1.0 --"
+000AA1r 2  68 65 20 27  
+000AA5r 2  43 4F 42 27  
+000AB2r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
+000AB6r 2  52 3D 42 41  
+000ABAr 2  53 49 43 20  
+000ACBr 2               
+000ACBr 2               ; NMI Handler
+000ACBr 2               Nmi:
+000ACBr 2  40             rti
+000ACCr 2               
+000ACCr 2               ; BRK Handler — default dispatches to WozMon
+000ACCr 2               ; On entry the stack holds the processor-pushed state from the BRK:
+000ACCr 2               ;   SP+1 = saved P, SP+2 = PCL (PC+2), SP+3 = PCH
+000ACCr 2               ; State is saved to BRK_P/BRK_PCL/BRK_PCH for inspection by a custom handler.
+000ACCr 2               Break:
+000ACCr 2  68             pla                           ; Pull saved P
+000ACDr 2  8D 10 03       sta BRK_P
+000AD0r 2  68             pla                           ; Pull saved PCL (PC+2)
+000AD1r 2  8D 11 03       sta BRK_PCL
+000AD4r 2  68             pla                           ; Pull saved PCH
+000AD5r 2  8D 12 03       sta BRK_PCH
+000AD8r 2  4C rr rr       jmp MonitorEntry
+000ADBr 2               
+000ADBr 2               ; IRQ Handler
+000ADBr 2               Irq:
+000ADBr 2  48             pha
+000ADCr 2  5A             phy
+000ADDr 2  DA             phx
+000ADEr 2  BA             tsx                           ; Get stack pointer to check saved status register
+000ADFr 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
+000AE2r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
+000AE4r 2  D0 3B          bne @IrqBrk                   ; Branch if this was a BRK instruction
+000AE6r 2               @IrqSc:
+000AE6r 2  AD 01 90       lda SC_STATUS
+000AE9r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+000AEBr 2  F0 14          beq @IrqCheckKB               ; If not, check keyboard
+000AEDr 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
+000AF0r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000AF3r 2  20 rr rr       jsr BufferSize
+000AF6r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
+000AF8r 2  90 23          bcc @IrqExit                  ; If not, exit
+000AFAr 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+000AFCr 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+000AFFr 2  80 1C          bra @IrqExit
+000B01r 2               @IrqCheckKB:
+000B01r 2  AD 0D 94       lda GPIO_IFR
+000B04r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
+000B06r 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
+000B08r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
+000B0Br 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000B0Er 2  80 0D          bra @IrqExit
+000B10r 2               @IrqCheckPS2:
+000B10r 2  AD 0D 94       lda GPIO_IFR
+000B13r 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
+000B15r 2  F0 06          beq @IrqExit                  ; If not, exit
+000B17r 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
+000B1Ar 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000B1Dr 2               @IrqExit:
+000B1Dr 2  FA             plx
+000B1Er 2  7A             ply
+000B1Fr 2  68             pla
+000B20r 2  40             rti
+000B21r 2               @IrqBrk:
+000B21r 2  FA             plx                           ; Restore saved registers
+000B22r 2  7A             ply
+000B23r 2  68             pla
+000B24r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
+000B25r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+000B28r 2               
+000B28r 2               ; NMI Vector
+000B28r 2               NmiVec:
+000B28r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
+000B2Br 2               
+000B2Br 2               ; Reset Vector
+000B2Br 2               ResetVec:
+000B2Br 2  4C rr rr       jmp Reset                     ; Initialize the system
+000B2Er 2               
+000B2Er 2               ; IRQ Vector
+000B2Er 2               IrqVec:
+000B2Er 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+000B31r 2               
+000B31r 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; IBM Code Page 437 Character Set
 000000r 2               ; 6x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)
@@ -3000,6 +3023,7 @@ Current file: BIOS.asm
 000000r 2               TOK_LOAD            = $9F
 000000r 2               TOK_SAVE            = $A0
 000000r 2               TOK_DIR             = $A1
+000000r 2               TOK_DEL             = $A2
 000000r 2               
 000000r 2               ; Multi-char operator tokens
 000000r 2               TOK_GE              = $9A               ; >=
@@ -5184,1135 +5208,1189 @@ Current file: BIOS.asm
 000AC0r 2  D0 03          bne @NotDir
 000AC2r 2  4C rr rr       jmp @JmpDir
 000AC5r 2               @NotDir:
-000AC5r 2               
-000AC5r 2                 ; Check for implicit LET: A-Z followed by =
-000AC5r 2  C9 41          cmp #'A'
-000AC7r 2  90 07          bcc @ExecSyntaxErr
-000AC9r 2  C9 5B          cmp #'Z' + 1
-000ACBr 2  B0 03          bcs @ExecSyntaxErr
-000ACDr 2                 ; Don't consume the variable letter — BasCmdLet will read it
-000ACDr 2  4C rr rr       jmp BasCmdLet
-000AD0r 2               
-000AD0r 2               @ExecSyntaxErr:
-000AD0r 2  A9 00          lda #ERR_SYNTAX
-000AD2r 2  4C rr rr       jmp BasError
-000AD5r 2               
-000AD5r 2               @JmpPrint:
-000AD5r 2  20 rr rr       jsr BasAdvTxtPtr
-000AD8r 2  20 rr rr       jsr BasCmdPrint
-000ADBr 2  80 78          bra @ExecCheckMore
-000ADDr 2               @JmpInput:
-000ADDr 2  20 rr rr       jsr BasAdvTxtPtr
-000AE0r 2  20 rr rr       jsr BasCmdInput
-000AE3r 2  80 70          bra @ExecCheckMore
-000AE5r 2               @JmpGoto:
+000AC5r 2  C9 A2          cmp #TOK_DEL
+000AC7r 2  D0 03          bne @NotDel
+000AC9r 2  4C rr rr       jmp @JmpDel
+000ACCr 2               @NotDel:
+000ACCr 2               
+000ACCr 2                 ; Check for implicit LET: A-Z followed by =
+000ACCr 2  C9 41          cmp #'A'
+000ACEr 2  90 07          bcc @ExecSyntaxErr
+000AD0r 2  C9 5B          cmp #'Z' + 1
+000AD2r 2  B0 03          bcs @ExecSyntaxErr
+000AD4r 2                 ; Don't consume the variable letter — BasCmdLet will read it
+000AD4r 2  4C rr rr       jmp BasCmdLet
+000AD7r 2               
+000AD7r 2               @ExecSyntaxErr:
+000AD7r 2  A9 00          lda #ERR_SYNTAX
+000AD9r 2  4C rr rr       jmp BasError
+000ADCr 2               
+000ADCr 2               @JmpPrint:
+000ADCr 2  20 rr rr       jsr BasAdvTxtPtr
+000ADFr 2  20 rr rr       jsr BasCmdPrint
+000AE2r 2  4C rr rr       jmp @ExecCheckMore
+000AE5r 2               @JmpInput:
 000AE5r 2  20 rr rr       jsr BasAdvTxtPtr
-000AE8r 2  4C rr rr       jmp BasCmdGoto                 ; Goto changes TXTPTR, don't check for ':'
-000AEBr 2               @JmpGosub:
-000AEBr 2  20 rr rr       jsr BasAdvTxtPtr
-000AEEr 2  4C rr rr       jmp BasCmdGosub
-000AF1r 2               @JmpReturn:
-000AF1r 2  20 rr rr       jsr BasAdvTxtPtr
-000AF4r 2  4C rr rr       jmp BasCmdReturn
-000AF7r 2               @JmpIf:
-000AF7r 2  20 rr rr       jsr BasAdvTxtPtr
-000AFAr 2  4C rr rr       jmp BasCmdIf
-000AFDr 2               @JmpFor:
-000AFDr 2  20 rr rr       jsr BasAdvTxtPtr
-000B00r 2  4C rr rr       jmp BasCmdFor
-000B03r 2               @JmpNext:
-000B03r 2  20 rr rr       jsr BasAdvTxtPtr
-000B06r 2  4C rr rr       jmp BasCmdNext
-000B09r 2               @JmpEnd:
-000B09r 2  4C rr rr       jmp BasCmdEnd
-000B0Cr 2               @JmpList:
-000B0Cr 2  20 rr rr       jsr BasAdvTxtPtr
-000B0Fr 2  20 rr rr       jsr BasCmdList
-000B12r 2  80 41          bra @ExecCheckMore
-000B14r 2               @JmpRun:
-000B14r 2  4C rr rr       jmp BasCmdRun
-000B17r 2               @JmpNew:
-000B17r 2  4C rr rr       jmp BasCmdNew
-000B1Ar 2               @JmpClrCmd:
-000B1Ar 2  20 rr rr       jsr BasAdvTxtPtr
-000B1Dr 2  20 rr rr       jsr BasCmdClr
-000B20r 2  80 33          bra @ExecCheckMore
-000B22r 2               @JmpPoke:
+000AE8r 2  20 rr rr       jsr BasCmdInput
+000AEBr 2  80 78          bra @ExecCheckMore
+000AEDr 2               @JmpGoto:
+000AEDr 2  20 rr rr       jsr BasAdvTxtPtr
+000AF0r 2  4C rr rr       jmp BasCmdGoto                 ; Goto changes TXTPTR, don't check for ':'
+000AF3r 2               @JmpGosub:
+000AF3r 2  20 rr rr       jsr BasAdvTxtPtr
+000AF6r 2  4C rr rr       jmp BasCmdGosub
+000AF9r 2               @JmpReturn:
+000AF9r 2  20 rr rr       jsr BasAdvTxtPtr
+000AFCr 2  4C rr rr       jmp BasCmdReturn
+000AFFr 2               @JmpIf:
+000AFFr 2  20 rr rr       jsr BasAdvTxtPtr
+000B02r 2  4C rr rr       jmp BasCmdIf
+000B05r 2               @JmpFor:
+000B05r 2  20 rr rr       jsr BasAdvTxtPtr
+000B08r 2  4C rr rr       jmp BasCmdFor
+000B0Br 2               @JmpNext:
+000B0Br 2  20 rr rr       jsr BasAdvTxtPtr
+000B0Er 2  4C rr rr       jmp BasCmdNext
+000B11r 2               @JmpEnd:
+000B11r 2  4C rr rr       jmp BasCmdEnd
+000B14r 2               @JmpList:
+000B14r 2  20 rr rr       jsr BasAdvTxtPtr
+000B17r 2  20 rr rr       jsr BasCmdList
+000B1Ar 2  80 49          bra @ExecCheckMore
+000B1Cr 2               @JmpRun:
+000B1Cr 2  4C rr rr       jmp BasCmdRun
+000B1Fr 2               @JmpNew:
+000B1Fr 2  4C rr rr       jmp BasCmdNew
+000B22r 2               @JmpClrCmd:
 000B22r 2  20 rr rr       jsr BasAdvTxtPtr
-000B25r 2  20 rr rr       jsr BasCmdPoke
-000B28r 2  80 2B          bra @ExecCheckMore
-000B2Ar 2               @JmpLet:
+000B25r 2  20 rr rr       jsr BasCmdClr
+000B28r 2  80 3B          bra @ExecCheckMore
+000B2Ar 2               @JmpPoke:
 000B2Ar 2  20 rr rr       jsr BasAdvTxtPtr
-000B2Dr 2  20 rr rr       jsr BasCmdLet
-000B30r 2  80 23          bra @ExecCheckMore
-000B32r 2               @JmpBrk:
-000B32r 2  4C rr rr       jmp BasCmdBrk
-000B35r 2               @JmpSys:
-000B35r 2  20 rr rr       jsr BasAdvTxtPtr
-000B38r 2  20 rr rr       jsr BasCmdSys
-000B3Br 2  80 18          bra @ExecCheckMore
-000B3Dr 2               @JmpLoad:
+000B2Dr 2  20 rr rr       jsr BasCmdPoke
+000B30r 2  80 33          bra @ExecCheckMore
+000B32r 2               @JmpLet:
+000B32r 2  20 rr rr       jsr BasAdvTxtPtr
+000B35r 2  20 rr rr       jsr BasCmdLet
+000B38r 2  80 2B          bra @ExecCheckMore
+000B3Ar 2               @JmpBrk:
+000B3Ar 2  4C rr rr       jmp BasCmdBrk
+000B3Dr 2               @JmpSys:
 000B3Dr 2  20 rr rr       jsr BasAdvTxtPtr
-000B40r 2  20 rr rr       jsr BasCmdLoad
-000B43r 2  80 10          bra @ExecCheckMore
-000B45r 2               @JmpSave:
+000B40r 2  20 rr rr       jsr BasCmdSys
+000B43r 2  80 20          bra @ExecCheckMore
+000B45r 2               @JmpLoad:
 000B45r 2  20 rr rr       jsr BasAdvTxtPtr
-000B48r 2  20 rr rr       jsr BasCmdSave
-000B4Br 2  80 08          bra @ExecCheckMore
-000B4Dr 2               @JmpDir:
+000B48r 2  20 rr rr       jsr BasCmdLoad
+000B4Br 2  80 18          bra @ExecCheckMore
+000B4Dr 2               @JmpSave:
 000B4Dr 2  20 rr rr       jsr BasAdvTxtPtr
-000B50r 2  20 rr rr       jsr BasCmdDir
-000B53r 2  80 00          bra @ExecCheckMore
-000B55r 2               
-000B55r 2               @ExecCheckMore:
-000B55r 2                 ; Check for ':' statement separator
-000B55r 2  20 rr rr       jsr BasSkipSpaces
-000B58r 2  20 rr rr       jsr BasGetTokChar
-000B5Br 2  C9 3A          cmp #CH_COLON
-000B5Dr 2  D0 06          bne @ExecDone
-000B5Fr 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip ':'
-000B62r 2  4C rr rr       jmp BasExecLine                ; Execute next statement
-000B65r 2               @ExecDone:
-000B65r 2  60             rts
-000B66r 2               
-000B66r 2               ; ============================================================================
-000B66r 2               ; RUN — Execute program from first line
-000B66r 2               ; ============================================================================
-000B66r 2               
-000B66r 2               BasCmdRun:
-000B66r 2  20 rr rr       jsr BasCmdClr
-000B69r 2  A9 01          lda #BAS_FLAG_RUN
-000B6Br 2  85 17          sta BAS_FLAGS
-000B6Dr 2               
-000B6Dr 2                 ; Start at first program line
-000B6Dr 2  A9 00          lda #<BAS_PRG_START
-000B6Fr 2  85 06          sta BAS_CURLINE
-000B71r 2  A9 08          lda #>BAS_PRG_START
-000B73r 2  85 07          sta BAS_CURLINE + 1
-000B75r 2               
-000B75r 2               BasRunLoop:
-000B75r 2                 ; Check if at end of program (CURLINE == PRGEND)
-000B75r 2  A5 06          lda BAS_CURLINE
-000B77r 2  C5 12          cmp BAS_PRGEND
-000B79r 2  D0 06          bne @RunNotEnd
-000B7Br 2  A5 07          lda BAS_CURLINE + 1
-000B7Dr 2  C5 13          cmp BAS_PRGEND + 1
-000B7Fr 2  F0 51          beq BasRunDone
-000B81r 2               @RunNotEnd:
-000B81r 2               
-000B81r 2                 ; Check for Ctrl+C break
-000B81r 2  20 rr rr       jsr BasCheckBreak
-000B84r 2               
-000B84r 2                 ; Get line number
-000B84r 2  A0 02          ldy #LINE_NUM
-000B86r 2  B1 06          lda (BAS_CURLINE),y
-000B88r 2  85 08          sta BAS_LINENUM
-000B8Ar 2  C8             iny
-000B8Br 2  B1 06          lda (BAS_CURLINE),y
-000B8Dr 2  85 09          sta BAS_LINENUM + 1
-000B8Fr 2               
-000B8Fr 2                 ; Save CURLINE before execution for GOTO/GOSUB detection
-000B8Fr 2  A5 06          lda BAS_CURLINE
-000B91r 2  85 14          sta BAS_VARPTR
-000B93r 2  A5 07          lda BAS_CURLINE + 1
-000B95r 2  85 15          sta BAS_VARPTR + 1
-000B97r 2               
-000B97r 2                 ; Set TXTPTR to payload
-000B97r 2  18             clc
-000B98r 2  A5 06          lda BAS_CURLINE
-000B9Ar 2  69 04          adc #LINE_PAYLOAD
-000B9Cr 2  85 04          sta BAS_TXTPTR
-000B9Er 2  A5 07          lda BAS_CURLINE + 1
-000BA0r 2  69 00          adc #$00
-000BA2r 2  85 05          sta BAS_TXTPTR + 1
-000BA4r 2               
-000BA4r 2                 ; Execute the line
-000BA4r 2  20 rr rr       jsr BasExecLine
+000B50r 2  20 rr rr       jsr BasCmdSave
+000B53r 2  80 10          bra @ExecCheckMore
+000B55r 2               @JmpDir:
+000B55r 2  20 rr rr       jsr BasAdvTxtPtr
+000B58r 2  20 rr rr       jsr BasCmdDir
+000B5Br 2  80 08          bra @ExecCheckMore
+000B5Dr 2               @JmpDel:
+000B5Dr 2  20 rr rr       jsr BasAdvTxtPtr
+000B60r 2  20 rr rr       jsr BasCmdDel
+000B63r 2  80 00          bra @ExecCheckMore
+000B65r 2               
+000B65r 2               @ExecCheckMore:
+000B65r 2                 ; Check for ':' statement separator
+000B65r 2  20 rr rr       jsr BasSkipSpaces
+000B68r 2  20 rr rr       jsr BasGetTokChar
+000B6Br 2  C9 3A          cmp #CH_COLON
+000B6Dr 2  D0 06          bne @ExecDone
+000B6Fr 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip ':'
+000B72r 2  4C rr rr       jmp BasExecLine                ; Execute next statement
+000B75r 2               @ExecDone:
+000B75r 2  60             rts
+000B76r 2               
+000B76r 2               ; ============================================================================
+000B76r 2               ; RUN — Execute program from first line
+000B76r 2               ; ============================================================================
+000B76r 2               
+000B76r 2               BasCmdRun:
+000B76r 2  20 rr rr       jsr BasCmdClr
+000B79r 2  A9 01          lda #BAS_FLAG_RUN
+000B7Br 2  85 17          sta BAS_FLAGS
+000B7Dr 2               
+000B7Dr 2                 ; Start at first program line
+000B7Dr 2  A9 00          lda #<BAS_PRG_START
+000B7Fr 2  85 06          sta BAS_CURLINE
+000B81r 2  A9 08          lda #>BAS_PRG_START
+000B83r 2  85 07          sta BAS_CURLINE + 1
+000B85r 2               
+000B85r 2               BasRunLoop:
+000B85r 2                 ; Check if at end of program (CURLINE == PRGEND)
+000B85r 2  A5 06          lda BAS_CURLINE
+000B87r 2  C5 12          cmp BAS_PRGEND
+000B89r 2  D0 06          bne @RunNotEnd
+000B8Br 2  A5 07          lda BAS_CURLINE + 1
+000B8Dr 2  C5 13          cmp BAS_PRGEND + 1
+000B8Fr 2  F0 51          beq BasRunDone
+000B91r 2               @RunNotEnd:
+000B91r 2               
+000B91r 2                 ; Check for Ctrl+C break
+000B91r 2  20 rr rr       jsr BasCheckBreak
+000B94r 2               
+000B94r 2                 ; Get line number
+000B94r 2  A0 02          ldy #LINE_NUM
+000B96r 2  B1 06          lda (BAS_CURLINE),y
+000B98r 2  85 08          sta BAS_LINENUM
+000B9Ar 2  C8             iny
+000B9Br 2  B1 06          lda (BAS_CURLINE),y
+000B9Dr 2  85 09          sta BAS_LINENUM + 1
+000B9Fr 2               
+000B9Fr 2                 ; Save CURLINE before execution for GOTO/GOSUB detection
+000B9Fr 2  A5 06          lda BAS_CURLINE
+000BA1r 2  85 14          sta BAS_VARPTR
+000BA3r 2  A5 07          lda BAS_CURLINE + 1
+000BA5r 2  85 15          sta BAS_VARPTR + 1
 000BA7r 2               
-000BA7r 2                 ; Check if END was executed (flags cleared)
-000BA7r 2  A5 17          lda BAS_FLAGS
-000BA9r 2  29 01          and #BAS_FLAG_RUN
-000BABr 2  F0 25          beq BasRunDone
-000BADr 2               
-000BADr 2                 ; Check if GOTO/GOSUB changed CURLINE
-000BADr 2  A5 06          lda BAS_CURLINE
-000BAFr 2  C5 14          cmp BAS_VARPTR
-000BB1r 2  D0 C2          bne BasRunLoop                 ; Changed — re-execute from new CURLINE
-000BB3r 2  A5 07          lda BAS_CURLINE + 1
-000BB5r 2  C5 15          cmp BAS_VARPTR + 1
-000BB7r 2  D0 BC          bne BasRunLoop                 ; Changed — re-execute from new CURLINE
-000BB9r 2               
-000BB9r 2                 ; Advance to next line by scanning for end of current line
-000BB9r 2  A0 04          ldy #LINE_PAYLOAD
-000BBBr 2               @RunScanNull:
-000BBBr 2  B1 06          lda (BAS_CURLINE),y
-000BBDr 2  F0 03          beq @RunFoundNull
-000BBFr 2  C8             iny
-000BC0r 2  80 F9          bra @RunScanNull
-000BC2r 2               @RunFoundNull:
-000BC2r 2  C8             iny                            ; Past null terminator
-000BC3r 2  98             tya
-000BC4r 2  18             clc
-000BC5r 2  65 06          adc BAS_CURLINE
-000BC7r 2  85 06          sta BAS_CURLINE
-000BC9r 2  A9 00          lda #$00
-000BCBr 2  65 07          adc BAS_CURLINE + 1
-000BCDr 2  85 07          sta BAS_CURLINE + 1
-000BCFr 2  4C rr rr       jmp BasRunLoop
-000BD2r 2               
-000BD2r 2               BasRunDone:
-000BD2r 2  64 17          stz BAS_FLAGS
-000BD4r 2  60             rts
-000BD5r 2               
-000BD5r 2               ; ============================================================================
-000BD5r 2               ; Statement Handlers
-000BD5r 2               ; ============================================================================
-000BD5r 2               
-000BD5r 2               ; --- PRINT ---
-000BD5r 2               BasCmdPrint:
-000BD5r 2  20 rr rr       jsr BasSkipSpaces
-000BD8r 2  20 rr rr       jsr BasGetTokChar
-000BDBr 2  F0 5E          beq @PrintNewline              ; Empty PRINT — just newline
-000BDDr 2  C9 3A          cmp #CH_COLON
-000BDFr 2  F0 5A          beq @PrintNewline              ; PRINT: — newline then next statement
-000BE1r 2               
-000BE1r 2               @PrintLoop:
-000BE1r 2  20 rr rr       jsr BasSkipSpaces
-000BE4r 2  20 rr rr       jsr BasGetTokChar
-000BE7r 2  F0 55          beq @PrintEnd                  ; End of line
-000BE9r 2  C9 3A          cmp #CH_COLON
-000BEBr 2  F0 51          beq @PrintEnd
-000BEDr 2               
-000BEDr 2                 ; String literal?
-000BEDr 2  C9 22          cmp #CH_QUOTE
-000BEFr 2  F0 08          beq @PrintString
+000BA7r 2                 ; Set TXTPTR to payload
+000BA7r 2  18             clc
+000BA8r 2  A5 06          lda BAS_CURLINE
+000BAAr 2  69 04          adc #LINE_PAYLOAD
+000BACr 2  85 04          sta BAS_TXTPTR
+000BAEr 2  A5 07          lda BAS_CURLINE + 1
+000BB0r 2  69 00          adc #$00
+000BB2r 2  85 05          sta BAS_TXTPTR + 1
+000BB4r 2               
+000BB4r 2                 ; Execute the line
+000BB4r 2  20 rr rr       jsr BasExecLine
+000BB7r 2               
+000BB7r 2                 ; Check if END was executed (flags cleared)
+000BB7r 2  A5 17          lda BAS_FLAGS
+000BB9r 2  29 01          and #BAS_FLAG_RUN
+000BBBr 2  F0 25          beq BasRunDone
+000BBDr 2               
+000BBDr 2                 ; Check if GOTO/GOSUB changed CURLINE
+000BBDr 2  A5 06          lda BAS_CURLINE
+000BBFr 2  C5 14          cmp BAS_VARPTR
+000BC1r 2  D0 C2          bne BasRunLoop                 ; Changed — re-execute from new CURLINE
+000BC3r 2  A5 07          lda BAS_CURLINE + 1
+000BC5r 2  C5 15          cmp BAS_VARPTR + 1
+000BC7r 2  D0 BC          bne BasRunLoop                 ; Changed — re-execute from new CURLINE
+000BC9r 2               
+000BC9r 2                 ; Advance to next line by scanning for end of current line
+000BC9r 2  A0 04          ldy #LINE_PAYLOAD
+000BCBr 2               @RunScanNull:
+000BCBr 2  B1 06          lda (BAS_CURLINE),y
+000BCDr 2  F0 03          beq @RunFoundNull
+000BCFr 2  C8             iny
+000BD0r 2  80 F9          bra @RunScanNull
+000BD2r 2               @RunFoundNull:
+000BD2r 2  C8             iny                            ; Past null terminator
+000BD3r 2  98             tya
+000BD4r 2  18             clc
+000BD5r 2  65 06          adc BAS_CURLINE
+000BD7r 2  85 06          sta BAS_CURLINE
+000BD9r 2  A9 00          lda #$00
+000BDBr 2  65 07          adc BAS_CURLINE + 1
+000BDDr 2  85 07          sta BAS_CURLINE + 1
+000BDFr 2  4C rr rr       jmp BasRunLoop
+000BE2r 2               
+000BE2r 2               BasRunDone:
+000BE2r 2  64 17          stz BAS_FLAGS
+000BE4r 2  60             rts
+000BE5r 2               
+000BE5r 2               ; ============================================================================
+000BE5r 2               ; Statement Handlers
+000BE5r 2               ; ============================================================================
+000BE5r 2               
+000BE5r 2               ; --- PRINT ---
+000BE5r 2               BasCmdPrint:
+000BE5r 2  20 rr rr       jsr BasSkipSpaces
+000BE8r 2  20 rr rr       jsr BasGetTokChar
+000BEBr 2  F0 5E          beq @PrintNewline              ; Empty PRINT — just newline
+000BEDr 2  C9 3A          cmp #CH_COLON
+000BEFr 2  F0 5A          beq @PrintNewline              ; PRINT: — newline then next statement
 000BF1r 2               
-000BF1r 2                 ; Otherwise evaluate expression and print number
-000BF1r 2  20 rr rr       jsr BasExpr
-000BF4r 2  20 rr rr       jsr BasPrintInt
-000BF7r 2  80 17          bra @PrintSep
-000BF9r 2               
-000BF9r 2               @PrintString:
-000BF9r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
-000BFCr 2               @PrintStrCh:
-000BFCr 2  20 rr rr       jsr BasGetTokChar
-000BFFr 2  F0 3D          beq @PrintEnd                  ; Unterminated string
-000C01r 2  C9 22          cmp #CH_QUOTE
-000C03r 2  F0 08          beq @PrintStrEnd
-000C05r 2  20 rr rr       jsr Chrout
-000C08r 2  20 rr rr       jsr BasAdvTxtPtr
-000C0Br 2  80 EF          bra @PrintStrCh
-000C0Dr 2               @PrintStrEnd:
-000C0Dr 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip closing quote
-000C10r 2               
-000C10r 2               @PrintSep:
-000C10r 2  20 rr rr       jsr BasSkipSpaces
-000C13r 2  20 rr rr       jsr BasGetTokChar
-000C16r 2  C9 3B          cmp #CH_SEMICOL
-000C18r 2  F0 06          beq @PrintSemicolon
-000C1Ar 2  C9 2C          cmp #CH_COMMA
-000C1Cr 2  F0 13          beq @PrintComma
-000C1Er 2                 ; No separator — done, print newline
-000C1Er 2  80 1B          bra @PrintNewline
+000BF1r 2               @PrintLoop:
+000BF1r 2  20 rr rr       jsr BasSkipSpaces
+000BF4r 2  20 rr rr       jsr BasGetTokChar
+000BF7r 2  F0 55          beq @PrintEnd                  ; End of line
+000BF9r 2  C9 3A          cmp #CH_COLON
+000BFBr 2  F0 51          beq @PrintEnd
+000BFDr 2               
+000BFDr 2                 ; String literal?
+000BFDr 2  C9 22          cmp #CH_QUOTE
+000BFFr 2  F0 08          beq @PrintString
+000C01r 2               
+000C01r 2                 ; Otherwise evaluate expression and print number
+000C01r 2  20 rr rr       jsr BasExpr
+000C04r 2  20 rr rr       jsr BasPrintInt
+000C07r 2  80 17          bra @PrintSep
+000C09r 2               
+000C09r 2               @PrintString:
+000C09r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
+000C0Cr 2               @PrintStrCh:
+000C0Cr 2  20 rr rr       jsr BasGetTokChar
+000C0Fr 2  F0 3D          beq @PrintEnd                  ; Unterminated string
+000C11r 2  C9 22          cmp #CH_QUOTE
+000C13r 2  F0 08          beq @PrintStrEnd
+000C15r 2  20 rr rr       jsr Chrout
+000C18r 2  20 rr rr       jsr BasAdvTxtPtr
+000C1Br 2  80 EF          bra @PrintStrCh
+000C1Dr 2               @PrintStrEnd:
+000C1Dr 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip closing quote
 000C20r 2               
-000C20r 2               @PrintSemicolon:
-000C20r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip ';'
-000C23r 2                 ; Check if end of statement (suppress newline)
-000C23r 2  20 rr rr       jsr BasSkipSpaces
-000C26r 2  20 rr rr       jsr BasGetTokChar
-000C29r 2  F0 13          beq @PrintDone                 ; End of line — suppress newline
-000C2Br 2  C9 3A          cmp #CH_COLON
-000C2Dr 2  F0 0F          beq @PrintDone                 ; Colon — suppress newline
-000C2Fr 2  80 B0          bra @PrintLoop
-000C31r 2               
-000C31r 2               @PrintComma:
-000C31r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip ','
-000C34r 2                 ; Print a tab (8 spaces approximated as a tab char)
-000C34r 2  A9 09          lda #$09
-000C36r 2  20 rr rr       jsr Chrout
-000C39r 2  80 A6          bra @PrintLoop
-000C3Br 2               
-000C3Br 2               @PrintNewline:
-000C3Br 2  20 rr rr       jsr BasPrintCRLF
-000C3Er 2               @PrintDone:
-000C3Er 2               @PrintEnd:
-000C3Er 2  60             rts
-000C3Fr 2               
-000C3Fr 2               ; --- INPUT ---
-000C3Fr 2               BasCmdInput:
-000C3Fr 2  20 rr rr       jsr BasSkipSpaces
-000C42r 2  20 rr rr       jsr BasGetTokChar
-000C45r 2               
-000C45r 2                 ; Check for optional prompt string
-000C45r 2  C9 22          cmp #CH_QUOTE
-000C47r 2  D0 3B          bne @InputNoPrompt
-000C49r 2               
-000C49r 2                 ; Print prompt string
-000C49r 2  20 rr rr       jsr BasAdvTxtPtr
-000C4Cr 2               @InputPromptCh:
-000C4Cr 2  20 rr rr       jsr BasGetTokChar
-000C4Fr 2  F0 0F          beq @InputPromptDone
-000C51r 2  C9 22          cmp #CH_QUOTE
-000C53r 2  F0 08          beq @InputPromptEnd
-000C55r 2  20 rr rr       jsr Chrout
-000C58r 2  20 rr rr       jsr BasAdvTxtPtr
-000C5Br 2  80 EF          bra @InputPromptCh
-000C5Dr 2               @InputPromptEnd:
-000C5Dr 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip closing quote
-000C60r 2               @InputPromptDone:
-000C60r 2                 ; Expect semicolon or comma after prompt
-000C60r 2  20 rr rr       jsr BasSkipSpaces
-000C63r 2  20 rr rr       jsr BasGetTokChar
-000C66r 2  C9 3B          cmp #CH_SEMICOL
-000C68r 2  F0 06          beq @InputSemiSep
-000C6Ar 2  C9 2C          cmp #CH_COMMA
-000C6Cr 2  F0 11          beq @InputCommaSep
-000C6Er 2  80 1E          bra @InputGetVar
-000C70r 2               
-000C70r 2               @InputSemiSep:
-000C70r 2  20 rr rr       jsr BasAdvTxtPtr
-000C73r 2                 ; Print "? " after semicolon-style prompt
-000C73r 2  A9 3F          lda #'?'
-000C75r 2  20 rr rr       jsr Chrout
-000C78r 2  A9 20          lda #CH_SPACE
-000C7Ar 2  20 rr rr       jsr Chrout
-000C7Dr 2  80 0F          bra @InputGetVar
-000C7Fr 2               
-000C7Fr 2               @InputCommaSep:
-000C7Fr 2  20 rr rr       jsr BasAdvTxtPtr
-000C82r 2                 ; No "? " with comma separator
-000C82r 2  80 0A          bra @InputGetVar
-000C84r 2               
-000C84r 2               @InputNoPrompt:
-000C84r 2                 ; Print default "? " prompt
-000C84r 2  A9 3F          lda #'?'
-000C86r 2  20 rr rr       jsr Chrout
-000C89r 2  A9 20          lda #CH_SPACE
-000C8Br 2  20 rr rr       jsr Chrout
-000C8Er 2               
-000C8Er 2               @InputGetVar:
-000C8Er 2  20 rr rr       jsr BasSkipSpaces
-000C91r 2  20 rr rr       jsr BasGetTokChar
+000C20r 2               @PrintSep:
+000C20r 2  20 rr rr       jsr BasSkipSpaces
+000C23r 2  20 rr rr       jsr BasGetTokChar
+000C26r 2  C9 3B          cmp #CH_SEMICOL
+000C28r 2  F0 06          beq @PrintSemicolon
+000C2Ar 2  C9 2C          cmp #CH_COMMA
+000C2Cr 2  F0 13          beq @PrintComma
+000C2Er 2                 ; No separator — done, print newline
+000C2Er 2  80 1B          bra @PrintNewline
+000C30r 2               
+000C30r 2               @PrintSemicolon:
+000C30r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip ';'
+000C33r 2                 ; Check if end of statement (suppress newline)
+000C33r 2  20 rr rr       jsr BasSkipSpaces
+000C36r 2  20 rr rr       jsr BasGetTokChar
+000C39r 2  F0 13          beq @PrintDone                 ; End of line — suppress newline
+000C3Br 2  C9 3A          cmp #CH_COLON
+000C3Dr 2  F0 0F          beq @PrintDone                 ; Colon — suppress newline
+000C3Fr 2  80 B0          bra @PrintLoop
+000C41r 2               
+000C41r 2               @PrintComma:
+000C41r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip ','
+000C44r 2                 ; Print a tab (8 spaces approximated as a tab char)
+000C44r 2  A9 09          lda #$09
+000C46r 2  20 rr rr       jsr Chrout
+000C49r 2  80 A6          bra @PrintLoop
+000C4Br 2               
+000C4Br 2               @PrintNewline:
+000C4Br 2  20 rr rr       jsr BasPrintCRLF
+000C4Er 2               @PrintDone:
+000C4Er 2               @PrintEnd:
+000C4Er 2  60             rts
+000C4Fr 2               
+000C4Fr 2               ; --- INPUT ---
+000C4Fr 2               BasCmdInput:
+000C4Fr 2  20 rr rr       jsr BasSkipSpaces
+000C52r 2  20 rr rr       jsr BasGetTokChar
+000C55r 2               
+000C55r 2                 ; Check for optional prompt string
+000C55r 2  C9 22          cmp #CH_QUOTE
+000C57r 2  D0 3B          bne @InputNoPrompt
+000C59r 2               
+000C59r 2                 ; Print prompt string
+000C59r 2  20 rr rr       jsr BasAdvTxtPtr
+000C5Cr 2               @InputPromptCh:
+000C5Cr 2  20 rr rr       jsr BasGetTokChar
+000C5Fr 2  F0 0F          beq @InputPromptDone
+000C61r 2  C9 22          cmp #CH_QUOTE
+000C63r 2  F0 08          beq @InputPromptEnd
+000C65r 2  20 rr rr       jsr Chrout
+000C68r 2  20 rr rr       jsr BasAdvTxtPtr
+000C6Br 2  80 EF          bra @InputPromptCh
+000C6Dr 2               @InputPromptEnd:
+000C6Dr 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip closing quote
+000C70r 2               @InputPromptDone:
+000C70r 2                 ; Expect semicolon or comma after prompt
+000C70r 2  20 rr rr       jsr BasSkipSpaces
+000C73r 2  20 rr rr       jsr BasGetTokChar
+000C76r 2  C9 3B          cmp #CH_SEMICOL
+000C78r 2  F0 06          beq @InputSemiSep
+000C7Ar 2  C9 2C          cmp #CH_COMMA
+000C7Cr 2  F0 11          beq @InputCommaSep
+000C7Er 2  80 1E          bra @InputGetVar
+000C80r 2               
+000C80r 2               @InputSemiSep:
+000C80r 2  20 rr rr       jsr BasAdvTxtPtr
+000C83r 2                 ; Print "? " after semicolon-style prompt
+000C83r 2  A9 3F          lda #'?'
+000C85r 2  20 rr rr       jsr Chrout
+000C88r 2  A9 20          lda #CH_SPACE
+000C8Ar 2  20 rr rr       jsr Chrout
+000C8Dr 2  80 0F          bra @InputGetVar
+000C8Fr 2               
+000C8Fr 2               @InputCommaSep:
+000C8Fr 2  20 rr rr       jsr BasAdvTxtPtr
+000C92r 2                 ; No "? " with comma separator
+000C92r 2  80 0A          bra @InputGetVar
 000C94r 2               
-000C94r 2                 ; Must be a variable A-Z
-000C94r 2  C9 41          cmp #'A'
-000C96r 2  90 5D          bcc @InputErr
-000C98r 2  C9 5B          cmp #'Z' + 1
-000C9Ar 2  B0 59          bcs @InputErr
-000C9Cr 2               
-000C9Cr 2                 ; Save variable index
-000C9Cr 2  38             sec
-000C9Dr 2  E9 41          sbc #'A'
-000C9Fr 2  0A             asl
-000CA0r 2  85 21          sta BAS_TEMP                   ; Variable offset
-000CA2r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip variable letter
-000CA5r 2               
-000CA5r 2                 ; Save TXTPTR (points into tokenized program line)
-000CA5r 2  A5 04          lda BAS_TXTPTR
-000CA7r 2  48             pha
-000CA8r 2  A5 05          lda BAS_TXTPTR + 1
-000CAAr 2  48             pha
-000CABr 2               
-000CABr 2               @InputRetry:
-000CABr 2                 ; Read a line of input
-000CABr 2  20 rr rr       jsr BasReadLine
-000CAEr 2               
-000CAEr 2                 ; Point TXTPTR at input buffer for parsing
-000CAEr 2  A9 34          lda #<BAS_LINBUF
-000CB0r 2  85 04          sta BAS_TXTPTR
-000CB2r 2  A9 04          lda #>BAS_LINBUF
-000CB4r 2  85 05          sta BAS_TXTPTR + 1
-000CB6r 2               
-000CB6r 2                 ; Handle optional negative sign
-000CB6r 2  64 20          stz BAS_SIGN
-000CB8r 2  20 rr rr       jsr BasSkipSpaces
-000CBBr 2  20 rr rr       jsr BasGetTokChar
-000CBEr 2  C9 2D          cmp #CH_MINUS
-000CC0r 2  D0 07          bne @InputParse
-000CC2r 2  A9 FF          lda #$FF
-000CC4r 2  85 20          sta BAS_SIGN
-000CC6r 2  20 rr rr       jsr BasAdvTxtPtr
-000CC9r 2               
-000CC9r 2               @InputParse:
-000CC9r 2  20 rr rr       jsr BasParseInt
-000CCCr 2  B0 1A          bcs @InputBadNum               ; No digits found
-000CCEr 2               
-000CCEr 2                 ; Negate if minus was present
-000CCEr 2  A5 20          lda BAS_SIGN
-000CD0r 2  F0 03          beq @InputStore
-000CD2r 2  20 rr rr       jsr BasMathNeg
-000CD5r 2               
-000CD5r 2               @InputStore:
-000CD5r 2                 ; Store in variable
-000CD5r 2  A6 21          ldx BAS_TEMP
-000CD7r 2  A5 0A          lda BAS_ACC
-000CD9r 2  9D 00 04       sta BAS_VARS,x
-000CDCr 2  A5 0B          lda BAS_ACC + 1
-000CDEr 2  9D 01 04       sta BAS_VARS + 1,x
-000CE1r 2               
-000CE1r 2                 ; Restore TXTPTR to tokenized program line
-000CE1r 2  68             pla
-000CE2r 2  85 05          sta BAS_TXTPTR + 1
-000CE4r 2  68             pla
-000CE5r 2  85 04          sta BAS_TXTPTR
-000CE7r 2  60             rts
-000CE8r 2               
-000CE8r 2               @InputBadNum:
-000CE8r 2  A9 rr          lda #<BasStrRedo
-000CEAr 2  85 0E          sta BAS_TMP1
-000CECr 2  A9 rr          lda #>BasStrRedo
-000CEEr 2  85 0F          sta BAS_TMP1 + 1
-000CF0r 2  20 rr rr       jsr BasPrintStr
-000CF3r 2  80 B6          bra @InputRetry
-000CF5r 2               
-000CF5r 2               @InputErr:
-000CF5r 2  A9 00          lda #ERR_SYNTAX
-000CF7r 2  4C rr rr       jmp BasError
-000CFAr 2               
-000CFAr 2               ; --- LET (also implicit assignment) ---
-000CFAr 2               BasCmdLet:
-000CFAr 2  20 rr rr       jsr BasSkipSpaces
-000CFDr 2  20 rr rr       jsr BasGetTokChar
-000D00r 2               
-000D00r 2                 ; Must be a variable A-Z
-000D00r 2  C9 41          cmp #'A'
-000D02r 2  90 25          bcc @LetErr
-000D04r 2  C9 5B          cmp #'Z' + 1
-000D06r 2  B0 21          bcs @LetErr
-000D08r 2               
-000D08r 2  38             sec
-000D09r 2  E9 41          sbc #'A'
-000D0Br 2  0A             asl
-000D0Cr 2  85 21          sta BAS_TEMP                   ; Variable offset
-000D0Er 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip variable letter
-000D11r 2               
-000D11r 2  20 rr rr       jsr BasSkipSpaces
-000D14r 2  A9 3D          lda #CH_EQUALS
-000D16r 2  20 rr rr       jsr BasExpectChar              ; Expect '='
-000D19r 2               
-000D19r 2  20 rr rr       jsr BasExpr                    ; Evaluate RHS
-000D1Cr 2               
-000D1Cr 2                 ; Store result in variable
-000D1Cr 2  A6 21          ldx BAS_TEMP
-000D1Er 2  A5 0A          lda BAS_ACC
-000D20r 2  9D 00 04       sta BAS_VARS,x
-000D23r 2  A5 0B          lda BAS_ACC + 1
-000D25r 2  9D 01 04       sta BAS_VARS + 1,x
-000D28r 2  60             rts
+000C94r 2               @InputNoPrompt:
+000C94r 2                 ; Print default "? " prompt
+000C94r 2  A9 3F          lda #'?'
+000C96r 2  20 rr rr       jsr Chrout
+000C99r 2  A9 20          lda #CH_SPACE
+000C9Br 2  20 rr rr       jsr Chrout
+000C9Er 2               
+000C9Er 2               @InputGetVar:
+000C9Er 2  20 rr rr       jsr BasSkipSpaces
+000CA1r 2  20 rr rr       jsr BasGetTokChar
+000CA4r 2               
+000CA4r 2                 ; Must be a variable A-Z
+000CA4r 2  C9 41          cmp #'A'
+000CA6r 2  90 5D          bcc @InputErr
+000CA8r 2  C9 5B          cmp #'Z' + 1
+000CAAr 2  B0 59          bcs @InputErr
+000CACr 2               
+000CACr 2                 ; Save variable index
+000CACr 2  38             sec
+000CADr 2  E9 41          sbc #'A'
+000CAFr 2  0A             asl
+000CB0r 2  85 21          sta BAS_TEMP                   ; Variable offset
+000CB2r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip variable letter
+000CB5r 2               
+000CB5r 2                 ; Save TXTPTR (points into tokenized program line)
+000CB5r 2  A5 04          lda BAS_TXTPTR
+000CB7r 2  48             pha
+000CB8r 2  A5 05          lda BAS_TXTPTR + 1
+000CBAr 2  48             pha
+000CBBr 2               
+000CBBr 2               @InputRetry:
+000CBBr 2                 ; Read a line of input
+000CBBr 2  20 rr rr       jsr BasReadLine
+000CBEr 2               
+000CBEr 2                 ; Point TXTPTR at input buffer for parsing
+000CBEr 2  A9 34          lda #<BAS_LINBUF
+000CC0r 2  85 04          sta BAS_TXTPTR
+000CC2r 2  A9 04          lda #>BAS_LINBUF
+000CC4r 2  85 05          sta BAS_TXTPTR + 1
+000CC6r 2               
+000CC6r 2                 ; Handle optional negative sign
+000CC6r 2  64 20          stz BAS_SIGN
+000CC8r 2  20 rr rr       jsr BasSkipSpaces
+000CCBr 2  20 rr rr       jsr BasGetTokChar
+000CCEr 2  C9 2D          cmp #CH_MINUS
+000CD0r 2  D0 07          bne @InputParse
+000CD2r 2  A9 FF          lda #$FF
+000CD4r 2  85 20          sta BAS_SIGN
+000CD6r 2  20 rr rr       jsr BasAdvTxtPtr
+000CD9r 2               
+000CD9r 2               @InputParse:
+000CD9r 2  20 rr rr       jsr BasParseInt
+000CDCr 2  B0 1A          bcs @InputBadNum               ; No digits found
+000CDEr 2               
+000CDEr 2                 ; Negate if minus was present
+000CDEr 2  A5 20          lda BAS_SIGN
+000CE0r 2  F0 03          beq @InputStore
+000CE2r 2  20 rr rr       jsr BasMathNeg
+000CE5r 2               
+000CE5r 2               @InputStore:
+000CE5r 2                 ; Store in variable
+000CE5r 2  A6 21          ldx BAS_TEMP
+000CE7r 2  A5 0A          lda BAS_ACC
+000CE9r 2  9D 00 04       sta BAS_VARS,x
+000CECr 2  A5 0B          lda BAS_ACC + 1
+000CEEr 2  9D 01 04       sta BAS_VARS + 1,x
+000CF1r 2               
+000CF1r 2                 ; Restore TXTPTR to tokenized program line
+000CF1r 2  68             pla
+000CF2r 2  85 05          sta BAS_TXTPTR + 1
+000CF4r 2  68             pla
+000CF5r 2  85 04          sta BAS_TXTPTR
+000CF7r 2  60             rts
+000CF8r 2               
+000CF8r 2               @InputBadNum:
+000CF8r 2  A9 rr          lda #<BasStrRedo
+000CFAr 2  85 0E          sta BAS_TMP1
+000CFCr 2  A9 rr          lda #>BasStrRedo
+000CFEr 2  85 0F          sta BAS_TMP1 + 1
+000D00r 2  20 rr rr       jsr BasPrintStr
+000D03r 2  80 B6          bra @InputRetry
+000D05r 2               
+000D05r 2               @InputErr:
+000D05r 2  A9 00          lda #ERR_SYNTAX
+000D07r 2  4C rr rr       jmp BasError
+000D0Ar 2               
+000D0Ar 2               ; --- LET (also implicit assignment) ---
+000D0Ar 2               BasCmdLet:
+000D0Ar 2  20 rr rr       jsr BasSkipSpaces
+000D0Dr 2  20 rr rr       jsr BasGetTokChar
+000D10r 2               
+000D10r 2                 ; Must be a variable A-Z
+000D10r 2  C9 41          cmp #'A'
+000D12r 2  90 25          bcc @LetErr
+000D14r 2  C9 5B          cmp #'Z' + 1
+000D16r 2  B0 21          bcs @LetErr
+000D18r 2               
+000D18r 2  38             sec
+000D19r 2  E9 41          sbc #'A'
+000D1Br 2  0A             asl
+000D1Cr 2  85 21          sta BAS_TEMP                   ; Variable offset
+000D1Er 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip variable letter
+000D21r 2               
+000D21r 2  20 rr rr       jsr BasSkipSpaces
+000D24r 2  A9 3D          lda #CH_EQUALS
+000D26r 2  20 rr rr       jsr BasExpectChar              ; Expect '='
 000D29r 2               
-000D29r 2               @LetErr:
-000D29r 2  A9 00          lda #ERR_SYNTAX
-000D2Br 2  4C rr rr       jmp BasError
-000D2Er 2               
-000D2Er 2               ; --- GOTO ---
-000D2Er 2               BasCmdGoto:
-000D2Er 2  20 rr rr       jsr BasExpr                    ; Evaluate target line number
-000D31r 2  A5 0A          lda BAS_ACC
-000D33r 2  85 08          sta BAS_LINENUM
-000D35r 2  A5 0B          lda BAS_ACC + 1
-000D37r 2  85 09          sta BAS_LINENUM + 1
-000D39r 2  20 rr rr       jsr BasFindLine
-000D3Cr 2  90 09          bcc @GotoErr
+000D29r 2  20 rr rr       jsr BasExpr                    ; Evaluate RHS
+000D2Cr 2               
+000D2Cr 2                 ; Store result in variable
+000D2Cr 2  A6 21          ldx BAS_TEMP
+000D2Er 2  A5 0A          lda BAS_ACC
+000D30r 2  9D 00 04       sta BAS_VARS,x
+000D33r 2  A5 0B          lda BAS_ACC + 1
+000D35r 2  9D 01 04       sta BAS_VARS + 1,x
+000D38r 2  60             rts
+000D39r 2               
+000D39r 2               @LetErr:
+000D39r 2  A9 00          lda #ERR_SYNTAX
+000D3Br 2  4C rr rr       jmp BasError
 000D3Er 2               
-000D3Er 2                 ; Set CURLINE to the found line — run loop will detect the change
-000D3Er 2  A5 0E          lda BAS_TMP1
-000D40r 2  85 06          sta BAS_CURLINE
-000D42r 2  A5 0F          lda BAS_TMP1 + 1
-000D44r 2  85 07          sta BAS_CURLINE + 1
-000D46r 2  60             rts
-000D47r 2               
-000D47r 2               @GotoErr:
-000D47r 2  A9 01          lda #ERR_UNDEF_LINE
-000D49r 2  4C rr rr       jmp BasError
-000D4Cr 2               
-000D4Cr 2               ; --- GOSUB ---
-000D4Cr 2               BasCmdGosub:
-000D4Cr 2                 ; Push current CURLINE onto GOSUB stack (2 bytes per entry)
-000D4Cr 2  A6 1A          ldx BAS_GOSUBSP
-000D4Er 2  8A             txa
-000D4Fr 2  18             clc
-000D50r 2  69 02          adc #BAS_GOSUB_ENTRY
-000D52r 2  C9 81          cmp #BAS_GOSUBSTK_SIZE + 1
-000D54r 2  B0 13          bcs @GosubFull
-000D56r 2               
-000D56r 2  A5 06          lda BAS_CURLINE
-000D58r 2  9D 00 05       sta BAS_GOSUBSTK,x
-000D5Br 2  A5 07          lda BAS_CURLINE + 1
-000D5Dr 2  9D 01 05       sta BAS_GOSUBSTK + 1,x
-000D60r 2  8A             txa
-000D61r 2  18             clc
-000D62r 2  69 02          adc #BAS_GOSUB_ENTRY
-000D64r 2  85 1A          sta BAS_GOSUBSP
+000D3Er 2               ; --- GOTO ---
+000D3Er 2               BasCmdGoto:
+000D3Er 2  20 rr rr       jsr BasExpr                    ; Evaluate target line number
+000D41r 2  A5 0A          lda BAS_ACC
+000D43r 2  85 08          sta BAS_LINENUM
+000D45r 2  A5 0B          lda BAS_ACC + 1
+000D47r 2  85 09          sta BAS_LINENUM + 1
+000D49r 2  20 rr rr       jsr BasFindLine
+000D4Cr 2  90 09          bcc @GotoErr
+000D4Er 2               
+000D4Er 2                 ; Set CURLINE to the found line — run loop will detect the change
+000D4Er 2  A5 0E          lda BAS_TMP1
+000D50r 2  85 06          sta BAS_CURLINE
+000D52r 2  A5 0F          lda BAS_TMP1 + 1
+000D54r 2  85 07          sta BAS_CURLINE + 1
+000D56r 2  60             rts
+000D57r 2               
+000D57r 2               @GotoErr:
+000D57r 2  A9 01          lda #ERR_UNDEF_LINE
+000D59r 2  4C rr rr       jmp BasError
+000D5Cr 2               
+000D5Cr 2               ; --- GOSUB ---
+000D5Cr 2               BasCmdGosub:
+000D5Cr 2                 ; Push current CURLINE onto GOSUB stack (2 bytes per entry)
+000D5Cr 2  A6 1A          ldx BAS_GOSUBSP
+000D5Er 2  8A             txa
+000D5Fr 2  18             clc
+000D60r 2  69 02          adc #BAS_GOSUB_ENTRY
+000D62r 2  C9 81          cmp #BAS_GOSUBSTK_SIZE + 1
+000D64r 2  B0 13          bcs @GosubFull
 000D66r 2               
-000D66r 2                 ; Now do GOTO (sets CURLINE to target)
-000D66r 2  4C rr rr       jmp BasCmdGoto
-000D69r 2               
-000D69r 2               @GosubFull:
-000D69r 2  A9 03          lda #ERR_OUT_OF_MEM
-000D6Br 2  4C rr rr       jmp BasError
-000D6Er 2               
-000D6Er 2               ; --- RETURN ---
-000D6Er 2               BasCmdReturn:
-000D6Er 2  A6 1A          ldx BAS_GOSUBSP
-000D70r 2  F0 25          beq @RetErr
-000D72r 2               
-000D72r 2                 ; Pop CURLINE from GOSUB stack
-000D72r 2  CA             dex
-000D73r 2  CA             dex
-000D74r 2  BD 00 05       lda BAS_GOSUBSTK,x
-000D77r 2  85 06          sta BAS_CURLINE
-000D79r 2  BD 01 05       lda BAS_GOSUBSTK + 1,x
-000D7Cr 2  85 07          sta BAS_CURLINE + 1
-000D7Er 2  86 1A          stx BAS_GOSUBSP
-000D80r 2               
-000D80r 2                 ; Advance CURLINE to the line AFTER the GOSUB line
-000D80r 2                 ; so the run loop continues from there
-000D80r 2  A0 04          ldy #LINE_PAYLOAD
-000D82r 2               @RetScan:
-000D82r 2  B1 06          lda (BAS_CURLINE),y
-000D84r 2  F0 03          beq @RetScanDone
-000D86r 2  C8             iny
-000D87r 2  80 F9          bra @RetScan
-000D89r 2               @RetScanDone:
-000D89r 2  C8             iny                            ; Past null
-000D8Ar 2  98             tya
-000D8Br 2  18             clc
-000D8Cr 2  65 06          adc BAS_CURLINE
-000D8Er 2  85 06          sta BAS_CURLINE
-000D90r 2  A9 00          lda #$00
-000D92r 2  65 07          adc BAS_CURLINE + 1
-000D94r 2  85 07          sta BAS_CURLINE + 1
-000D96r 2                 ; CURLINE now differs from saved VARPTR, so run loop re-executes
-000D96r 2  60             rts
-000D97r 2               
-000D97r 2               @RetErr:
-000D97r 2  A9 04          lda #ERR_RET_NO_GOSUB
-000D99r 2  4C rr rr       jmp BasError
-000D9Cr 2               
-000D9Cr 2               ; --- IF...THEN ---
-000D9Cr 2               BasCmdIf:
-000D9Cr 2  20 rr rr       jsr BasExpr                    ; Evaluate condition
-000D9Fr 2  20 rr rr       jsr BasSkipSpaces
-000DA2r 2               
-000DA2r 2                 ; Expect THEN
-000DA2r 2  20 rr rr       jsr BasGetTokChar
-000DA5r 2  C9 87          cmp #TOK_THEN
-000DA7r 2  D0 1E          bne @IfSyntax
-000DA9r 2  20 rr rr       jsr BasAdvTxtPtr
+000D66r 2  A5 06          lda BAS_CURLINE
+000D68r 2  9D 00 05       sta BAS_GOSUBSTK,x
+000D6Br 2  A5 07          lda BAS_CURLINE + 1
+000D6Dr 2  9D 01 05       sta BAS_GOSUBSTK + 1,x
+000D70r 2  8A             txa
+000D71r 2  18             clc
+000D72r 2  69 02          adc #BAS_GOSUB_ENTRY
+000D74r 2  85 1A          sta BAS_GOSUBSP
+000D76r 2               
+000D76r 2                 ; Now do GOTO (sets CURLINE to target)
+000D76r 2  4C rr rr       jmp BasCmdGoto
+000D79r 2               
+000D79r 2               @GosubFull:
+000D79r 2  A9 03          lda #ERR_OUT_OF_MEM
+000D7Br 2  4C rr rr       jmp BasError
+000D7Er 2               
+000D7Er 2               ; --- RETURN ---
+000D7Er 2               BasCmdReturn:
+000D7Er 2  A6 1A          ldx BAS_GOSUBSP
+000D80r 2  F0 25          beq @RetErr
+000D82r 2               
+000D82r 2                 ; Pop CURLINE from GOSUB stack
+000D82r 2  CA             dex
+000D83r 2  CA             dex
+000D84r 2  BD 00 05       lda BAS_GOSUBSTK,x
+000D87r 2  85 06          sta BAS_CURLINE
+000D89r 2  BD 01 05       lda BAS_GOSUBSTK + 1,x
+000D8Cr 2  85 07          sta BAS_CURLINE + 1
+000D8Er 2  86 1A          stx BAS_GOSUBSP
+000D90r 2               
+000D90r 2                 ; Advance CURLINE to the line AFTER the GOSUB line
+000D90r 2                 ; so the run loop continues from there
+000D90r 2  A0 04          ldy #LINE_PAYLOAD
+000D92r 2               @RetScan:
+000D92r 2  B1 06          lda (BAS_CURLINE),y
+000D94r 2  F0 03          beq @RetScanDone
+000D96r 2  C8             iny
+000D97r 2  80 F9          bra @RetScan
+000D99r 2               @RetScanDone:
+000D99r 2  C8             iny                            ; Past null
+000D9Ar 2  98             tya
+000D9Br 2  18             clc
+000D9Cr 2  65 06          adc BAS_CURLINE
+000D9Er 2  85 06          sta BAS_CURLINE
+000DA0r 2  A9 00          lda #$00
+000DA2r 2  65 07          adc BAS_CURLINE + 1
+000DA4r 2  85 07          sta BAS_CURLINE + 1
+000DA6r 2                 ; CURLINE now differs from saved VARPTR, so run loop re-executes
+000DA6r 2  60             rts
+000DA7r 2               
+000DA7r 2               @RetErr:
+000DA7r 2  A9 04          lda #ERR_RET_NO_GOSUB
+000DA9r 2  4C rr rr       jmp BasError
 000DACr 2               
-000DACr 2                 ; Check condition: 0 = false, nonzero = true
-000DACr 2  A5 0A          lda BAS_ACC
-000DAEr 2  05 0B          ora BAS_ACC + 1
-000DB0r 2  F0 14          beq @IfFalse
+000DACr 2               ; --- IF...THEN ---
+000DACr 2               BasCmdIf:
+000DACr 2  20 rr rr       jsr BasExpr                    ; Evaluate condition
+000DAFr 2  20 rr rr       jsr BasSkipSpaces
 000DB2r 2               
-000DB2r 2                 ; True — check if THEN is followed by a line number (implicit GOTO)
-000DB2r 2  20 rr rr       jsr BasSkipSpaces
-000DB5r 2  20 rr rr       jsr BasGetTokChar
-000DB8r 2  C9 30          cmp #'0'
-000DBAr 2  90 07          bcc @IfExecRest
-000DBCr 2  C9 3A          cmp #'9' + 1
-000DBEr 2  B0 03          bcs @IfExecRest
-000DC0r 2                 ; It's a digit — treat as GOTO line number
-000DC0r 2  4C rr rr       jmp BasCmdGoto
-000DC3r 2               
-000DC3r 2               @IfExecRest:
-000DC3r 2                 ; Execute rest of line as statement(s)
-000DC3r 2  4C rr rr       jmp BasExecLine
-000DC6r 2               
-000DC6r 2               @IfFalse:
-000DC6r 2                 ; Skip rest of line (don't execute THEN clause)
-000DC6r 2  60             rts
-000DC7r 2               
-000DC7r 2               @IfSyntax:
-000DC7r 2  A9 00          lda #ERR_SYNTAX
-000DC9r 2  4C rr rr       jmp BasError
-000DCCr 2               
-000DCCr 2               ; --- FOR ---
-000DCCr 2               BasCmdFor:
-000DCCr 2  20 rr rr       jsr BasSkipSpaces
-000DCFr 2  20 rr rr       jsr BasGetTokChar
-000DD2r 2               
-000DD2r 2                 ; Must be a variable
-000DD2r 2  C9 41          cmp #'A'
-000DD4r 2  B0 03          bcs @ForVarOk1
-000DD6r 2  4C rr rr       jmp @ForErr
-000DD9r 2               @ForVarOk1:
-000DD9r 2  C9 5B          cmp #'Z' + 1
-000DDBr 2  90 03          bcc @ForVarOk2
-000DDDr 2  4C rr rr       jmp @ForErr
-000DE0r 2               @ForVarOk2:
-000DE0r 2               
-000DE0r 2  38             sec
-000DE1r 2  E9 41          sbc #'A'
-000DE3r 2  0A             asl
-000DE4r 2  85 21          sta BAS_TEMP                   ; Variable offset
-000DE6r 2  20 rr rr       jsr BasAdvTxtPtr
-000DE9r 2               
-000DE9r 2                 ; Expect '='
-000DE9r 2  20 rr rr       jsr BasSkipSpaces
-000DECr 2  A9 3D          lda #CH_EQUALS
-000DEEr 2  20 rr rr       jsr BasExpectChar
-000DF1r 2               
-000DF1r 2                 ; Evaluate initial value and store in variable
-000DF1r 2  20 rr rr       jsr BasExpr
-000DF4r 2  A6 21          ldx BAS_TEMP
-000DF6r 2  A5 0A          lda BAS_ACC
-000DF8r 2  9D 00 04       sta BAS_VARS,x
-000DFBr 2  A5 0B          lda BAS_ACC + 1
-000DFDr 2  9D 01 04       sta BAS_VARS + 1,x
-000E00r 2               
-000E00r 2                 ; Expect TO
-000E00r 2  20 rr rr       jsr BasSkipSpaces
-000E03r 2  20 rr rr       jsr BasGetTokChar
-000E06r 2  C9 89          cmp #TOK_TO
-000E08r 2  D0 75          bne @ForErr
-000E0Ar 2  20 rr rr       jsr BasAdvTxtPtr
-000E0Dr 2               
-000E0Dr 2                 ; Evaluate limit — store temporarily in SCRATCH
-000E0Dr 2  20 rr rr       jsr BasExpr
-000E10r 2  A5 0A          lda BAS_ACC
-000E12r 2  85 1C          sta BAS_SCRATCH
-000E14r 2  A5 0B          lda BAS_ACC + 1
-000E16r 2  85 1D          sta BAS_SCRATCH + 1
-000E18r 2               
-000E18r 2                 ; Check for optional STEP — default is 1
-000E18r 2  A9 01          lda #$01
-000E1Ar 2  85 1E          sta BAS_SCRATCH2
-000E1Cr 2  64 1F          stz BAS_SCRATCH2 + 1
-000E1Er 2               
-000E1Er 2  20 rr rr       jsr BasSkipSpaces
-000E21r 2  20 rr rr       jsr BasGetTokChar
-000E24r 2  C9 8A          cmp #TOK_STEP
-000E26r 2  D0 0E          bne @ForNoStep
-000E28r 2  20 rr rr       jsr BasAdvTxtPtr
-000E2Br 2  20 rr rr       jsr BasExpr
-000E2Er 2  A5 0A          lda BAS_ACC
-000E30r 2  85 1E          sta BAS_SCRATCH2
-000E32r 2  A5 0B          lda BAS_ACC + 1
-000E34r 2  85 1F          sta BAS_SCRATCH2 + 1
-000E36r 2               @ForNoStep:
-000E36r 2               
-000E36r 2                 ; Check room on FOR stack
-000E36r 2  A6 1B          ldx BAS_FORSP
-000E38r 2  8A             txa
-000E39r 2  18             clc
-000E3Ar 2  69 10          adc #BAS_FOR_ENTRY
-000E3Cr 2  C9 81          cmp #BAS_FORSTK_SIZE + 1
-000E3Er 2  B0 3A          bcs @ForStackFull
-000E40r 2               
-000E40r 2                 ; Build FOR stack entry (16 bytes per entry):
-000E40r 2                 ;  +0: var_offset (1)
-000E40r 2                 ;  +1: limit_lo (1)
-000E40r 2                 ;  +2: limit_hi (1)
-000E40r 2                 ;  +3: step_lo (1)
-000E40r 2                 ;  +4: step_hi (1)
-000E40r 2                 ;  +5: body_start_lo (1) — first line of loop body (next line after FOR)
-000E40r 2                 ;  +6: body_start_hi (1)
-000E40r 2                 ; +7..+15: unused padding
-000E40r 2               
-000E40r 2  A5 21          lda BAS_TEMP
-000E42r 2  9D 80 05       sta BAS_FORSTK,x               ; +0: var offset
-000E45r 2  A5 1C          lda BAS_SCRATCH
-000E47r 2  9D 81 05       sta BAS_FORSTK + 1,x           ; +1: limit lo
-000E4Ar 2  A5 1D          lda BAS_SCRATCH + 1
-000E4Cr 2  9D 82 05       sta BAS_FORSTK + 2,x           ; +2: limit hi
-000E4Fr 2  A5 1E          lda BAS_SCRATCH2
-000E51r 2  9D 83 05       sta BAS_FORSTK + 3,x           ; +3: step lo
-000E54r 2  A5 1F          lda BAS_SCRATCH2 + 1
-000E56r 2  9D 84 05       sta BAS_FORSTK + 4,x           ; +4: step hi
-000E59r 2                 ; body_start = next line after the FOR line (scan for null)
-000E59r 2  A0 04          ldy #LINE_PAYLOAD
-000E5Br 2               @ForScanBody:
-000E5Br 2  B1 06          lda (BAS_CURLINE),y
-000E5Dr 2  F0 03          beq @ForScanDone
-000E5Fr 2  C8             iny
-000E60r 2  80 F9          bra @ForScanBody
-000E62r 2               @ForScanDone:
-000E62r 2  C8             iny                            ; Past null terminator
-000E63r 2  98             tya
-000E64r 2  18             clc
-000E65r 2  65 06          adc BAS_CURLINE
-000E67r 2  48             pha
-000E68r 2  A9 00          lda #$00
-000E6Ar 2  65 07          adc BAS_CURLINE + 1
-000E6Cr 2  9D 86 05       sta BAS_FORSTK + 6,x           ; +6: body_start hi
-000E6Fr 2  68             pla
-000E70r 2  9D 85 05       sta BAS_FORSTK + 5,x           ; +5: body_start lo
-000E73r 2               
-000E73r 2  8A             txa
+000DB2r 2                 ; Expect THEN
+000DB2r 2  20 rr rr       jsr BasGetTokChar
+000DB5r 2  C9 87          cmp #TOK_THEN
+000DB7r 2  D0 1E          bne @IfSyntax
+000DB9r 2  20 rr rr       jsr BasAdvTxtPtr
+000DBCr 2               
+000DBCr 2                 ; Check condition: 0 = false, nonzero = true
+000DBCr 2  A5 0A          lda BAS_ACC
+000DBEr 2  05 0B          ora BAS_ACC + 1
+000DC0r 2  F0 14          beq @IfFalse
+000DC2r 2               
+000DC2r 2                 ; True — check if THEN is followed by a line number (implicit GOTO)
+000DC2r 2  20 rr rr       jsr BasSkipSpaces
+000DC5r 2  20 rr rr       jsr BasGetTokChar
+000DC8r 2  C9 30          cmp #'0'
+000DCAr 2  90 07          bcc @IfExecRest
+000DCCr 2  C9 3A          cmp #'9' + 1
+000DCEr 2  B0 03          bcs @IfExecRest
+000DD0r 2                 ; It's a digit — treat as GOTO line number
+000DD0r 2  4C rr rr       jmp BasCmdGoto
+000DD3r 2               
+000DD3r 2               @IfExecRest:
+000DD3r 2                 ; Execute rest of line as statement(s)
+000DD3r 2  4C rr rr       jmp BasExecLine
+000DD6r 2               
+000DD6r 2               @IfFalse:
+000DD6r 2                 ; Skip rest of line (don't execute THEN clause)
+000DD6r 2  60             rts
+000DD7r 2               
+000DD7r 2               @IfSyntax:
+000DD7r 2  A9 00          lda #ERR_SYNTAX
+000DD9r 2  4C rr rr       jmp BasError
+000DDCr 2               
+000DDCr 2               ; --- FOR ---
+000DDCr 2               BasCmdFor:
+000DDCr 2  20 rr rr       jsr BasSkipSpaces
+000DDFr 2  20 rr rr       jsr BasGetTokChar
+000DE2r 2               
+000DE2r 2                 ; Must be a variable
+000DE2r 2  C9 41          cmp #'A'
+000DE4r 2  B0 03          bcs @ForVarOk1
+000DE6r 2  4C rr rr       jmp @ForErr
+000DE9r 2               @ForVarOk1:
+000DE9r 2  C9 5B          cmp #'Z' + 1
+000DEBr 2  90 03          bcc @ForVarOk2
+000DEDr 2  4C rr rr       jmp @ForErr
+000DF0r 2               @ForVarOk2:
+000DF0r 2               
+000DF0r 2  38             sec
+000DF1r 2  E9 41          sbc #'A'
+000DF3r 2  0A             asl
+000DF4r 2  85 21          sta BAS_TEMP                   ; Variable offset
+000DF6r 2  20 rr rr       jsr BasAdvTxtPtr
+000DF9r 2               
+000DF9r 2                 ; Expect '='
+000DF9r 2  20 rr rr       jsr BasSkipSpaces
+000DFCr 2  A9 3D          lda #CH_EQUALS
+000DFEr 2  20 rr rr       jsr BasExpectChar
+000E01r 2               
+000E01r 2                 ; Evaluate initial value and store in variable
+000E01r 2  20 rr rr       jsr BasExpr
+000E04r 2  A6 21          ldx BAS_TEMP
+000E06r 2  A5 0A          lda BAS_ACC
+000E08r 2  9D 00 04       sta BAS_VARS,x
+000E0Br 2  A5 0B          lda BAS_ACC + 1
+000E0Dr 2  9D 01 04       sta BAS_VARS + 1,x
+000E10r 2               
+000E10r 2                 ; Expect TO
+000E10r 2  20 rr rr       jsr BasSkipSpaces
+000E13r 2  20 rr rr       jsr BasGetTokChar
+000E16r 2  C9 89          cmp #TOK_TO
+000E18r 2  D0 75          bne @ForErr
+000E1Ar 2  20 rr rr       jsr BasAdvTxtPtr
+000E1Dr 2               
+000E1Dr 2                 ; Evaluate limit — store temporarily in SCRATCH
+000E1Dr 2  20 rr rr       jsr BasExpr
+000E20r 2  A5 0A          lda BAS_ACC
+000E22r 2  85 1C          sta BAS_SCRATCH
+000E24r 2  A5 0B          lda BAS_ACC + 1
+000E26r 2  85 1D          sta BAS_SCRATCH + 1
+000E28r 2               
+000E28r 2                 ; Check for optional STEP — default is 1
+000E28r 2  A9 01          lda #$01
+000E2Ar 2  85 1E          sta BAS_SCRATCH2
+000E2Cr 2  64 1F          stz BAS_SCRATCH2 + 1
+000E2Er 2               
+000E2Er 2  20 rr rr       jsr BasSkipSpaces
+000E31r 2  20 rr rr       jsr BasGetTokChar
+000E34r 2  C9 8A          cmp #TOK_STEP
+000E36r 2  D0 0E          bne @ForNoStep
+000E38r 2  20 rr rr       jsr BasAdvTxtPtr
+000E3Br 2  20 rr rr       jsr BasExpr
+000E3Er 2  A5 0A          lda BAS_ACC
+000E40r 2  85 1E          sta BAS_SCRATCH2
+000E42r 2  A5 0B          lda BAS_ACC + 1
+000E44r 2  85 1F          sta BAS_SCRATCH2 + 1
+000E46r 2               @ForNoStep:
+000E46r 2               
+000E46r 2                 ; Check room on FOR stack
+000E46r 2  A6 1B          ldx BAS_FORSP
+000E48r 2  8A             txa
+000E49r 2  18             clc
+000E4Ar 2  69 10          adc #BAS_FOR_ENTRY
+000E4Cr 2  C9 81          cmp #BAS_FORSTK_SIZE + 1
+000E4Er 2  B0 3A          bcs @ForStackFull
+000E50r 2               
+000E50r 2                 ; Build FOR stack entry (16 bytes per entry):
+000E50r 2                 ;  +0: var_offset (1)
+000E50r 2                 ;  +1: limit_lo (1)
+000E50r 2                 ;  +2: limit_hi (1)
+000E50r 2                 ;  +3: step_lo (1)
+000E50r 2                 ;  +4: step_hi (1)
+000E50r 2                 ;  +5: body_start_lo (1) — first line of loop body (next line after FOR)
+000E50r 2                 ;  +6: body_start_hi (1)
+000E50r 2                 ; +7..+15: unused padding
+000E50r 2               
+000E50r 2  A5 21          lda BAS_TEMP
+000E52r 2  9D 80 05       sta BAS_FORSTK,x               ; +0: var offset
+000E55r 2  A5 1C          lda BAS_SCRATCH
+000E57r 2  9D 81 05       sta BAS_FORSTK + 1,x           ; +1: limit lo
+000E5Ar 2  A5 1D          lda BAS_SCRATCH + 1
+000E5Cr 2  9D 82 05       sta BAS_FORSTK + 2,x           ; +2: limit hi
+000E5Fr 2  A5 1E          lda BAS_SCRATCH2
+000E61r 2  9D 83 05       sta BAS_FORSTK + 3,x           ; +3: step lo
+000E64r 2  A5 1F          lda BAS_SCRATCH2 + 1
+000E66r 2  9D 84 05       sta BAS_FORSTK + 4,x           ; +4: step hi
+000E69r 2                 ; body_start = next line after the FOR line (scan for null)
+000E69r 2  A0 04          ldy #LINE_PAYLOAD
+000E6Br 2               @ForScanBody:
+000E6Br 2  B1 06          lda (BAS_CURLINE),y
+000E6Dr 2  F0 03          beq @ForScanDone
+000E6Fr 2  C8             iny
+000E70r 2  80 F9          bra @ForScanBody
+000E72r 2               @ForScanDone:
+000E72r 2  C8             iny                            ; Past null terminator
+000E73r 2  98             tya
 000E74r 2  18             clc
-000E75r 2  69 10          adc #BAS_FOR_ENTRY
-000E77r 2  85 1B          sta BAS_FORSP
-000E79r 2  60             rts
-000E7Ar 2               
-000E7Ar 2               @ForStackFull:
-000E7Ar 2  A9 03          lda #ERR_OUT_OF_MEM
-000E7Cr 2  4C rr rr       jmp BasError
-000E7Fr 2               
-000E7Fr 2               @ForErr:
-000E7Fr 2  A9 00          lda #ERR_SYNTAX
-000E81r 2  4C rr rr       jmp BasError
-000E84r 2               
-000E84r 2               ; --- NEXT ---
-000E84r 2               BasCmdNext:
-000E84r 2  20 rr rr       jsr BasSkipSpaces
-000E87r 2  20 rr rr       jsr BasGetTokChar
+000E75r 2  65 06          adc BAS_CURLINE
+000E77r 2  48             pha
+000E78r 2  A9 00          lda #$00
+000E7Ar 2  65 07          adc BAS_CURLINE + 1
+000E7Cr 2  9D 86 05       sta BAS_FORSTK + 6,x           ; +6: body_start hi
+000E7Fr 2  68             pla
+000E80r 2  9D 85 05       sta BAS_FORSTK + 5,x           ; +5: body_start lo
+000E83r 2               
+000E83r 2  8A             txa
+000E84r 2  18             clc
+000E85r 2  69 10          adc #BAS_FOR_ENTRY
+000E87r 2  85 1B          sta BAS_FORSP
+000E89r 2  60             rts
 000E8Ar 2               
-000E8Ar 2                 ; Must be a variable
-000E8Ar 2  C9 41          cmp #'A'
-000E8Cr 2  B0 03          bcs @NextVarOk1
-000E8Er 2  4C rr rr       jmp @NextErr
-000E91r 2               @NextVarOk1:
-000E91r 2  C9 5B          cmp #'Z' + 1
-000E93r 2  90 03          bcc @NextVarOk2
-000E95r 2  4C rr rr       jmp @NextErr
-000E98r 2               @NextVarOk2:
-000E98r 2               
-000E98r 2  38             sec
-000E99r 2  E9 41          sbc #'A'
-000E9Br 2  0A             asl
-000E9Cr 2  85 21          sta BAS_TEMP                   ; Variable offset
-000E9Er 2  20 rr rr       jsr BasAdvTxtPtr
-000EA1r 2               
-000EA1r 2                 ; Search FOR stack from top for matching variable
-000EA1r 2  A6 1B          ldx BAS_FORSP
-000EA3r 2  F0 63          beq @NextNoFor
-000EA5r 2               
-000EA5r 2               @NextSearch:
-000EA5r 2  CA             dex                            ; Back up past padding and entries
-000EA6r 2  8A             txa
-000EA7r 2  38             sec
-000EA8r 2  E9 0F          sbc #BAS_FOR_ENTRY - 1         ; Point to start of this entry
-000EAAr 2  AA             tax
-000EABr 2  30 5B          bmi @NextNoFor
-000EADr 2  BD 80 05       lda BAS_FORSTK,x               ; var_offset
-000EB0r 2  C5 21          cmp BAS_TEMP
-000EB2r 2  F0 02          beq @NextFound
-000EB4r 2                 ; Not this entry — keep searching
-000EB4r 2  80 EF          bra @NextSearch
-000EB6r 2               
-000EB6r 2               @NextFound:
-000EB6r 2                 ; Add step to variable
-000EB6r 2  BD 83 05       lda BAS_FORSTK + 3,x           ; step lo
-000EB9r 2  85 0C          sta BAS_AUX
-000EBBr 2  BD 84 05       lda BAS_FORSTK + 4,x           ; step hi
-000EBEr 2  85 0D          sta BAS_AUX + 1
-000EC0r 2               
-000EC0r 2  A4 21          ldy BAS_TEMP                   ; var offset
-000EC2r 2  18             clc
-000EC3r 2  B9 00 04       lda BAS_VARS,y
-000EC6r 2  65 0C          adc BAS_AUX
-000EC8r 2  99 00 04       sta BAS_VARS,y
-000ECBr 2  85 0A          sta BAS_ACC
-000ECDr 2  B9 01 04       lda BAS_VARS + 1,y
-000ED0r 2  65 0D          adc BAS_AUX + 1
-000ED2r 2  99 01 04       sta BAS_VARS + 1,y
-000ED5r 2  85 0B          sta BAS_ACC + 1
-000ED7r 2               
-000ED7r 2                 ; Load limit into AUX for comparison
-000ED7r 2  BD 81 05       lda BAS_FORSTK + 1,x           ; limit lo
-000EDAr 2  85 0C          sta BAS_AUX
-000EDCr 2  BD 82 05       lda BAS_FORSTK + 2,x           ; limit hi
-000EDFr 2  85 0D          sta BAS_AUX + 1
-000EE1r 2               
-000EE1r 2                 ; Check if loop is done:
-000EE1r 2                 ; If step > 0: done when var > limit (AUX)
-000EE1r 2                 ; If step < 0: done when var < limit (AUX)
-000EE1r 2  BD 84 05       lda BAS_FORSTK + 4,x           ; step hi
-000EE4r 2  30 07          bmi @NextStepNeg
-000EE6r 2               
-000EE6r 2                 ; Step positive: compare var (ACC) vs limit (AUX)
-000EE6r 2                 ; Done if ACC > AUX (i.e., AUX < ACC)
-000EE6r 2  20 rr rr       jsr BasCmpAuxAcc
-000EE9r 2  30 1A          bmi @NextDone                  ; AUX < ACC means var > limit
-000EEBr 2  80 07          bra @NextLoop                  ; Continue loop
-000EEDr 2               
-000EEDr 2               @NextStepNeg:
-000EEDr 2                 ; Step negative: done if var < limit
-000EEDr 2                 ; Done if ACC < AUX (i.e., AUX > ACC)
-000EEDr 2  20 rr rr       jsr BasCmpAuxAcc
-000EF0r 2  F0 02          beq @NextLoop
-000EF2r 2  10 11          bpl @NextDone                  ; AUX > ACC means var < limit
-000EF4r 2               
-000EF4r 2               @NextLoop:
-000EF4r 2                 ; Continue loop — set CURLINE to body start
-000EF4r 2                 ; Keep the FOR entry on the stack (FORSP stays where it is)
-000EF4r 2  BD 85 05       lda BAS_FORSTK + 5,x           ; body_start lo
-000EF7r 2  85 06          sta BAS_CURLINE
-000EF9r 2  BD 86 05       lda BAS_FORSTK + 6,x           ; body_start hi
-000EFCr 2  85 07          sta BAS_CURLINE + 1
-000EFEr 2                 ; Invalidate saved CURLINE so run loop always detects the change,
-000EFEr 2                 ; even when body_start == current line (empty loop body / NEXT on next line)
-000EFEr 2  A9 FF          lda #$FF
-000F00r 2  85 14          sta BAS_VARPTR
-000F02r 2  85 15          sta BAS_VARPTR + 1
-000F04r 2  60             rts
-000F05r 2               
-000F05r 2               @NextDone:
-000F05r 2                 ; Loop complete — remove this FOR entry from stack
-000F05r 2  86 1B          stx BAS_FORSP                  ; Pop down to this entry (removes it)
-000F07r 2  60             rts
-000F08r 2               
-000F08r 2               @NextNoFor:
-000F08r 2               @NextErr:
-000F08r 2  A9 05          lda #ERR_NEXT_NO_FOR
-000F0Ar 2  4C rr rr       jmp BasError
-000F0Dr 2               
-000F0Dr 2               ; --- END ---
-000F0Dr 2               BasCmdEnd:
-000F0Dr 2  64 17          stz BAS_FLAGS                  ; Clear run flag
-000F0Fr 2  60             rts                            ; Returns to BasRunLoop which checks flags
-000F10r 2               
-000F10r 2               ; --- SYS ---
-000F10r 2               ; SYS <address> — Call machine code at 16-bit address, RTS returns to BASIC
-000F10r 2               BasCmdSys:
-000F10r 2  20 rr rr       jsr BasExpr                    ; Evaluate address expression → BAS_ACC
-000F13r 2                 ; Use BAS_TMP2 as the indirect jump target
-000F13r 2  A5 0A          lda BAS_ACC
-000F15r 2  85 10          sta BAS_TMP2
-000F17r 2  A5 0B          lda BAS_ACC + 1
-000F19r 2  85 11          sta BAS_TMP2 + 1
-000F1Br 2  6C 10 00       jmp (BAS_TMP2)                 ; JSR-like: callee RTSes back to caller
-000F1Er 2               
-000F1Er 2               ; --- LOAD ---
-000F1Er 2               ; LOAD "filename" — Load from CF filesystem
-000F1Er 2               ; LOAD (no arg)   — Load via serial ASCII transfer
-000F1Er 2               BasCmdLoad:
-000F1Er 2  20 rr rr       jsr BasSkipSpaces
-000F21r 2  20 rr rr       jsr BasGetTokChar
-000F24r 2  C9 22          cmp #CH_QUOTE
-000F26r 2  F0 0E          beq @LoadCF
-000F28r 2               
-000F28r 2                 ; No filename — serial ASCII load
-000F28r 2  20 rr rr       jsr AsciiLoad
-000F2Br 2  B0 40          bcs @LoadErr
-000F2Dr 2                 ; Update BAS_PRGEND from XFER_PTR (points past last byte written)
-000F2Dr 2  A5 2A          lda XFER_PTR
-000F2Fr 2  85 12          sta BAS_PRGEND
-000F31r 2  A5 2B          lda XFER_PTR + 1
-000F33r 2  85 13          sta BAS_PRGEND + 1
-000F35r 2  60             rts
-000F36r 2               
-000F36r 2               @LoadCF:
-000F36r 2                 ; Parse quoted filename into STR_PTR for FsLoadFile
-000F36r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
-000F39r 2                 ; Point STR_PTR at current position in tokenized text
-000F39r 2  A5 04          lda BAS_TXTPTR
-000F3Br 2  85 02          sta STR_PTR
-000F3Dr 2  A5 05          lda BAS_TXTPTR + 1
-000F3Fr 2  85 03          sta STR_PTR + 1
-000F41r 2                 ; Advance TXTPTR past the filename to closing quote
-000F41r 2               @LoadScanName:
-000F41r 2  20 rr rr       jsr BasGetTokChar
-000F44r 2  F0 12          beq @LoadNameDone              ; End of line (unterminated — use what we have)
-000F46r 2  C9 22          cmp #CH_QUOTE
-000F48r 2  F0 05          beq @LoadNameEnd
-000F4Ar 2  20 rr rr       jsr BasAdvTxtPtr
-000F4Dr 2  80 F2          bra @LoadScanName
-000F4Fr 2               @LoadNameEnd:
-000F4Fr 2                 ; Null-terminate the filename in the token buffer (overwrite closing quote)
-000F4Fr 2  A0 00          ldy #$00
-000F51r 2  A9 00          lda #$00
-000F53r 2  91 04          sta (BAS_TXTPTR),y
-000F55r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip past the closing quote
-000F58r 2               @LoadNameDone:
-000F58r 2                 ; Call filesystem load
-000F58r 2  20 rr rr       jsr FsLoadFile
-000F5Br 2  B0 10          bcs @LoadErr
-000F5Dr 2                 ; Update BAS_PRGEND: PROGRAM_START + FS_FILE_SIZE
-000F5Dr 2  A9 00          lda #<PROGRAM_START
-000F5Fr 2  18             clc
-000F60r 2  6D 4A 03       adc FS_FILE_SIZE
-000F63r 2  85 12          sta BAS_PRGEND
-000F65r 2  A9 08          lda #>PROGRAM_START
-000F67r 2  6D 4B 03       adc FS_FILE_SIZE + 1
-000F6Ar 2  85 13          sta BAS_PRGEND + 1
-000F6Cr 2  60             rts
-000F6Dr 2               
-000F6Dr 2               @LoadErr:
-000F6Dr 2  A9 rr          lda #<BasStrLoadErr
-000F6Fr 2  85 0E          sta BAS_TMP1
-000F71r 2  A9 rr          lda #>BasStrLoadErr
-000F73r 2  85 0F          sta BAS_TMP1 + 1
-000F75r 2  20 rr rr       jsr BasPrintStr
-000F78r 2  60             rts
-000F79r 2               
-000F79r 2               ; --- SAVE ---
-000F79r 2               ; SAVE "filename" — Save to CF filesystem
-000F79r 2               ; SAVE (no arg)   — Save via serial ASCII transfer
-000F79r 2               BasCmdSave:
-000F79r 2  20 rr rr       jsr BasSkipSpaces
-000F7Cr 2  20 rr rr       jsr BasGetTokChar
-000F7Fr 2  C9 22          cmp #CH_QUOTE
-000F81r 2  F0 04          beq @SaveCF
-000F83r 2               
-000F83r 2                 ; No filename — serial ASCII save
-000F83r 2  20 rr rr       jsr AsciiSave
-000F86r 2  60             rts
-000F87r 2               
-000F87r 2               @SaveCF:
-000F87r 2                 ; Parse quoted filename into STR_PTR for FsSaveFile
-000F87r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
-000F8Ar 2  A5 04          lda BAS_TXTPTR
-000F8Cr 2  85 02          sta STR_PTR
-000F8Er 2  A5 05          lda BAS_TXTPTR + 1
-000F90r 2  85 03          sta STR_PTR + 1
-000F92r 2                 ; Advance TXTPTR past the filename to closing quote
-000F92r 2               @SaveScanName:
-000F92r 2  20 rr rr       jsr BasGetTokChar
-000F95r 2  F0 12          beq @SaveNameDone
-000F97r 2  C9 22          cmp #CH_QUOTE
-000F99r 2  F0 05          beq @SaveNameEnd
-000F9Br 2  20 rr rr       jsr BasAdvTxtPtr
-000F9Er 2  80 F2          bra @SaveScanName
-000FA0r 2               @SaveNameEnd:
-000FA0r 2  A0 00          ldy #$00
-000FA2r 2  A9 00          lda #$00
-000FA4r 2  91 04          sta (BAS_TXTPTR),y
-000FA6r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip past the closing quote
-000FA9r 2               @SaveNameDone:
-000FA9r 2                 ; Calculate file size = BAS_PRGEND - PROGRAM_START
-000FA9r 2  A5 12          lda BAS_PRGEND
-000FABr 2  38             sec
-000FACr 2  E9 00          sbc #<PROGRAM_START
-000FAEr 2  8D 4A 03       sta FS_FILE_SIZE
-000FB1r 2  A5 13          lda BAS_PRGEND + 1
-000FB3r 2  E9 08          sbc #>PROGRAM_START
-000FB5r 2  8D 4B 03       sta FS_FILE_SIZE + 1
-000FB8r 2                 ; Call filesystem save
-000FB8r 2  20 rr rr       jsr FsSaveFile
-000FBBr 2  B0 01          bcs @SaveErr
-000FBDr 2  60             rts
-000FBEr 2               
-000FBEr 2               @SaveErr:
-000FBEr 2  A9 rr          lda #<BasStrSaveErr
-000FC0r 2  85 0E          sta BAS_TMP1
-000FC2r 2  A9 rr          lda #>BasStrSaveErr
-000FC4r 2  85 0F          sta BAS_TMP1 + 1
-000FC6r 2  20 rr rr       jsr BasPrintStr
-000FC9r 2  60             rts
-000FCAr 2               
-000FCAr 2               ; --- DIR ---
-000FCAr 2               ; DIR — Print directory listing from CF
-000FCAr 2               BasCmdDir:
-000FCAr 2  20 rr rr       jsr FsDirectory
+000E8Ar 2               @ForStackFull:
+000E8Ar 2  A9 03          lda #ERR_OUT_OF_MEM
+000E8Cr 2  4C rr rr       jmp BasError
+000E8Fr 2               
+000E8Fr 2               @ForErr:
+000E8Fr 2  A9 00          lda #ERR_SYNTAX
+000E91r 2  4C rr rr       jmp BasError
+000E94r 2               
+000E94r 2               ; --- NEXT ---
+000E94r 2               BasCmdNext:
+000E94r 2  20 rr rr       jsr BasSkipSpaces
+000E97r 2  20 rr rr       jsr BasGetTokChar
+000E9Ar 2               
+000E9Ar 2                 ; Must be a variable
+000E9Ar 2  C9 41          cmp #'A'
+000E9Cr 2  B0 03          bcs @NextVarOk1
+000E9Er 2  4C rr rr       jmp @NextErr
+000EA1r 2               @NextVarOk1:
+000EA1r 2  C9 5B          cmp #'Z' + 1
+000EA3r 2  90 03          bcc @NextVarOk2
+000EA5r 2  4C rr rr       jmp @NextErr
+000EA8r 2               @NextVarOk2:
+000EA8r 2               
+000EA8r 2  38             sec
+000EA9r 2  E9 41          sbc #'A'
+000EABr 2  0A             asl
+000EACr 2  85 21          sta BAS_TEMP                   ; Variable offset
+000EAEr 2  20 rr rr       jsr BasAdvTxtPtr
+000EB1r 2               
+000EB1r 2                 ; Search FOR stack from top for matching variable
+000EB1r 2  A6 1B          ldx BAS_FORSP
+000EB3r 2  F0 63          beq @NextNoFor
+000EB5r 2               
+000EB5r 2               @NextSearch:
+000EB5r 2  CA             dex                            ; Back up past padding and entries
+000EB6r 2  8A             txa
+000EB7r 2  38             sec
+000EB8r 2  E9 0F          sbc #BAS_FOR_ENTRY - 1         ; Point to start of this entry
+000EBAr 2  AA             tax
+000EBBr 2  30 5B          bmi @NextNoFor
+000EBDr 2  BD 80 05       lda BAS_FORSTK,x               ; var_offset
+000EC0r 2  C5 21          cmp BAS_TEMP
+000EC2r 2  F0 02          beq @NextFound
+000EC4r 2                 ; Not this entry — keep searching
+000EC4r 2  80 EF          bra @NextSearch
+000EC6r 2               
+000EC6r 2               @NextFound:
+000EC6r 2                 ; Add step to variable
+000EC6r 2  BD 83 05       lda BAS_FORSTK + 3,x           ; step lo
+000EC9r 2  85 0C          sta BAS_AUX
+000ECBr 2  BD 84 05       lda BAS_FORSTK + 4,x           ; step hi
+000ECEr 2  85 0D          sta BAS_AUX + 1
+000ED0r 2               
+000ED0r 2  A4 21          ldy BAS_TEMP                   ; var offset
+000ED2r 2  18             clc
+000ED3r 2  B9 00 04       lda BAS_VARS,y
+000ED6r 2  65 0C          adc BAS_AUX
+000ED8r 2  99 00 04       sta BAS_VARS,y
+000EDBr 2  85 0A          sta BAS_ACC
+000EDDr 2  B9 01 04       lda BAS_VARS + 1,y
+000EE0r 2  65 0D          adc BAS_AUX + 1
+000EE2r 2  99 01 04       sta BAS_VARS + 1,y
+000EE5r 2  85 0B          sta BAS_ACC + 1
+000EE7r 2               
+000EE7r 2                 ; Load limit into AUX for comparison
+000EE7r 2  BD 81 05       lda BAS_FORSTK + 1,x           ; limit lo
+000EEAr 2  85 0C          sta BAS_AUX
+000EECr 2  BD 82 05       lda BAS_FORSTK + 2,x           ; limit hi
+000EEFr 2  85 0D          sta BAS_AUX + 1
+000EF1r 2               
+000EF1r 2                 ; Check if loop is done:
+000EF1r 2                 ; If step > 0: done when var > limit (AUX)
+000EF1r 2                 ; If step < 0: done when var < limit (AUX)
+000EF1r 2  BD 84 05       lda BAS_FORSTK + 4,x           ; step hi
+000EF4r 2  30 07          bmi @NextStepNeg
+000EF6r 2               
+000EF6r 2                 ; Step positive: compare var (ACC) vs limit (AUX)
+000EF6r 2                 ; Done if ACC > AUX (i.e., AUX < ACC)
+000EF6r 2  20 rr rr       jsr BasCmpAuxAcc
+000EF9r 2  30 1A          bmi @NextDone                  ; AUX < ACC means var > limit
+000EFBr 2  80 07          bra @NextLoop                  ; Continue loop
+000EFDr 2               
+000EFDr 2               @NextStepNeg:
+000EFDr 2                 ; Step negative: done if var < limit
+000EFDr 2                 ; Done if ACC < AUX (i.e., AUX > ACC)
+000EFDr 2  20 rr rr       jsr BasCmpAuxAcc
+000F00r 2  F0 02          beq @NextLoop
+000F02r 2  10 11          bpl @NextDone                  ; AUX > ACC means var < limit
+000F04r 2               
+000F04r 2               @NextLoop:
+000F04r 2                 ; Continue loop — set CURLINE to body start
+000F04r 2                 ; Keep the FOR entry on the stack (FORSP stays where it is)
+000F04r 2  BD 85 05       lda BAS_FORSTK + 5,x           ; body_start lo
+000F07r 2  85 06          sta BAS_CURLINE
+000F09r 2  BD 86 05       lda BAS_FORSTK + 6,x           ; body_start hi
+000F0Cr 2  85 07          sta BAS_CURLINE + 1
+000F0Er 2                 ; Invalidate saved CURLINE so run loop always detects the change,
+000F0Er 2                 ; even when body_start == current line (empty loop body / NEXT on next line)
+000F0Er 2  A9 FF          lda #$FF
+000F10r 2  85 14          sta BAS_VARPTR
+000F12r 2  85 15          sta BAS_VARPTR + 1
+000F14r 2  60             rts
+000F15r 2               
+000F15r 2               @NextDone:
+000F15r 2                 ; Loop complete — remove this FOR entry from stack
+000F15r 2  86 1B          stx BAS_FORSP                  ; Pop down to this entry (removes it)
+000F17r 2  60             rts
+000F18r 2               
+000F18r 2               @NextNoFor:
+000F18r 2               @NextErr:
+000F18r 2  A9 05          lda #ERR_NEXT_NO_FOR
+000F1Ar 2  4C rr rr       jmp BasError
+000F1Dr 2               
+000F1Dr 2               ; --- END ---
+000F1Dr 2               BasCmdEnd:
+000F1Dr 2  64 17          stz BAS_FLAGS                  ; Clear run flag
+000F1Fr 2  60             rts                            ; Returns to BasRunLoop which checks flags
+000F20r 2               
+000F20r 2               ; --- SYS ---
+000F20r 2               ; SYS <address> — Call machine code at 16-bit address, RTS returns to BASIC
+000F20r 2               BasCmdSys:
+000F20r 2  20 rr rr       jsr BasExpr                    ; Evaluate address expression → BAS_ACC
+000F23r 2                 ; Use BAS_TMP2 as the indirect jump target
+000F23r 2  A5 0A          lda BAS_ACC
+000F25r 2  85 10          sta BAS_TMP2
+000F27r 2  A5 0B          lda BAS_ACC + 1
+000F29r 2  85 11          sta BAS_TMP2 + 1
+000F2Br 2  6C 10 00       jmp (BAS_TMP2)                 ; JSR-like: callee RTSes back to caller
+000F2Er 2               
+000F2Er 2               ; --- LOAD ---
+000F2Er 2               ; LOAD "filename" — Load from CF filesystem
+000F2Er 2               ; LOAD (no arg)   — Load via serial ASCII transfer
+000F2Er 2               BasCmdLoad:
+000F2Er 2  20 rr rr       jsr BasSkipSpaces
+000F31r 2  20 rr rr       jsr BasGetTokChar
+000F34r 2  C9 22          cmp #CH_QUOTE
+000F36r 2  F0 0E          beq @LoadCF
+000F38r 2               
+000F38r 2                 ; No filename — serial ASCII load
+000F38r 2  20 rr rr       jsr AsciiLoad
+000F3Br 2  B0 40          bcs @LoadErr
+000F3Dr 2                 ; Update BAS_PRGEND from XFER_PTR (points past last byte written)
+000F3Dr 2  A5 2A          lda XFER_PTR
+000F3Fr 2  85 12          sta BAS_PRGEND
+000F41r 2  A5 2B          lda XFER_PTR + 1
+000F43r 2  85 13          sta BAS_PRGEND + 1
+000F45r 2  60             rts
+000F46r 2               
+000F46r 2               @LoadCF:
+000F46r 2                 ; Parse quoted filename into STR_PTR for FsLoadFile
+000F46r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
+000F49r 2                 ; Point STR_PTR at current position in tokenized text
+000F49r 2  A5 04          lda BAS_TXTPTR
+000F4Br 2  85 02          sta STR_PTR
+000F4Dr 2  A5 05          lda BAS_TXTPTR + 1
+000F4Fr 2  85 03          sta STR_PTR + 1
+000F51r 2                 ; Advance TXTPTR past the filename to closing quote
+000F51r 2               @LoadScanName:
+000F51r 2  20 rr rr       jsr BasGetTokChar
+000F54r 2  F0 12          beq @LoadNameDone              ; End of line (unterminated — use what we have)
+000F56r 2  C9 22          cmp #CH_QUOTE
+000F58r 2  F0 05          beq @LoadNameEnd
+000F5Ar 2  20 rr rr       jsr BasAdvTxtPtr
+000F5Dr 2  80 F2          bra @LoadScanName
+000F5Fr 2               @LoadNameEnd:
+000F5Fr 2                 ; Null-terminate the filename in the token buffer (overwrite closing quote)
+000F5Fr 2  A0 00          ldy #$00
+000F61r 2  A9 00          lda #$00
+000F63r 2  91 04          sta (BAS_TXTPTR),y
+000F65r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip past the closing quote
+000F68r 2               @LoadNameDone:
+000F68r 2                 ; Call filesystem load
+000F68r 2  20 rr rr       jsr FsLoadFile
+000F6Br 2  B0 10          bcs @LoadErr
+000F6Dr 2                 ; Update BAS_PRGEND: PROGRAM_START + FS_FILE_SIZE
+000F6Dr 2  A9 00          lda #<PROGRAM_START
+000F6Fr 2  18             clc
+000F70r 2  6D 4A 03       adc FS_FILE_SIZE
+000F73r 2  85 12          sta BAS_PRGEND
+000F75r 2  A9 08          lda #>PROGRAM_START
+000F77r 2  6D 4B 03       adc FS_FILE_SIZE + 1
+000F7Ar 2  85 13          sta BAS_PRGEND + 1
+000F7Cr 2  60             rts
+000F7Dr 2               
+000F7Dr 2               @LoadErr:
+000F7Dr 2  A9 rr          lda #<BasStrLoadErr
+000F7Fr 2  85 0E          sta BAS_TMP1
+000F81r 2  A9 rr          lda #>BasStrLoadErr
+000F83r 2  85 0F          sta BAS_TMP1 + 1
+000F85r 2  20 rr rr       jsr BasPrintStr
+000F88r 2  60             rts
+000F89r 2               
+000F89r 2               ; --- SAVE ---
+000F89r 2               ; SAVE "filename" — Save to CF filesystem
+000F89r 2               ; SAVE (no arg)   — Save via serial ASCII transfer
+000F89r 2               BasCmdSave:
+000F89r 2  20 rr rr       jsr BasSkipSpaces
+000F8Cr 2  20 rr rr       jsr BasGetTokChar
+000F8Fr 2  C9 22          cmp #CH_QUOTE
+000F91r 2  F0 04          beq @SaveCF
+000F93r 2               
+000F93r 2                 ; No filename — serial ASCII save
+000F93r 2  20 rr rr       jsr AsciiSave
+000F96r 2  60             rts
+000F97r 2               
+000F97r 2               @SaveCF:
+000F97r 2                 ; Parse quoted filename into STR_PTR for FsSaveFile
+000F97r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
+000F9Ar 2  A5 04          lda BAS_TXTPTR
+000F9Cr 2  85 02          sta STR_PTR
+000F9Er 2  A5 05          lda BAS_TXTPTR + 1
+000FA0r 2  85 03          sta STR_PTR + 1
+000FA2r 2                 ; Advance TXTPTR past the filename to closing quote
+000FA2r 2               @SaveScanName:
+000FA2r 2  20 rr rr       jsr BasGetTokChar
+000FA5r 2  F0 12          beq @SaveNameDone
+000FA7r 2  C9 22          cmp #CH_QUOTE
+000FA9r 2  F0 05          beq @SaveNameEnd
+000FABr 2  20 rr rr       jsr BasAdvTxtPtr
+000FAEr 2  80 F2          bra @SaveScanName
+000FB0r 2               @SaveNameEnd:
+000FB0r 2  A0 00          ldy #$00
+000FB2r 2  A9 00          lda #$00
+000FB4r 2  91 04          sta (BAS_TXTPTR),y
+000FB6r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip past the closing quote
+000FB9r 2               @SaveNameDone:
+000FB9r 2                 ; Calculate file size = BAS_PRGEND - PROGRAM_START
+000FB9r 2  A5 12          lda BAS_PRGEND
+000FBBr 2  38             sec
+000FBCr 2  E9 00          sbc #<PROGRAM_START
+000FBEr 2  8D 4A 03       sta FS_FILE_SIZE
+000FC1r 2  A5 13          lda BAS_PRGEND + 1
+000FC3r 2  E9 08          sbc #>PROGRAM_START
+000FC5r 2  8D 4B 03       sta FS_FILE_SIZE + 1
+000FC8r 2                 ; Call filesystem save
+000FC8r 2  20 rr rr       jsr FsSaveFile
+000FCBr 2  B0 01          bcs @SaveErr
 000FCDr 2  60             rts
 000FCEr 2               
-000FCEr 2               ; --- BRK ---
-000FCEr 2               BasCmdBrk:
-000FCEr 2  64 17          stz BAS_FLAGS                  ; Clear run flag
-000FD0r 2  00             brk                            ; Trigger BRK → IRQ vector → Wozmon
-000FD1r 2               
-000FD1r 2               ; --- NEW ---
-000FD1r 2               BasCmdNew:
-000FD1r 2                 ; Set program end to program start (empty program)
-000FD1r 2  A9 00          lda #<BAS_PRG_START
-000FD3r 2  85 12          sta BAS_PRGEND
-000FD5r 2  A9 08          lda #>BAS_PRG_START
-000FD7r 2  85 13          sta BAS_PRGEND + 1
-000FD9r 2                 ; Write end marker
-000FD9r 2  A0 00          ldy #LINE_NEXT
-000FDBr 2  A9 00          lda #$00
-000FDDr 2  91 12          sta (BAS_PRGEND),y
-000FDFr 2  C8             iny
-000FE0r 2  91 12          sta (BAS_PRGEND),y
-000FE2r 2                 ; Clear variables
-000FE2r 2  20 rr rr       jsr BasCmdClr
-000FE5r 2  64 17          stz BAS_FLAGS
-000FE7r 2  4C rr rr       jmp BasMainLoop
-000FEAr 2               
-000FEAr 2               ; --- LIST ---
-000FEAr 2               BasCmdList:
-000FEAr 2                 ; Start at beginning of program
-000FEAr 2  A9 00          lda #<BAS_PRG_START
-000FECr 2  85 0E          sta BAS_TMP1
-000FEEr 2  A9 08          lda #>BAS_PRG_START
-000FF0r 2  85 0F          sta BAS_TMP1 + 1
-000FF2r 2               
-000FF2r 2               @ListLoop:
-000FF2r 2                 ; Check if at end of program (TMP1 == PRGEND)
-000FF2r 2  A5 0E          lda BAS_TMP1
-000FF4r 2  C5 12          cmp BAS_PRGEND
-000FF6r 2  D0 06          bne @ListNotEnd
-000FF8r 2  A5 0F          lda BAS_TMP1 + 1
-000FFAr 2  C5 13          cmp BAS_PRGEND + 1
-000FFCr 2  F0 42          beq @ListDone
-000FFEr 2               @ListNotEnd:
-000FFEr 2               
-000FFEr 2                 ; Check for Ctrl+C break
-000FFEr 2  20 rr rr       jsr BasCheckBreak
-001001r 2               
-001001r 2                 ; Print line number
-001001r 2  A0 02          ldy #LINE_NUM
-001003r 2  B1 0E          lda (BAS_TMP1),y
-001005r 2  85 0A          sta BAS_ACC
-001007r 2  C8             iny
-001008r 2  B1 0E          lda (BAS_TMP1),y
-00100Ar 2  85 0B          sta BAS_ACC + 1
-00100Cr 2  20 rr rr       jsr BasPrintInt
-00100Fr 2               
-00100Fr 2                 ; Print space
-00100Fr 2  A9 20          lda #CH_SPACE
-001011r 2  20 rr rr       jsr Chrout
-001014r 2               
-001014r 2                 ; Detokenize and print the payload
-001014r 2                 ; Set TXTPTR to payload
-001014r 2  18             clc
-001015r 2  A5 0E          lda BAS_TMP1
-001017r 2  69 04          adc #LINE_PAYLOAD
-001019r 2  85 04          sta BAS_TXTPTR
-00101Br 2  A5 0F          lda BAS_TMP1 + 1
-00101Dr 2  69 00          adc #$00
-00101Fr 2  85 05          sta BAS_TXTPTR + 1
-001021r 2               
-001021r 2  20 rr rr       jsr BasDetokenize
-001024r 2               
-001024r 2                 ; Print CRLF
-001024r 2  20 rr rr       jsr BasPrintCRLF
-001027r 2               
-001027r 2                 ; Advance to next line by scanning for null terminator
-001027r 2  A0 04          ldy #LINE_PAYLOAD
-001029r 2               @ListScan:
-001029r 2  B1 0E          lda (BAS_TMP1),y
-00102Br 2  F0 03          beq @ListScanDone
+000FCEr 2               @SaveErr:
+000FCEr 2  A9 rr          lda #<BasStrSaveErr
+000FD0r 2  85 0E          sta BAS_TMP1
+000FD2r 2  A9 rr          lda #>BasStrSaveErr
+000FD4r 2  85 0F          sta BAS_TMP1 + 1
+000FD6r 2  20 rr rr       jsr BasPrintStr
+000FD9r 2  60             rts
+000FDAr 2               
+000FDAr 2               ; --- DIR ---
+000FDAr 2               ; DIR — Print directory listing from CF
+000FDAr 2               BasCmdDir:
+000FDAr 2  20 rr rr       jsr FsDirectory
+000FDDr 2  60             rts
+000FDEr 2               
+000FDEr 2               ; --- DEL ---
+000FDEr 2               ; DEL "filename" — Delete a file from CF
+000FDEr 2               BasCmdDel:
+000FDEr 2  20 rr rr       jsr BasSkipSpaces
+000FE1r 2  20 rr rr       jsr BasGetTokChar
+000FE4r 2  C9 22          cmp #CH_QUOTE
+000FE6r 2  D0 28          bne @DelErr
+000FE8r 2               
+000FE8r 2                 ; Parse quoted filename into STR_PTR for FsDeleteFile
+000FE8r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip opening quote
+000FEBr 2  A5 04          lda BAS_TXTPTR
+000FEDr 2  85 02          sta STR_PTR
+000FEFr 2  A5 05          lda BAS_TXTPTR + 1
+000FF1r 2  85 03          sta STR_PTR + 1
+000FF3r 2                 ; Advance TXTPTR past the filename to closing quote
+000FF3r 2               @DelScanName:
+000FF3r 2  20 rr rr       jsr BasGetTokChar
+000FF6r 2  F0 12          beq @DelNameDone
+000FF8r 2  C9 22          cmp #CH_QUOTE
+000FFAr 2  F0 05          beq @DelNameEnd
+000FFCr 2  20 rr rr       jsr BasAdvTxtPtr
+000FFFr 2  80 F2          bra @DelScanName
+001001r 2               @DelNameEnd:
+001001r 2  A0 00          ldy #$00
+001003r 2  A9 00          lda #$00
+001005r 2  91 04          sta (BAS_TXTPTR),y
+001007r 2  20 rr rr       jsr BasAdvTxtPtr               ; Skip past the closing quote
+00100Ar 2               @DelNameDone:
+00100Ar 2                 ; Call filesystem delete
+00100Ar 2  20 rr rr       jsr FsDeleteFile
+00100Dr 2  B0 01          bcs @DelErr
+00100Fr 2  60             rts
+001010r 2               
+001010r 2               @DelErr:
+001010r 2  A9 rr          lda #<BasStrDelErr
+001012r 2  85 0E          sta BAS_TMP1
+001014r 2  A9 rr          lda #>BasStrDelErr
+001016r 2  85 0F          sta BAS_TMP1 + 1
+001018r 2  20 rr rr       jsr BasPrintStr
+00101Br 2  60             rts
+00101Cr 2               
+00101Cr 2               ; --- BRK ---
+00101Cr 2               BasCmdBrk:
+00101Cr 2  64 17          stz BAS_FLAGS                  ; Clear run flag
+00101Er 2  00             brk                            ; Trigger BRK → IRQ vector → Wozmon
+00101Fr 2               
+00101Fr 2               ; --- NEW ---
+00101Fr 2               BasCmdNew:
+00101Fr 2                 ; Set program end to program start (empty program)
+00101Fr 2  A9 00          lda #<BAS_PRG_START
+001021r 2  85 12          sta BAS_PRGEND
+001023r 2  A9 08          lda #>BAS_PRG_START
+001025r 2  85 13          sta BAS_PRGEND + 1
+001027r 2                 ; Write end marker
+001027r 2  A0 00          ldy #LINE_NEXT
+001029r 2  A9 00          lda #$00
+00102Br 2  91 12          sta (BAS_PRGEND),y
 00102Dr 2  C8             iny
-00102Er 2  80 F9          bra @ListScan
-001030r 2               @ListScanDone:
-001030r 2  C8             iny                            ; Past null
-001031r 2  98             tya
-001032r 2  18             clc
-001033r 2  65 0E          adc BAS_TMP1
-001035r 2  85 0E          sta BAS_TMP1
-001037r 2  A9 00          lda #$00
-001039r 2  65 0F          adc BAS_TMP1 + 1
-00103Br 2  85 0F          sta BAS_TMP1 + 1
-00103Dr 2  4C rr rr       jmp @ListLoop
+00102Er 2  91 12          sta (BAS_PRGEND),y
+001030r 2                 ; Clear variables
+001030r 2  20 rr rr       jsr BasCmdClr
+001033r 2  64 17          stz BAS_FLAGS
+001035r 2  4C rr rr       jmp BasMainLoop
+001038r 2               
+001038r 2               ; --- LIST ---
+001038r 2               BasCmdList:
+001038r 2                 ; Start at beginning of program
+001038r 2  A9 00          lda #<BAS_PRG_START
+00103Ar 2  85 0E          sta BAS_TMP1
+00103Cr 2  A9 08          lda #>BAS_PRG_START
+00103Er 2  85 0F          sta BAS_TMP1 + 1
 001040r 2               
-001040r 2               @ListDone:
-001040r 2  60             rts
-001041r 2               
-001041r 2               ; --- POKE addr, value ---
-001041r 2               BasCmdPoke:
-001041r 2  20 rr rr       jsr BasExpr                    ; Evaluate address
-001044r 2  A5 0A          lda BAS_ACC
-001046r 2  85 10          sta BAS_TMP2
-001048r 2  A5 0B          lda BAS_ACC + 1
-00104Ar 2  85 11          sta BAS_TMP2 + 1
+001040r 2               @ListLoop:
+001040r 2                 ; Check if at end of program (TMP1 == PRGEND)
+001040r 2  A5 0E          lda BAS_TMP1
+001042r 2  C5 12          cmp BAS_PRGEND
+001044r 2  D0 06          bne @ListNotEnd
+001046r 2  A5 0F          lda BAS_TMP1 + 1
+001048r 2  C5 13          cmp BAS_PRGEND + 1
+00104Ar 2  F0 42          beq @ListDone
+00104Cr 2               @ListNotEnd:
 00104Cr 2               
-00104Cr 2                 ; Expect comma
-00104Cr 2  20 rr rr       jsr BasSkipSpaces
-00104Fr 2  20 rr rr       jsr BasGetTokChar
-001052r 2  C9 2C          cmp #CH_COMMA
-001054r 2  D0 0D          bne @PokeErr
-001056r 2  20 rr rr       jsr BasAdvTxtPtr
-001059r 2               
-001059r 2  20 rr rr       jsr BasExpr                    ; Evaluate value (low byte used)
-00105Cr 2  A5 0A          lda BAS_ACC
-00105Er 2  A0 00          ldy #$00
-001060r 2  91 10          sta (BAS_TMP2),y
-001062r 2  60             rts
-001063r 2               
-001063r 2               @PokeErr:
-001063r 2  A9 00          lda #ERR_SYNTAX
-001065r 2  4C rr rr       jmp BasError
-001068r 2               
-001068r 2               ; ============================================================================
-001068r 2               ; Keyword Table
-001068r 2               ; ============================================================================
-001068r 2               ; Format: null-terminated keyword string, then token byte.
-001068r 2               ; Longer keywords first to prevent partial matches (e.g. GOSUB before GOTO).
-001068r 2               ; Table terminated by a lone $00.
-001068r 2               
-001068r 2               BasKeywordTable:
-001068r 2  52 45 54 55    .byte "RETURN", $00, TOK_RETURN
-00106Cr 2  52 4E 00 85  
-001070r 2  50 52 49 4E    .byte "PRINT",  $00, TOK_PRINT
-001074r 2  54 00 80     
-001077r 2  49 4E 50 55    .byte "INPUT",  $00, TOK_INPUT
-00107Br 2  54 00 81     
-00107Er 2  47 4F 53 55    .byte "GOSUB",  $00, TOK_GOSUB
-001082r 2  42 00 84     
-001085r 2  47 4F 54 4F    .byte "GOTO",   $00, TOK_GOTO
-001089r 2  00 83        
-00108Br 2  54 48 45 4E    .byte "THEN",   $00, TOK_THEN
-00108Fr 2  00 87        
-001091r 2  53 54 45 50    .byte "STEP",   $00, TOK_STEP
-001095r 2  00 8A        
-001097r 2  4E 45 58 54    .byte "NEXT",   $00, TOK_NEXT
-00109Br 2  00 8B        
-00109Dr 2  50 45 45 4B    .byte "PEEK",   $00, TOK_PEEK
-0010A1r 2  00 92        
-0010A3r 2  50 4F 4B 45    .byte "POKE",   $00, TOK_POKE
-0010A7r 2  00 93        
-0010A9r 2  53 41 56 45    .byte "SAVE",   $00, TOK_SAVE
-0010ADr 2  00 A0        
-0010AFr 2  4C 4F 41 44    .byte "LOAD",   $00, TOK_LOAD
-0010B3r 2  00 9F        
-0010B5r 2  4C 49 53 54    .byte "LIST",   $00, TOK_LIST
-0010B9r 2  00 8E        
-0010BBr 2  4C 45 54 00    .byte "LET",    $00, TOK_LET
-0010BFr 2  82           
-0010C0r 2  46 4F 52 00    .byte "FOR",    $00, TOK_FOR
-0010C4r 2  88           
-0010C5r 2  52 45 4D 00    .byte "REM",    $00, TOK_REM
-0010C9r 2  8C           
-0010CAr 2  45 4E 44 00    .byte "END",    $00, TOK_END
-0010CEr 2  8D           
-0010CFr 2  52 55 4E 00    .byte "RUN",    $00, TOK_RUN
-0010D3r 2  8F           
-0010D4r 2  4E 45 57 00    .byte "NEW",    $00, TOK_NEW
-0010D8r 2  90           
-0010D9r 2  43 4C 52 00    .byte "CLR",    $00, TOK_CLR
-0010DDr 2  91           
-0010DEr 2  41 42 53 00    .byte "ABS",    $00, TOK_ABS
-0010E2r 2  94           
-0010E3r 2  52 4E 44 00    .byte "RND",    $00, TOK_RND
-0010E7r 2  95           
-0010E8r 2  4E 4F 54 00    .byte "NOT",    $00, TOK_NOT
-0010ECr 2  96           
-0010EDr 2  41 4E 44 00    .byte "AND",    $00, TOK_AND
-0010F1r 2  97           
-0010F2r 2  4D 4F 44 00    .byte "MOD",    $00, TOK_MOD
-0010F6r 2  99           
-0010F7r 2  53 59 53 00    .byte "SYS",    $00, TOK_SYS
-0010FBr 2  9E           
-0010FCr 2  44 49 52 00    .byte "DIR",    $00, TOK_DIR
-001100r 2  A1           
-001101r 2  42 52 4B 00    .byte "BRK",    $00, TOK_BRK
-001105r 2  9D           
-001106r 2  49 46 00 86    .byte "IF",     $00, TOK_IF
-00110Ar 2  54 4F 00 89    .byte "TO",     $00, TOK_TO
-00110Er 2  4F 52 00 98    .byte "OR",     $00, TOK_OR
-001112r 2  00             .byte $00                       ; End of table sentinel
-001113r 2               
-001113r 2               ; ============================================================================
-001113r 2               ; String Data
-001113r 2               ; ============================================================================
-001113r 2               
-001113r 2  0D 0A 43 4F  BasStrWelcome:  .byte CH_CR, CH_LF, "COB BASIC v1.0", CH_CR, CH_LF, $00
-001117r 2  42 20 42 41  
-00111Br 2  53 49 43 20  
-001126r 2  0D 0A 4F 4B  BasStrOK:       .byte CH_CR, CH_LF, "OK", CH_CR, CH_LF, $00
-00112Ar 2  0D 0A 00     
-00112Dr 2  20 42 59 54  BasStrFree:     .byte " BYTES FREE", $00
-001131r 2  45 53 20 46  
-001135r 2  52 45 45 00  
-001139r 2  20 45 52 52  BasStrError:    .byte " ERROR", $00
-00113Dr 2  4F 52 00     
-001140r 2  20 49 4E 20  BasStrIn:       .byte " IN ", $00
-001144r 2  00           
-001145r 2  3F 52 45 44  BasStrRedo:     .byte "?REDO", CH_CR, CH_LF, $00
-001149r 2  4F 0D 0A 00  
-00114Dr 2  3F 20 00     BasStrPrompt:   .byte "? ", $00
-001150r 2  0D 0A 3F 4C  BasStrLoadErr:  .byte CH_CR, CH_LF, "?LOAD ERROR", CH_CR, CH_LF, $00
-001154r 2  4F 41 44 20  
-001158r 2  45 52 52 4F  
-001160r 2  0D 0A 3F 53  BasStrSaveErr:  .byte CH_CR, CH_LF, "?SAVE ERROR", CH_CR, CH_LF, $00
-001164r 2  41 56 45 20  
-001168r 2  45 52 52 4F  
-001170r 2               
-001170r 2               
-001170r 1               .segment "WOZMON"
+00104Cr 2                 ; Check for Ctrl+C break
+00104Cr 2  20 rr rr       jsr BasCheckBreak
+00104Fr 2               
+00104Fr 2                 ; Print line number
+00104Fr 2  A0 02          ldy #LINE_NUM
+001051r 2  B1 0E          lda (BAS_TMP1),y
+001053r 2  85 0A          sta BAS_ACC
+001055r 2  C8             iny
+001056r 2  B1 0E          lda (BAS_TMP1),y
+001058r 2  85 0B          sta BAS_ACC + 1
+00105Ar 2  20 rr rr       jsr BasPrintInt
+00105Dr 2               
+00105Dr 2                 ; Print space
+00105Dr 2  A9 20          lda #CH_SPACE
+00105Fr 2  20 rr rr       jsr Chrout
+001062r 2               
+001062r 2                 ; Detokenize and print the payload
+001062r 2                 ; Set TXTPTR to payload
+001062r 2  18             clc
+001063r 2  A5 0E          lda BAS_TMP1
+001065r 2  69 04          adc #LINE_PAYLOAD
+001067r 2  85 04          sta BAS_TXTPTR
+001069r 2  A5 0F          lda BAS_TMP1 + 1
+00106Br 2  69 00          adc #$00
+00106Dr 2  85 05          sta BAS_TXTPTR + 1
+00106Fr 2               
+00106Fr 2  20 rr rr       jsr BasDetokenize
+001072r 2               
+001072r 2                 ; Print CRLF
+001072r 2  20 rr rr       jsr BasPrintCRLF
+001075r 2               
+001075r 2                 ; Advance to next line by scanning for null terminator
+001075r 2  A0 04          ldy #LINE_PAYLOAD
+001077r 2               @ListScan:
+001077r 2  B1 0E          lda (BAS_TMP1),y
+001079r 2  F0 03          beq @ListScanDone
+00107Br 2  C8             iny
+00107Cr 2  80 F9          bra @ListScan
+00107Er 2               @ListScanDone:
+00107Er 2  C8             iny                            ; Past null
+00107Fr 2  98             tya
+001080r 2  18             clc
+001081r 2  65 0E          adc BAS_TMP1
+001083r 2  85 0E          sta BAS_TMP1
+001085r 2  A9 00          lda #$00
+001087r 2  65 0F          adc BAS_TMP1 + 1
+001089r 2  85 0F          sta BAS_TMP1 + 1
+00108Br 2  4C rr rr       jmp @ListLoop
+00108Er 2               
+00108Er 2               @ListDone:
+00108Er 2  60             rts
+00108Fr 2               
+00108Fr 2               ; --- POKE addr, value ---
+00108Fr 2               BasCmdPoke:
+00108Fr 2  20 rr rr       jsr BasExpr                    ; Evaluate address
+001092r 2  A5 0A          lda BAS_ACC
+001094r 2  85 10          sta BAS_TMP2
+001096r 2  A5 0B          lda BAS_ACC + 1
+001098r 2  85 11          sta BAS_TMP2 + 1
+00109Ar 2               
+00109Ar 2                 ; Expect comma
+00109Ar 2  20 rr rr       jsr BasSkipSpaces
+00109Dr 2  20 rr rr       jsr BasGetTokChar
+0010A0r 2  C9 2C          cmp #CH_COMMA
+0010A2r 2  D0 0D          bne @PokeErr
+0010A4r 2  20 rr rr       jsr BasAdvTxtPtr
+0010A7r 2               
+0010A7r 2  20 rr rr       jsr BasExpr                    ; Evaluate value (low byte used)
+0010AAr 2  A5 0A          lda BAS_ACC
+0010ACr 2  A0 00          ldy #$00
+0010AEr 2  91 10          sta (BAS_TMP2),y
+0010B0r 2  60             rts
+0010B1r 2               
+0010B1r 2               @PokeErr:
+0010B1r 2  A9 00          lda #ERR_SYNTAX
+0010B3r 2  4C rr rr       jmp BasError
+0010B6r 2               
+0010B6r 2               ; ============================================================================
+0010B6r 2               ; Keyword Table
+0010B6r 2               ; ============================================================================
+0010B6r 2               ; Format: null-terminated keyword string, then token byte.
+0010B6r 2               ; Longer keywords first to prevent partial matches (e.g. GOSUB before GOTO).
+0010B6r 2               ; Table terminated by a lone $00.
+0010B6r 2               
+0010B6r 2               BasKeywordTable:
+0010B6r 2  52 45 54 55    .byte "RETURN", $00, TOK_RETURN
+0010BAr 2  52 4E 00 85  
+0010BEr 2  50 52 49 4E    .byte "PRINT",  $00, TOK_PRINT
+0010C2r 2  54 00 80     
+0010C5r 2  49 4E 50 55    .byte "INPUT",  $00, TOK_INPUT
+0010C9r 2  54 00 81     
+0010CCr 2  47 4F 53 55    .byte "GOSUB",  $00, TOK_GOSUB
+0010D0r 2  42 00 84     
+0010D3r 2  47 4F 54 4F    .byte "GOTO",   $00, TOK_GOTO
+0010D7r 2  00 83        
+0010D9r 2  54 48 45 4E    .byte "THEN",   $00, TOK_THEN
+0010DDr 2  00 87        
+0010DFr 2  53 54 45 50    .byte "STEP",   $00, TOK_STEP
+0010E3r 2  00 8A        
+0010E5r 2  4E 45 58 54    .byte "NEXT",   $00, TOK_NEXT
+0010E9r 2  00 8B        
+0010EBr 2  50 45 45 4B    .byte "PEEK",   $00, TOK_PEEK
+0010EFr 2  00 92        
+0010F1r 2  50 4F 4B 45    .byte "POKE",   $00, TOK_POKE
+0010F5r 2  00 93        
+0010F7r 2  53 41 56 45    .byte "SAVE",   $00, TOK_SAVE
+0010FBr 2  00 A0        
+0010FDr 2  4C 4F 41 44    .byte "LOAD",   $00, TOK_LOAD
+001101r 2  00 9F        
+001103r 2  4C 49 53 54    .byte "LIST",   $00, TOK_LIST
+001107r 2  00 8E        
+001109r 2  4C 45 54 00    .byte "LET",    $00, TOK_LET
+00110Dr 2  82           
+00110Er 2  46 4F 52 00    .byte "FOR",    $00, TOK_FOR
+001112r 2  88           
+001113r 2  52 45 4D 00    .byte "REM",    $00, TOK_REM
+001117r 2  8C           
+001118r 2  45 4E 44 00    .byte "END",    $00, TOK_END
+00111Cr 2  8D           
+00111Dr 2  52 55 4E 00    .byte "RUN",    $00, TOK_RUN
+001121r 2  8F           
+001122r 2  4E 45 57 00    .byte "NEW",    $00, TOK_NEW
+001126r 2  90           
+001127r 2  43 4C 52 00    .byte "CLR",    $00, TOK_CLR
+00112Br 2  91           
+00112Cr 2  41 42 53 00    .byte "ABS",    $00, TOK_ABS
+001130r 2  94           
+001131r 2  52 4E 44 00    .byte "RND",    $00, TOK_RND
+001135r 2  95           
+001136r 2  4E 4F 54 00    .byte "NOT",    $00, TOK_NOT
+00113Ar 2  96           
+00113Br 2  41 4E 44 00    .byte "AND",    $00, TOK_AND
+00113Fr 2  97           
+001140r 2  4D 4F 44 00    .byte "MOD",    $00, TOK_MOD
+001144r 2  99           
+001145r 2  53 59 53 00    .byte "SYS",    $00, TOK_SYS
+001149r 2  9E           
+00114Ar 2  44 49 52 00    .byte "DIR",    $00, TOK_DIR
+00114Er 2  A1           
+00114Fr 2  44 45 4C 00    .byte "DEL",    $00, TOK_DEL
+001153r 2  A2           
+001154r 2  42 52 4B 00    .byte "BRK",    $00, TOK_BRK
+001158r 2  9D           
+001159r 2  49 46 00 86    .byte "IF",     $00, TOK_IF
+00115Dr 2  54 4F 00 89    .byte "TO",     $00, TOK_TO
+001161r 2  4F 52 00 98    .byte "OR",     $00, TOK_OR
+001165r 2  00             .byte $00                       ; End of table sentinel
+001166r 2               
+001166r 2               ; ============================================================================
+001166r 2               ; String Data
+001166r 2               ; ============================================================================
+001166r 2               
+001166r 2  0D 0A 43 4F  BasStrWelcome:  .byte CH_CR, CH_LF, "COB BASIC v1.0", CH_CR, CH_LF, $00
+00116Ar 2  42 20 42 41  
+00116Er 2  53 49 43 20  
+001179r 2  0D 0A 4F 4B  BasStrOK:       .byte CH_CR, CH_LF, "OK", CH_CR, CH_LF, $00
+00117Dr 2  0D 0A 00     
+001180r 2  20 42 59 54  BasStrFree:     .byte " BYTES FREE", $00
+001184r 2  45 53 20 46  
+001188r 2  52 45 45 00  
+00118Cr 2  20 45 52 52  BasStrError:    .byte " ERROR", $00
+001190r 2  4F 52 00     
+001193r 2  20 49 4E 20  BasStrIn:       .byte " IN ", $00
+001197r 2  00           
+001198r 2  3F 52 45 44  BasStrRedo:     .byte "?REDO", CH_CR, CH_LF, $00
+00119Cr 2  4F 0D 0A 00  
+0011A0r 2  3F 20 00     BasStrPrompt:   .byte "? ", $00
+0011A3r 2  0D 0A 3F 4C  BasStrLoadErr:  .byte CH_CR, CH_LF, "?LOAD ERROR", CH_CR, CH_LF, $00
+0011A7r 2  4F 41 44 20  
+0011ABr 2  45 52 52 4F  
+0011B3r 2  0D 0A 3F 53  BasStrSaveErr:  .byte CH_CR, CH_LF, "?SAVE ERROR", CH_CR, CH_LF, $00
+0011B7r 2  41 56 45 20  
+0011BBr 2  45 52 52 4F  
+0011C3r 2  0D 0A 3F 44  BasStrDelErr:   .byte CH_CR, CH_LF, "?DEL ERROR", CH_CR, CH_LF, $00
+0011C7r 2  45 4C 20 45  
+0011CBr 2  52 52 4F 52  
+0011D2r 2               
+0011D2r 2               
+0011D2r 1               .segment "WOZMON"
 000000r 1               .include "Wozmon.asm"
 000000r 2               ; ***             ***
 000000r 2               ; ***   WOZMON    ***

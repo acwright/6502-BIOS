@@ -21,7 +21,8 @@ Execute each phase in order. After completing each phase, verify the project sti
 - `$A000-$FFFF` — ROM (Kernal, Chars, Monitor, BASIC, Wozmon, Vectors)
 
 ### I/O Card Addresses
-- IO 1-2: RAM Card (`$8000-$87FF`) — always present (on main board)
+- IO 1: RAM Card Low (`$8000-$83FF`) — optional (banked SRAM)
+- IO 2: RAM Card High (`$8400-$87FF`) — optional (banked SRAM)
 - IO 3: RTC DS1511Y (`$8800-$881F`) — optional
 - IO 4: CompactFlash 8-bit IDE (`$8C00-$8C07`) — optional
 - IO 5: Serial R65C51 (`$9000-$9003`) — optional
@@ -59,6 +60,7 @@ Reset → cld, sei, init stack
 
 ### Design Decisions
 - **Minimum config**: CPU + RAM + ROM + at least Video OR Serial (auto-detect which)
+- **RAM cards**: Banked SRAM on IO 1/IO 2 — probed but not required for boot; presence recorded for userland
 - **Boot timeout**: Auto-boot BASIC after ~5 seconds if no keypress
 - **Absent SID**: Skip beep silently (no software delay substitute)
 - **Error reporting**: Silent — set `HW_PRESENT` flags only, no visible "NOT FOUND" messages
@@ -81,16 +83,20 @@ Add `HW_PRESENT` variable and bit constants. Location: after the `RTC_TMP := $03
 
 ```
 HW_PRESENT          := $030D             ; Hardware present bitmask (set during Reset probe)
-; HW_PRESENT bit definitions
-HW_VID              = %00000001          ; Bit 0: Video card (TMS9918/pico9918)
-HW_GPIO             = %00000010          ; Bit 1: GPIO card (65C22 VIA — keyboard/joysticks)
-HW_SC               = %00000100          ; Bit 2: Serial card (R65C51)
-HW_SID              = %00001000          ; Bit 3: Sound card (SID/ARMSID)
-HW_CF               = %00010000          ; Bit 4: Storage card (CompactFlash)
-HW_RTC              = %00100000          ; Bit 5: RTC card (DS1511Y)
+; HW_PRESENT bit definitions (bit order matches IO slot numbers)
+HW_RAM_L            = %00000001          ; Bit 0: RAM card low  (IO 1, $8000-$83FF)
+HW_RAM_H            = %00000010          ; Bit 1: RAM card high (IO 2, $8400-$87FF)
+HW_RTC              = %00000100          ; Bit 2: RTC card (IO 3, DS1511Y)
+HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFlash)
+HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
+HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
+HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
+HW_VID              = %10000000          ; Bit 7: Video card (IO 8, TMS9918/pico9918)
 ```
 
 Update the reserved comment to reflect only `$030E-$030F` remaining reserved.
+
+Note: bit order matches IO slot numbers (IO 1 = bit 0 through IO 8 = bit 7).
 
 ### Kernal.asm
 In the `Reset` routine, add `stz HW_PRESENT` immediately before the first hardware init call (`jsr InitBuffer`). This ensures all bits start clear.
@@ -102,6 +108,16 @@ In the `Reset` routine, add `stz HW_PRESENT` immediately before the first hardwa
 Add probe routines to Kernal.asm (near the existing `Init*` routines). Each probe tests for device presence and sets the corresponding bit in `HW_PRESENT` on success. The `Reset` routine must be restructured to: probe → conditionally init each device.
 
 ### Probe Methods
+
+**ProbeRAM** — Banked SRAM read-back test (covers IO 1 and IO 2):
+```
+; For each RAM bank (low/high):
+; Select bank 0 via RAM_BANK_L / RAM_BANK_H
+; Read existing value from RAM_DATA_L / RAM_DATA_H, save it
+; Write $A5, read back — if match, write $5A, read back — if both match → set HW_RAM_L / HW_RAM_H
+; Restore original value afterward
+; Two-pattern test ($A5 then $5A) reduces false positives from floating bus
+```
 
 **ProbeVideo** — TMS9918 VRAM read-back test:
 ```
@@ -157,21 +173,12 @@ Replace the current sequential init block with probe-then-init pattern:
 
   jsr InitBuffer               ; Always — RAM-only, no hardware
 
-  ; Probe and conditionally init each card:
-  jsr ProbeVideo               ; Sets HW_VID if present
-  lda HW_PRESENT
-  and #HW_VID
-  beq @SkipVideo
-  jsr InitVideoImpl
-  jsr InitCharacters
-@SkipVideo:
+  jsr ProbeRAM                 ; Sets HW_RAM_L / HW_RAM_H if present (no init needed)
 
-  jsr ProbeGPIO                ; Sets HW_GPIO if present
-  lda HW_PRESENT
-  and #HW_GPIO
-  beq @SkipGPIO
-  jsr InitKBImpl
-@SkipGPIO:
+  ; Probe and conditionally init each card (IO slot order):
+  jsr ProbeRTC                 ; Sets HW_RTC if present (no init needed)
+
+  jsr StInit                   ; CF: timeout handles absent card, sets HW_CF on success
 
   jsr ProbeSerial              ; Sets HW_SC if present
   lda HW_PRESENT
@@ -180,6 +187,13 @@ Replace the current sequential init block with probe-then-init pattern:
   jsr InitSCImpl
 @SkipSerial:
 
+  jsr ProbeGPIO                ; Sets HW_GPIO if present
+  lda HW_PRESENT
+  and #HW_GPIO
+  beq @SkipGPIO
+  jsr InitKBImpl
+@SkipGPIO:
+
   jsr ProbeSID                 ; Sets HW_SID if present
   lda HW_PRESENT
   and #HW_SID
@@ -187,9 +201,13 @@ Replace the current sequential init block with probe-then-init pattern:
   jsr InitSIDImpl
 @SkipSID:
 
-  jsr ProbeRTC                 ; Sets HW_RTC if present
-
-  jsr StInit                   ; CF: timeout handles absent card, sets HW_CF on success
+  jsr ProbeVideo               ; Sets HW_VID if present
+  lda HW_PRESENT
+  and #HW_VID
+  beq @SkipVideo
+  jsr InitVideoImpl
+  jsr InitCharacters
+@SkipVideo:
 ```
 
 ---
@@ -501,17 +519,19 @@ After all phases, verify:
 
 1. [ ] `make` assembles cleanly with no errors or warnings
 2. [ ] Full hardware: boot splash → menu → BASIC/Monitor works identically to current behavior
-3. [ ] CF removed: system boots without hanging (`StWaitReady` times out, `HW_CF`=0)
-4. [ ] SID removed: boots silently (no beep, no hang)
-5. [ ] Serial removed: no spurious keypresses at boot menu; keyboard works; serial LOAD/SAVE errors gracefully
-6. [ ] RTC removed: BASIC TIME/DATE prints "NO DEVICE" instead of garbage
-7. [ ] No keypress: BASIC auto-starts after ~5 seconds
-8. [ ] Serial-only (no video): IO_MODE auto-switches to serial; splash/menu appear on terminal
-9. [ ] Monitor: examine `$030D` — correct bits match installed hardware
-10. [ ] IRQ stability: rapid keyboard input with serial removed — no buffer corruption
+3. [ ] RAM cards removed: `HW_RAM_L`/`HW_RAM_H` bits clear; BANK commands report no device
+4. [ ] CF removed: system boots without hanging (`StWaitReady` times out, `HW_CF`=0)
+5. [ ] SID removed: boots silently (no beep, no hang)
+6. [ ] Serial removed: no spurious keypresses at boot menu; keyboard works; serial LOAD/SAVE errors gracefully
+7. [ ] RTC removed: BASIC TIME/DATE prints "NO DEVICE" instead of garbage
+8. [ ] No keypress: BASIC auto-starts after ~5 seconds
+9. [ ] Serial-only (no video): IO_MODE auto-switches to serial; splash/menu appear on terminal
+10. [ ] Monitor: examine `$030D` — correct bits match installed hardware (bit order = IO slot order)
+11. [ ] IRQ stability: rapid keyboard input with serial removed — no buffer corruption
 
 ## Hardware Probe Notes
 
+- **RAM probe**: Banked SRAM at `RAM_DATA_L`/`RAM_DATA_H` is freely R/W. Use two-pattern test ($A5 then $5A) to distinguish real RAM from floating bus (which may echo $A5 transiently). Select bank 0 via `RAM_BANK_L`/`RAM_BANK_H` before probing. Restore original byte afterward.
 - **SID probe reliability**: `SID_OSC3` may return `$00` when oscillators are idle, same as floating bus. Use an *active* probe: configure voice 3 with noise waveform + high frequency, brief delay, then read `SID_OSC3`. Non-static value confirms presence. Add ~1ms to boot.
 - **Video probe timing**: TMS9918 VRAM read-back requires writing the read address then reading data. The pico9918 replica may have different timing — test on real hardware and add NOP padding between register writes if needed.
 - **Serial probe**: R65C51 TDRE (bit 4) is always set after reset (known hardware bug). Use this as presence signal — write `SC_RESET` to trigger programmatic reset, then check `SC_STATUS & TDRE`. Floating bus won't reliably produce bit 4 set.

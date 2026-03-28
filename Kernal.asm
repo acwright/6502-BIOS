@@ -402,13 +402,44 @@ Reset:
   lda #>Nmi
   sta NMI_PTR + 1
 
-  jsr InitBuffer                ; Initialize the input buffer
-  jsr InitSC                    ; Initialize the Serial Card (6551)
-  jsr InitSID                   ; Initialize the Sound Card (6581)
-  jsr InitVideo                 ; Initialize the Video Card (TMS9918)
-  jsr InitCharacters            ; Initialize the character set
-  jsr InitKB                    ; Initialize the keyboard (VIA)
-  jsr StInit                    ; Initialize CompactFlash (8-bit mode)
+  stz HW_PRESENT                ; Clear all hardware flags
+
+  jsr InitBuffer                ; Initialize the input buffer (RAM-only, no hardware)
+
+  jsr ProbeRAM                  ; Sets HW_RAM_L / HW_RAM_H if present (no init needed)
+
+  jsr ProbeRTC                  ; Sets HW_RTC if present (no init needed)
+
+  jsr StInit                    ; CF: timeout will handle absent card in Phase 3, sets HW_CF on success
+
+  jsr ProbeSerial               ; Sets HW_SC if present
+  lda HW_PRESENT
+  and #HW_SC
+  beq @SkipSerial
+  jsr InitSCImpl
+@SkipSerial:
+
+  jsr ProbeGPIO                 ; Sets HW_GPIO if present
+  lda HW_PRESENT
+  and #HW_GPIO
+  beq @SkipGPIO
+  jsr InitKBImpl
+@SkipGPIO:
+
+  jsr ProbeSID                  ; Sets HW_SID if present
+  lda HW_PRESENT
+  and #HW_SID
+  beq @SkipSID
+  jsr InitSIDImpl
+@SkipSID:
+
+  jsr ProbeVideo                ; Sets HW_VID if present
+  lda HW_PRESENT
+  and #HW_VID
+  beq @SkipVideo
+  jsr InitVideoImpl
+  jsr InitCharacters
+@SkipVideo:
 
   lda #$00                      ; Default to video output mode
   sta IO_MODE
@@ -957,6 +988,166 @@ RtcReadNVRAMImpl:
 RtcWriteNVRAMImpl:
   stx RTC_RAM_ADDR
   sta RTC_RAM_DATA
+  rts
+
+; === Hardware Probes ===
+
+; ProbeRAM — Test for banked SRAM on IO 1 and IO 2
+; Two-pattern read-back test ($A5 then $5A) on bank 0 data byte
+; Sets HW_RAM_L / HW_RAM_H in HW_PRESENT on success
+; Modifies: Flags, A
+ProbeRAM:
+  ; --- Probe RAM Low (IO 1) ---
+  stz RAM_BANK_L                ; Select bank 0
+  lda RAM_DATA_L                ; Save existing value
+  pha
+  lda #$A5
+  sta RAM_DATA_L
+  cmp RAM_DATA_L
+  bne @RAMLDone                 ; First pattern failed
+  lda #$5A
+  sta RAM_DATA_L
+  cmp RAM_DATA_L
+  bne @RAMLDone                 ; Second pattern failed
+  lda HW_PRESENT
+  ora #HW_RAM_L
+  sta HW_PRESENT
+@RAMLDone:
+  pla
+  sta RAM_DATA_L                ; Restore original value
+  ; --- Probe RAM High (IO 2) ---
+  stz RAM_BANK_H                ; Select bank 0
+  lda RAM_DATA_H                ; Save existing value
+  pha
+  lda #$A5
+  sta RAM_DATA_H
+  cmp RAM_DATA_H
+  bne @RAMHDone                 ; First pattern failed
+  lda #$5A
+  sta RAM_DATA_H
+  cmp RAM_DATA_H
+  bne @RAMHDone                 ; Second pattern failed
+  lda HW_PRESENT
+  ora #HW_RAM_H
+  sta HW_PRESENT
+@RAMHDone:
+  pla
+  sta RAM_DATA_H                ; Restore original value
+  rts
+
+; ProbeVideo — TMS9918 VRAM read-back test
+; Writes $A5 to VRAM address $0000, reads it back
+; Sets HW_VID in HW_PRESENT on success
+; Modifies: Flags, A
+ProbeVideo:
+  ; Write $A5 to VRAM $0000
+  lda #$00
+  sta VC_REG                    ; Low byte of address
+  lda #$40                      ; High byte $00 OR $40 for write mode
+  sta VC_REG
+  lda #$A5
+  sta VC_DATA                   ; Write data byte
+  ; Read back from VRAM $0000
+  lda #$00
+  sta VC_REG                    ; Low byte of address
+  lda #$00                      ; High byte $00, bit 6 clear for read mode
+  sta VC_REG
+  lda VC_DATA                   ; Read data byte
+  cmp #$A5
+  bne @ProbeVideoDone
+  lda HW_PRESENT
+  ora #HW_VID
+  sta HW_PRESENT
+@ProbeVideoDone:
+  rts
+
+; ProbeGPIO — VIA DDR register read-back test
+; Writes $AA to GPIO_DDRB, reads it back
+; Sets HW_GPIO in HW_PRESENT on success
+; Restores GPIO_DDRB to $00 afterward
+; Modifies: Flags, A
+ProbeGPIO:
+  lda #$AA
+  sta GPIO_DDRB
+  cmp GPIO_DDRB
+  bne @ProbeGPIODone
+  lda HW_PRESENT
+  ora #HW_GPIO
+  sta HW_PRESENT
+@ProbeGPIODone:
+  stz GPIO_DDRB                 ; Restore to inputs (InitKBImpl will configure properly)
+  rts
+
+; ProbeSerial — R65C51 TDRE-after-reset test
+; Issues programmatic reset, checks for TDRE (bit 4) set in status
+; Sets HW_SC in HW_PRESENT on success
+; Modifies: Flags, A
+ProbeSerial:
+  stz SC_RESET                  ; Programmatic reset (write any value)
+  lda SC_STATUS
+  and #SC_STATUS_TDRE           ; TDRE should be set after reset
+  beq @ProbeSerialDone
+  lda HW_PRESENT
+  ora #HW_SC
+  sta HW_PRESENT
+@ProbeSerialDone:
+  rts
+
+; ProbeSID — Active oscillator test using voice 3
+; Configures voice 3 noise waveform, brief delay, reads SID_OSC3
+; Non-zero and non-$FF result indicates SID present
+; Sets HW_SID in HW_PRESENT on success
+; Modifies: Flags, A, X, Y
+ProbeSID:
+  ; Set voice 3 frequency to a fast value
+  lda #$FF
+  sta SID_V3_FREQ_LO
+  sta SID_V3_FREQ_HI
+  ; Gate on + noise waveform
+  lda #(SID_CTRL_GATE | SID_CTRL_NOISE)
+  sta SID_V3_CTRL
+  ; Brief software delay for oscillator to run
+  ldy #$00
+@ProbeSIDDelay:
+  dey
+  bne @ProbeSIDDelay            ; ~1280 cycles
+  ; Read oscillator 3 output
+  lda SID_OSC3
+  beq @ProbeSIDCleanup          ; Zero → no SID
+  cmp #$FF
+  beq @ProbeSIDCleanup          ; $FF → likely floating bus
+  ; SID detected
+  pha
+  lda HW_PRESENT
+  ora #HW_SID
+  sta HW_PRESENT
+  pla
+@ProbeSIDCleanup:
+  ; Silence voice 3
+  stz SID_V3_CTRL
+  stz SID_V3_FREQ_LO
+  stz SID_V3_FREQ_HI
+  rts
+
+; ProbeRTC — DS1511Y NVRAM read-back test
+; Writes test pattern to NVRAM address 0, reads it back
+; Sets HW_RTC in HW_PRESENT on success
+; Restores original NVRAM value afterward
+; Modifies: Flags, A
+ProbeRTC:
+  stz RTC_RAM_ADDR              ; Select NVRAM address 0
+  lda RTC_RAM_DATA              ; Save existing value
+  pha
+  lda #$A5
+  sta RTC_RAM_DATA              ; Write test pattern
+  cmp RTC_RAM_DATA              ; Read back
+  bne @ProbeRTCDone
+  lda HW_PRESENT
+  ora #HW_RTC
+  sta HW_PRESENT
+@ProbeRTCDone:
+  pla
+  sta RTC_RAM_DATA              ; Restore original value
   rts
 
 ; === CompactFlash Storage Driver (True 8-bit IDE Mode) ===

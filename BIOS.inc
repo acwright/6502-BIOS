@@ -36,7 +36,17 @@ VID_CURSOR_Y        := $0308             ; Video cursor row (0-23)
 VID_CURSOR_ADDR     := $0309             ; Video cursor VRAM address ($0309-$030A)
 RTC_BUF_CENT        := $030B             ; Century value from last RtcReadDate / for RtcWriteDate
 RTC_TMP             := $030C             ; Scratch byte for BCD conversion
-                                         ; $030D-$030F Reserved
+HW_PRESENT          := $030D             ; Hardware present bitmask (set during Reset probe)
+; HW_PRESENT bit definitions (bit order matches IO slot numbers)
+HW_RAM_L            = %00000001          ; Bit 0: RAM card low  (IO 1, $8000-$83FF)
+HW_RAM_H            = %00000010          ; Bit 1: RAM card high (IO 2, $8400-$87FF)
+HW_RTC              = %00000100          ; Bit 2: RTC card (IO 3, DS1511Y)
+HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFlash)
+HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
+HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
+HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
+HW_VID              = %10000000          ; Bit 7: Video card (IO 8, TMS9918/pico9918)
+                                         ; $030E-$030F Reserved
 BRK_P               := $0310             ; Saved P at time of BRK
 BRK_PCL             := $0311             ; Saved PCL at time of BRK (points to BRK+2)
 BRK_PCH             := $0312             ; Saved PCH at time of BRK

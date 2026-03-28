@@ -601,14 +601,21 @@ ChrinImpl:
   beq @ChrinNoChar              ; Branch if no character available
   jsr ReadBuffer                ; Read the character from the buffer
   jsr Chrout                    ; Echo
-  pha                           
-  jsr BufferSize                
+  pha
+  jsr BufferSize
   cmp #$B0                      ; Check if buffer is mostly full
   bcc @ChrinNotFull             ; Branch if buffer size < $B0
+  ; Only touch SC_CMD if serial is present
+  lda HW_PRESENT
+  and #HW_SC
+  beq @ChrinExit
   lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
   sta SC_CMD
   bra @ChrinExit
 @ChrinNotFull:
+  lda HW_PRESENT
+  and #HW_SC
+  beq @ChrinExit
   lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
   sta SC_CMD
 @ChrinExit:

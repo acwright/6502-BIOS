@@ -110,6 +110,18 @@ TOK_LOAD            = $9F
 TOK_SAVE            = $A0
 TOK_DIR             = $A1
 TOK_DEL             = $A2
+TOK_CLS             = $A3
+TOK_LOCATE          = $A4
+TOK_COLOR           = $A5
+TOK_JOY             = $A6
+TOK_SOUND           = $A7
+TOK_VOL             = $A8
+TOK_TIME            = $A9
+TOK_DATE            = $AA
+TOK_WAIT            = $AB
+TOK_PAUSE           = $AC
+TOK_BANK            = $AD
+TOK_SGN             = $AE
 
 ; Multi-char operator tokens
 TOK_GE              = $9A               ; >=
@@ -1331,6 +1343,33 @@ BasParseInt:
   sec
   rts
 
+; BasNibble — Convert ASCII hex character in A to nibble value (0-15)
+; Input:  A = ASCII character ('0'-'9', 'A'-'F')
+; Output: A = nibble value 0-15, carry clear on success
+;         Carry set if character is not a valid hex digit
+; Modifies: Flags, A
+BasNibble:
+  cmp #'0'
+  bcc @NibbleInvalid
+  cmp #'9' + 1
+  bcs @NibbleTryAlpha
+  sec
+  sbc #'0'
+  clc
+  rts
+@NibbleTryAlpha:
+  cmp #'A'
+  bcc @NibbleInvalid
+  cmp #'F' + 1
+  bcs @NibbleInvalid
+  sec
+  sbc #'A' - 10
+  clc
+  rts
+@NibbleInvalid:
+  sec
+  rts
+
 ; ============================================================================
 ; BasSkipSpaces — Advance TXTPTR past spaces
 ; ============================================================================
@@ -2183,6 +2222,86 @@ BasExprPrimary:
   rts
 @NotRnd:
 
+  ; JOY(n) — read joystick port
+  cmp #TOK_JOY
+  bne @NotJoy
+  jsr BasAdvTxtPtr               ; skip TOK_JOY
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; n -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  lda BAS_ACC
+  cmp #2
+  bne @JoyPort1
+  jsr ReadJoystick2
+  bra @JoyDone
+@JoyPort1:
+  jsr ReadJoystick1
+@JoyDone:
+  sta BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@NotJoy:
+
+  ; SGN(x) — return sign of value
+  cmp #TOK_SGN
+  bne @NotSgn
+  jsr BasAdvTxtPtr               ; skip TOK_SGN
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; x -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  lda BAS_ACC
+  ora BAS_ACC + 1
+  beq @SgnZero
+  lda BAS_ACC + 1
+  bmi @SgnNeg
+  lda #$01
+  sta BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@SgnNeg:
+  lda #$FF
+  sta BAS_ACC
+  sta BAS_ACC + 1                ; $FFFF = -1 (signed)
+  rts
+@SgnZero:
+  stz BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@NotSgn:
+
+  ; Hex literal $xxxx
+  cmp #'$'
+  bne @NotHex
+  jsr BasAdvTxtPtr               ; skip '$'
+  stz BAS_NUMTMP
+  stz BAS_NUMTMP + 1
+@HexLoop:
+  jsr BasGetTokChar
+  jsr BasNibble                  ; A -> nibble (0-15), carry set if not a hex char
+  bcs @HexDone
+  ; Shift NUMTMP left 4 bits
+  ldy #4
+@HexShift:
+  asl BAS_NUMTMP
+  rol BAS_NUMTMP + 1
+  dey
+  bne @HexShift
+  ora BAS_NUMTMP
+  sta BAS_NUMTMP
+  jsr BasAdvTxtPtr
+  bra @HexLoop
+@HexDone:
+  lda BAS_NUMTMP
+  sta BAS_ACC
+  lda BAS_NUMTMP + 1
+  sta BAS_ACC + 1
+  rts
+@NotHex:
+
   ; Try parsing as a number
 @IsNum:
   jmp BasParseInt                ; Parse decimal, result in ACC
@@ -2280,7 +2399,37 @@ BasExecLine:
   bne @NotDel
   jmp @JmpDel
 @NotDel:
-
+  cmp #TOK_CLS
+  bne :+
+  jmp @JmpCls
+: cmp #TOK_LOCATE
+  bne :+
+  jmp @JmpLocate
+: cmp #TOK_COLOR
+  bne :+
+  jmp @JmpColor
+: cmp #TOK_SOUND
+  bne :+
+  jmp @JmpSound
+: cmp #TOK_VOL
+  bne :+
+  jmp @JmpVol
+: cmp #TOK_TIME
+  bne :+
+  jmp @JmpTime
+: cmp #TOK_DATE
+  bne :+
+  jmp @JmpDate
+: cmp #TOK_WAIT
+  bne :+
+  jmp @JmpWait
+: cmp #TOK_PAUSE
+  bne :+
+  jmp @JmpPause
+: cmp #TOK_BANK
+  bne :+
+  jmp @JmpBank
+:
   ; Check for implicit LET: A-Z followed by =
   cmp #'A'
   bcc @ExecSyntaxErr
@@ -2300,7 +2449,7 @@ BasExecLine:
 @JmpInput:
   jsr BasAdvTxtPtr
   jsr BasCmdInput
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpGoto:
   jsr BasAdvTxtPtr
   jmp BasCmdGoto                 ; Goto changes TXTPTR, don't check for ':'
@@ -2324,7 +2473,7 @@ BasExecLine:
 @JmpList:
   jsr BasAdvTxtPtr
   jsr BasCmdList
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpRun:
   jmp BasCmdRun
 @JmpNew:
@@ -2332,36 +2481,76 @@ BasExecLine:
 @JmpClrCmd:
   jsr BasAdvTxtPtr
   jsr BasCmdClr
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpPoke:
   jsr BasAdvTxtPtr
   jsr BasCmdPoke
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpLet:
   jsr BasAdvTxtPtr
   jsr BasCmdLet
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpBrk:
   jmp BasCmdBrk
 @JmpSys:
   jsr BasAdvTxtPtr
   jsr BasCmdSys
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpLoad:
   jsr BasAdvTxtPtr
   jsr BasCmdLoad
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpSave:
   jsr BasAdvTxtPtr
   jsr BasCmdSave
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpDir:
   jsr BasAdvTxtPtr
   jsr BasCmdDir
-  bra @ExecCheckMore
+  jmp @ExecCheckMore
 @JmpDel:
   jsr BasAdvTxtPtr
   jsr BasCmdDel
+  jmp @ExecCheckMore
+@JmpCls:
+  jsr BasAdvTxtPtr
+  jsr BasCmdCls
+  bra @ExecCheckMore
+@JmpLocate:
+  jsr BasAdvTxtPtr
+  jsr BasCmdLocate
+  bra @ExecCheckMore
+@JmpColor:
+  jsr BasAdvTxtPtr
+  jsr BasCmdColor
+  bra @ExecCheckMore
+@JmpSound:
+  jsr BasAdvTxtPtr
+  jsr BasCmdSound
+  bra @ExecCheckMore
+@JmpVol:
+  jsr BasAdvTxtPtr
+  jsr BasCmdVol
+  bra @ExecCheckMore
+@JmpTime:
+  jsr BasAdvTxtPtr
+  jsr BasCmdTime
+  bra @ExecCheckMore
+@JmpDate:
+  jsr BasAdvTxtPtr
+  jsr BasCmdDate
+  bra @ExecCheckMore
+@JmpWait:
+  jsr BasAdvTxtPtr
+  jsr BasCmdWait
+  bra @ExecCheckMore
+@JmpPause:
+  jsr BasAdvTxtPtr
+  jsr BasCmdPause
+  bra @ExecCheckMore
+@JmpBank:
+  jsr BasAdvTxtPtr
+  jsr BasCmdBank
   bra @ExecCheckMore
 
 @ExecCheckMore:
@@ -2527,8 +2716,9 @@ BasCmdPrint:
 
 @PrintComma:
   jsr BasAdvTxtPtr               ; Skip ','
-  ; Print a tab (8 spaces approximated as a tab char)
-  lda #$09
+  ; Print separator spaces
+  lda #CH_SPACE
+  jsr Chrout
   jsr Chrout
   bra @PrintLoop
 
@@ -3239,6 +3429,179 @@ BasCmdDel:
   jsr BasPrintStr
   rts
 
+; --- CLS ---
+BasCmdCls:
+  jsr VideoClear
+  rts
+
+; --- LOCATE row, col ---
+BasCmdLocate:
+  jsr BasExpr                    ; row -> BAS_ACC
+  lda BAS_ACC
+  sta BAS_TEMP                   ; save row
+  jsr BasSkipSpaces
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; col -> BAS_ACC
+  lda BAS_ACC
+  tax                            ; X = col
+  ldy BAS_TEMP                   ; Y = row
+  jsr VideoSetCursor
+  rts
+
+; --- COLOR fg, bg ---
+BasCmdColor:
+  jsr BasExpr                    ; fg -> BAS_ACC (0-15)
+  lda BAS_ACC
+  and #$0F
+  asl a
+  asl a
+  asl a
+  asl a                          ; shift to high nibble
+  sta BAS_TEMP
+  jsr BasSkipSpaces
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; bg -> BAS_ACC (0-15)
+  lda BAS_ACC
+  and #$0F
+  ora BAS_TEMP                   ; combine fg|bg
+  jsr VideoSetColor
+  rts
+
+; --- SOUND voice, freq, dur ---
+BasCmdSound:
+  jsr BasExpr                    ; voice (1-3) -> BAS_ACC
+  lda BAS_ACC
+  dec a                          ; convert to 0-indexed
+  sta BAS_TEMP                   ; save voice
+  jsr BasSkipSpaces
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; freq -> BAS_ACC
+  lda BAS_ACC + 1
+  pha                            ; save freqHi on stack
+  lda BAS_ACC
+  pha                            ; save freqLo on stack
+  jsr BasSkipSpaces
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; dur (centiseconds) -> BAS_ACC
+  ; BAS_ACC holds dur; stack holds freq; BAS_TEMP holds voice
+  pla                            ; freqLo
+  tax                            ; X = freqLo
+  pla                            ; freqHi
+  tay                            ; Y = freqHi
+  lda BAS_TEMP                   ; A = voice (0-indexed)
+  jsr SidPlayNote
+  lda BAS_ACC                    ; A = dur_lo (BAS_ACC not changed by SidPlayNote)
+  ldx BAS_ACC + 1                ; X = dur_hi
+  jsr SysDelay
+  jsr SidSilence
+  rts
+
+; --- VOL n ---
+BasCmdVol:
+  jsr BasExpr
+  lda BAS_ACC
+  jsr SidSetVolume
+  rts
+
+; BasPrint2Digit — Print A as a 2-digit decimal with leading zero
+; Input: A = value 0-99
+; Modifies: A, X, Flags
+BasPrint2Digit:
+  ldx #0
+@P2DLoop:
+  cmp #10
+  bcc @P2DDone
+  sbc #10                        ; carry already set from cmp
+  inx
+  bra @P2DLoop
+@P2DDone:
+  pha                            ; save units digit
+  txa
+  ora #'0'                       ; tens digit as ASCII
+  jsr Chrout
+  pla
+  ora #'0'                       ; units digit as ASCII
+  jsr Chrout
+  rts
+
+; --- TIME ---
+BasCmdTime:
+  jsr RtcReadTime                ; A=hours, X=minutes, Y=seconds
+  phy                            ; save seconds
+  phx                            ; save minutes
+  jsr BasPrint2Digit             ; print hours
+  lda #':'
+  jsr Chrout
+  pla                            ; restore minutes
+  jsr BasPrint2Digit
+  lda #':'
+  jsr Chrout
+  pla                            ; restore seconds
+  jsr BasPrint2Digit
+  jsr BasPrintCRLF
+  rts
+
+; --- DATE ---
+BasCmdDate:
+  jsr RtcReadDate                ; A=day, X=month, Y=year; RTC_BUF_CENT=century
+  pha                            ; save day
+  phx                            ; save month
+  phy                            ; save year (pushed last, popped first)
+  lda RTC_BUF_CENT
+  jsr BasPrint2Digit             ; print century
+  pla                            ; restore year
+  jsr BasPrint2Digit             ; print year (CCYY together)
+  lda #'-'
+  jsr Chrout
+  pla                            ; restore month
+  jsr BasPrint2Digit
+  lda #'-'
+  jsr Chrout
+  pla                            ; restore day
+  jsr BasPrint2Digit
+  jsr BasPrintCRLF
+  rts
+
+; --- WAIT addr, mask ---
+BasCmdWait:
+  jsr BasExpr                    ; addr -> BAS_ACC
+  lda BAS_ACC
+  sta BAS_TMP2
+  lda BAS_ACC + 1
+  sta BAS_TMP2 + 1
+  jsr BasSkipSpaces
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; mask -> BAS_ACC
+  lda BAS_ACC
+  sta BAS_TEMP
+@WaitPoll:
+  jsr BasCheckBreak              ; allow Ctrl+C to abort
+  ldy #0
+  lda (BAS_TMP2),y
+  and BAS_TEMP
+  beq @WaitPoll
+  rts
+
+; --- PAUSE n ---
+BasCmdPause:
+  jsr BasExpr
+  lda BAS_ACC
+  ldx BAS_ACC + 1
+  jsr SysDelay
+  rts
+
+; --- BANK n ---
+BasCmdBank:
+  jsr BasExpr
+  lda BAS_ACC
+  sta RAM_BANK_L
+  rts
+
 ; --- BRK ---
 BasCmdBrk:
   stz BAS_FLAGS                  ; Clear run flag
@@ -3366,9 +3729,13 @@ BasCmdPoke:
 
 BasKeywordTable:
   .byte "RETURN", $00, TOK_RETURN
+  .byte "LOCATE", $00, TOK_LOCATE
   .byte "PRINT",  $00, TOK_PRINT
   .byte "INPUT",  $00, TOK_INPUT
   .byte "GOSUB",  $00, TOK_GOSUB
+  .byte "SOUND",  $00, TOK_SOUND
+  .byte "PAUSE",  $00, TOK_PAUSE
+  .byte "COLOR",  $00, TOK_COLOR
   .byte "GOTO",   $00, TOK_GOTO
   .byte "THEN",   $00, TOK_THEN
   .byte "STEP",   $00, TOK_STEP
@@ -3378,6 +3745,10 @@ BasKeywordTable:
   .byte "SAVE",   $00, TOK_SAVE
   .byte "LOAD",   $00, TOK_LOAD
   .byte "LIST",   $00, TOK_LIST
+  .byte "BANK",   $00, TOK_BANK
+  .byte "WAIT",   $00, TOK_WAIT
+  .byte "TIME",   $00, TOK_TIME
+  .byte "DATE",   $00, TOK_DATE
   .byte "LET",    $00, TOK_LET
   .byte "FOR",    $00, TOK_FOR
   .byte "REM",    $00, TOK_REM
@@ -3394,6 +3765,10 @@ BasKeywordTable:
   .byte "DIR",    $00, TOK_DIR
   .byte "DEL",    $00, TOK_DEL
   .byte "BRK",    $00, TOK_BRK
+  .byte "CLS",    $00, TOK_CLS
+  .byte "VOL",    $00, TOK_VOL
+  .byte "JOY",    $00, TOK_JOY
+  .byte "SGN",    $00, TOK_SGN
   .byte "IF",     $00, TOK_IF
   .byte "TO",     $00, TOK_TO
   .byte "OR",     $00, TOK_OR

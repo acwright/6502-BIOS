@@ -11,6 +11,7 @@ STR_PTR             := $02               ; $02-$03 - String pointer (2 bytes)
 CF_BUF_PTR          := $24               ; $24-$25 - CF sector data buffer pointer (2 bytes)
 CF_LBA              := $26               ; $26-$29 - CF 28-bit LBA address (4 bytes, little-endian)
 XFER_PTR            := $2A               ; $2A-$2B - Serial transfer data pointer (2 bytes)
+DELAY_CNT           := $2C               ; $2C-$2D - SysDelay 16-bit centisecond counter
 
 ; Stack
 STACK               := $0100             ; $0100-$01FF

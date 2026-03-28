@@ -41,8 +41,12 @@ SidPlayNote:    jmp SidPlayNoteImpl     ; $A05D - Play note (A=voice, X=freqLo, 
 SidSilence:     jmp SidSilenceImpl      ; $A060 - Silence all voices
 FsDeleteFile:   jmp FsDeleteFileImpl    ; $A063 - Delete file from CF
 
-; Reserved entries ($A066-$A0FE)
-.repeat 51
+SysDelay:       jmp SysDelayImpl        ; $A066 - Delay A=cnt_lo, X=cnt_hi centiseconds
+SidSetVolume:   jmp SidSetVolumeImpl    ; $A069 - Set SID master volume (A=0-15)
+VideoSetColor:  jmp VideoSetColorImpl   ; $A06C - Set TMS9918 text color (A=reg7 byte: hi=fg, lo=bg)
+
+; Reserved entries ($A06F-$A0FE)
+.repeat 48
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -679,6 +683,65 @@ BeepImpl:
   dex
   bne @BeepDelay1
   jsr SidSilence                ; Gate off all voices
+  rts
+
+; SysDelay — Delay for a specified number of centiseconds
+; Input: A = count low byte, X = count high byte
+; Uses VIA T1 in one-shot mode. 9999 cycles @ 1MHz = ~10ms per tick.
+; Modifies: Flags, A
+SysDelayImpl:
+  sta DELAY_CNT
+  stx DELAY_CNT + 1
+  ; Return immediately if count is zero
+  ora DELAY_CNT + 1
+  beq @DelayDone
+  ; Configure T1 one-shot mode: clear ACR bit 6
+  lda GPIO_ACR
+  and #%10111111
+  sta GPIO_ACR
+@DelayLoop:
+  ; Load T1 latch: 9999 = $270F
+  lda #$0F
+  sta GPIO_T1LL
+  lda #$27
+  sta GPIO_T1LH
+  ; Write T1CH to start countdown (also clears IFR T1 flag)
+  lda #$27
+  sta GPIO_T1CH
+@DelayPoll:
+  lda GPIO_IFR
+  and #%01000000                ; T1 timeout flag
+  beq @DelayPoll
+  ; Clear flag by reading T1CL
+  lda GPIO_T1CL
+  ; 16-bit decrement
+  lda DELAY_CNT
+  bne @DelayDecLo
+  dec DELAY_CNT + 1
+@DelayDecLo:
+  dec DELAY_CNT
+  ; Loop until both bytes zero
+  lda DELAY_CNT
+  ora DELAY_CNT + 1
+  bne @DelayLoop
+@DelayDone:
+  rts
+
+; SidSetVolume — Set SID master volume
+; Input: A = volume (0-15); upper nibble of SID_MODE_VOL is cleared (no filter)
+; Modifies: Flags, A
+SidSetVolumeImpl:
+  and #$0F
+  sta SID_MODE_VOL
+  rts
+
+; VideoSetColor — Set TMS9918 text color register
+; Input: A = color byte (high nibble = fg color, low nibble = bg color)
+; Modifies: Flags, A
+VideoSetColorImpl:
+  sta VC_REG                    ; Data byte
+  lda #$87                      ; Register 7 | $80 (write mode flag)
+  sta VC_REG
   rts
 
 ; KBDisable — Disable both keyboard encoders for raw port access

@@ -21,7 +21,9 @@ ENTER=BASIC  ESC=MONITOR
 
 ### Integer BASIC
 
-A full interactive BASIC interpreter is included. Programs are typed line-numbered and executed with `RUN`. Beyond the core integer dialect, four additional commands are available:
+A full interactive BASIC interpreter is included. Programs are typed line-numbered and executed with `RUN`. Beyond the core integer dialect, the following additional commands and functions are available:
+
+**Storage & System**
 
 | Command | Effect |
 |---------|--------|
@@ -32,6 +34,46 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 | `SAVE` (no arg) | Transmit the current program over the serial port (raw binary) |
 | `DIR` | List all files stored on CompactFlash |
 | `DEL "name"` | Delete a named file from CompactFlash and reclaim its directory entry |
+| `BANK <n>` | Select 1KB RAM bank `n` at `$8000–$83FE` via the bank latch |
+
+**Video & Display**
+
+| Command | Effect |
+|---------|--------|
+| `CLS` | Clear the screen and reset cursor to (0, 0) |
+| `LOCATE <row>, <col>` | Move cursor to the given row (0–23) and column (0–39) |
+| `COLOR <fg>, <bg>` | Set TMS9918 text foreground and background colours (0–15 each) |
+
+**Sound**
+
+| Command | Effect |
+|---------|--------|
+| `SOUND <voice>, <freq>, <dur>` | Play a tone on voice 1–3 at the given SID frequency value for `dur` centiseconds, then silence |
+| `VOL <n>` | Set SID master volume (0–15) |
+
+**Timing & I/O**
+
+| Command | Effect |
+|---------|--------|
+| `PAUSE <n>` | Pause execution for `n` centiseconds (~10 ms each) |
+| `WAIT <addr>, <mask>` | Spin until `(addr) AND mask` is non-zero; Ctrl+C aborts |
+
+**Time & Date**
+
+| Command | Effect |
+|---------|--------|
+| `TIME` | Print current RTC time as `HH:MM:SS` |
+| `DATE` | Print current RTC date as `CCYY-MM-DD` |
+
+**Functions & Expressions**
+
+| Function / Literal | Returns |
+|--------------------|---------|
+| `JOY(1)` / `JOY(2)` | Joystick bitmask byte for port 1 or 2 (R-L-D-U-Y-X-B-A) |
+| `SGN(<x>)` | Sign of x: `1`, `0`, or `-1` |
+| `$xxxx` | Hexadecimal integer literal (e.g. `$FF` = 255, `$1000` = 4096) |
+
+> **Note on integer range:** BASIC uses signed 16-bit integers (`-32768` to `32767`). Hex literals above `$7FFF` print as negative numbers (e.g. `$A000` = `-24576`).
 
 ### Video
 
@@ -64,7 +106,7 @@ A DS1511Y RTC provides time and date. `RtcReadTime` returns hours/minutes/second
 
 ### Sound
 
-A SID chip provides audio output. The `Beep` Kernal routine plays a ~1000 Hz tone on voice 1.
+A SID chip provides audio output. The `Beep` Kernal routine plays a ~1000 Hz tone on voice 1. Use `SidPlayNote` to play any frequency on any of the three voices, `SidSilence` to stop all voices, and `SidSetVolume` to set the master volume (0–15).
 
 ---
 
@@ -133,9 +175,12 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A054` | `GetIOMode` | Get `IO_MODE` → `A` |
 | `$A057` | `AsciiLoad` | Receive raw binary over serial into `$0800` |
 | `$A05A` | `AsciiSave` | Send current program as raw binary over serial |
-| `$A05D` | `SidPlayNote` | Play note: `A`=voice, `X`=freqLo, `Y`=freqHi |
+| `$A05D` | `SidPlayNote` | Play note: `A`=voice (0–2), `X`=freqLo, `Y`=freqHi |
 | `$A060` | `SidSilence` | Silence all SID voices |
 | `$A063` | `FsDeleteFile` | Delete a file from CompactFlash by name |
+| `$A066` | `SysDelay` | Delay `A`=count\_lo, `X`=count\_hi centiseconds (~10 ms each) using VIA T1 |
+| `$A069` | `SidSetVolume` | Set SID master volume: `A`=0–15 |
+| `$A06C` | `VideoSetColor` | Set TMS9918 text colour register: `A`=`(fg<<4)\|bg` |
 
 ---
 

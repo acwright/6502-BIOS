@@ -28,8 +28,8 @@ RtcReadTime:    jmp RtcReadTimeImpl     ; $A036 - Read RTC time
 RtcReadDate:    jmp RtcReadDateImpl     ; $A039 - Read RTC date
 RtcWriteTime:   jmp RtcWriteTimeImpl    ; $A03C - Set RTC time
 RtcWriteDate:   jmp RtcWriteDateImpl    ; $A03F - Set RTC date
-RtcReadPRAM:    jmp RtcReadPRAMImpl     ; $A042 - Read PRAM byte
-RtcWritePRAM:   jmp RtcWritePRAMImpl    ; $A045 - Write PRAM byte
+RtcReadNVRAM:   jmp RtcReadNVRAMImpl    ; $A042 - Read NVRAM byte
+RtcWriteNVRAM:  jmp RtcWriteNVRAMImpl   ; $A045 - Write NVRAM byte
 StReadSector:   jmp StReadSectorImpl    ; $A048 - Read CF sector
 StWriteSector:  jmp StWriteSectorImpl   ; $A04B - Write CF sector
 StWaitReady:    jmp StWaitReadyImpl     ; $A04E - Wait CF ready
@@ -879,19 +879,19 @@ RtcWriteDateImpl:
   sta RTC_CTRL_B
   rts
 
-; RtcReadPRAM — Read a byte from DS1511Y PRAM
-; Input: X = PRAM address ($00-$FF)
+; RtcReadNVRAM — Read a byte from DS1511Y NVRAM
+; Input: X = NVRAM address ($00-$FF)
 ; Output: A = data byte
 ; Modifies: Flags
-RtcReadPRAMImpl:
+RtcReadNVRAMImpl:
   stx RTC_RAM_ADDR
   lda RTC_RAM_DATA
   rts
 
-; RtcWritePRAM — Write a byte to DS1511Y PRAM
-; Input: X = PRAM address ($00-$FF), A = data byte
+; RtcWriteNVRAM — Write a byte to DS1511Y NVRAM
+; Input: X = NVRAM address ($00-$FF), A = data byte
 ; Modifies: Flags
-RtcWritePRAMImpl:
+RtcWriteNVRAMImpl:
   stx RTC_RAM_ADDR
   sta RTC_RAM_DATA
   rts

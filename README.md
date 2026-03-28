@@ -59,7 +59,7 @@ A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal v
 
 ### Real-Time Clock
 
-A DS1511Y RTC provides time and date. `RtcReadTime` returns hours/minutes/seconds in `A`/`X`/`Y` (binary). `RtcReadDate` returns date/month/year. 32 bytes of battery-backed PRAM are accessible via `RtcReadPRAM` / `RtcWritePRAM`.
+A DS1511Y RTC provides time and date. `RtcReadTime` returns hours/minutes/seconds in `A`/`X`/`Y` (binary). `RtcReadDate` returns date/month/year. 256 bytes of battery-backed NVRAM are accessible via `RtcReadNVRAM` / `RtcWriteNVRAM`.
 
 ### Sound
 
@@ -123,8 +123,8 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A039` | `RtcWriteTime` | Write time ← `A`=hours, `X`=minutes, `Y`=seconds |
 | `$A03C` | `RtcReadDate` | Read date → `A`=date, `X`=month, `Y`=year |
 | `$A03F` | `RtcWriteDate` | Write date ← `A`=date, `X`=month, `Y`=year |
-| `$A042` | `RtcReadPRAM` | Read PRAM byte: `X`=address → `A`=data |
-| `$A045` | `RtcWritePRAM` | Write PRAM byte: `X`=address, `A`=data |
+| `$A042` | `RtcReadNVRAM` | Read NVRAM byte: `X`=address → `A`=data |
+| `$A045` | `RtcWriteNVRAM` | Write NVRAM byte: `X`=address, `A`=data |
 | `$A048` | `StReadSector` | Read one 512-byte CF sector |
 | `$A04B` | `StWriteSector` | Write one 512-byte CF sector |
 | `$A04E` | `StWaitReady` | Wait for CF ready; carry set on error |

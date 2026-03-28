@@ -263,8 +263,8 @@ Current file: BIOS.asm
 000039r 2  4C rr rr     RtcReadDate:    jmp RtcReadDateImpl     ; $A039 - Read RTC date
 00003Cr 2  4C rr rr     RtcWriteTime:   jmp RtcWriteTimeImpl    ; $A03C - Set RTC time
 00003Fr 2  4C rr rr     RtcWriteDate:   jmp RtcWriteDateImpl    ; $A03F - Set RTC date
-000042r 2  4C rr rr     RtcReadPRAM:    jmp RtcReadPRAMImpl     ; $A042 - Read PRAM byte
-000045r 2  4C rr rr     RtcWritePRAM:   jmp RtcWritePRAMImpl    ; $A045 - Write PRAM byte
+000042r 2  4C rr rr     RtcReadNVRAM:   jmp RtcReadNVRAMImpl    ; $A042 - Read NVRAM byte
+000045r 2  4C rr rr     RtcWriteNVRAM:  jmp RtcWriteNVRAMImpl   ; $A045 - Write NVRAM byte
 000048r 2  4C rr rr     StReadSector:   jmp StReadSectorImpl    ; $A048 - Read CF sector
 00004Br 2  4C rr rr     StWriteSector:  jmp StWriteSectorImpl   ; $A04B - Write CF sector
 00004Er 2  4C rr rr     StWaitReady:    jmp StWaitReadyImpl     ; $A04E - Wait CF ready
@@ -1116,19 +1116,19 @@ Current file: BIOS.asm
 000570r 2  8D 0F 88       sta RTC_CTRL_B
 000573r 2  60             rts
 000574r 2               
-000574r 2               ; RtcReadPRAM — Read a byte from DS1511Y PRAM
-000574r 2               ; Input: X = PRAM address ($00-$FF)
+000574r 2               ; RtcReadNVRAM — Read a byte from DS1511Y NVRAM
+000574r 2               ; Input: X = NVRAM address ($00-$FF)
 000574r 2               ; Output: A = data byte
 000574r 2               ; Modifies: Flags
-000574r 2               RtcReadPRAMImpl:
+000574r 2               RtcReadNVRAMImpl:
 000574r 2  8E 10 88       stx RTC_RAM_ADDR
 000577r 2  AD 13 88       lda RTC_RAM_DATA
 00057Ar 2  60             rts
 00057Br 2               
-00057Br 2               ; RtcWritePRAM — Write a byte to DS1511Y PRAM
-00057Br 2               ; Input: X = PRAM address ($00-$FF), A = data byte
+00057Br 2               ; RtcWriteNVRAM — Write a byte to DS1511Y NVRAM
+00057Br 2               ; Input: X = NVRAM address ($00-$FF), A = data byte
 00057Br 2               ; Modifies: Flags
-00057Br 2               RtcWritePRAMImpl:
+00057Br 2               RtcWriteNVRAMImpl:
 00057Br 2  8E 10 88       stx RTC_RAM_ADDR
 00057Er 2  8D 13 88       sta RTC_RAM_DATA
 000581r 2  60             rts

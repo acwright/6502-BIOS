@@ -64,8 +64,8 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 | $A039 | `RtcReadDate` | Read RTC date |
 | $A03C | `RtcWriteTime` | Set RTC time |
 | $A03F | `RtcWriteDate` | Set RTC date |
-| $A042 | `RtcReadPRAM` | Read PRAM byte |
-| $A045 | `RtcWritePRAM` | Write PRAM byte |
+| $A042 | `RtcReadNVRAM` | Read NVRAM byte |
+| $A045 | `RtcWriteNVRAM` | Write NVRAM byte |
 | $A048 | `StReadSector` | Read CF sector |
 | $A04B | `StWriteSector` | Write CF sector |
 | $A04E | `StWaitReady` | Wait CF ready |
@@ -153,8 +153,8 @@ Refactor the COB 6502 BIOS ROM to transition from serial-only I/O to TMS9918 vid
 1. Implement `RtcReadTime` — read `RTC_HR`, `RTC_MIN`, `RTC_SEC`; handle BCD↔binary conversion; return A=hours, X=minutes, Y=seconds
 2. Implement `RtcReadDate` — read `RTC_YR`, `RTC_MON`, `RTC_DATE`, `RTC_CENT`; return in registers or buffer at KERNAL_VARS
 3. Implement `RtcWriteTime` / `RtcWriteDate` — set DS1511Y TE bit in `RTC_CTRL_B` before writing, clear after
-4. Implement `RtcReadPRAM` — read a byte from DS1511Y PRAM; input X=address ($00-$FF), output A=data byte; write address to `RTC_RAM_ADDR`, read data from `RTC_RAM_DATA`
-5. Implement `RtcWritePRAM` — write a byte to DS1511Y PRAM; input X=address ($00-$FF), A=data byte; write address to `RTC_RAM_ADDR`, write data to `RTC_RAM_DATA`
+4. Implement `RtcReadNVRAM` — read a byte from DS1511Y NVRAM; input X=address ($00-$FF), output A=data byte; write address to `RTC_RAM_ADDR`, read data from `RTC_RAM_DATA`
+5. Implement `RtcWriteNVRAM` — write a byte to DS1511Y NVRAM; input X=address ($00-$FF), A=data byte; write address to `RTC_RAM_ADDR`, write data to `RTC_RAM_DATA`
 
 ### Relevant Files
 - Kernal.asm — add RTC routines

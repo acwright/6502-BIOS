@@ -2413,57 +2413,63 @@ Current file: BIOS.asm
 000C9Cr 2  BA             tsx                           ; Get stack pointer to check saved status register
 000C9Dr 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
 000CA0r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
-000CA2r 2  D0 3B          bne @IrqBrk                   ; Branch if this was a BRK instruction
+000CA2r 2  D0 49          bne @IrqBrk                   ; Branch if this was a BRK instruction
 000CA4r 2               @IrqSc:
-000CA4r 2  AD 01 90       lda SC_STATUS
-000CA7r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-000CA9r 2  F0 14          beq @IrqCheckKB               ; If not, check keyboard
-000CABr 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
-000CAEr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000CB1r 2  20 rr rr       jsr BufferSize
-000CB4r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-000CB6r 2  90 23          bcc @IrqExit                  ; If not, exit
-000CB8r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000CBAr 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-000CBDr 2  80 1C          bra @IrqExit
-000CBFr 2               @IrqCheckKB:
-000CBFr 2  AD 0D 94       lda GPIO_IFR
-000CC2r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
-000CC4r 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
-000CC6r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
-000CC9r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000CCCr 2  80 0D          bra @IrqExit
-000CCEr 2               @IrqCheckPS2:
-000CCEr 2  AD 0D 94       lda GPIO_IFR
-000CD1r 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
-000CD3r 2  F0 06          beq @IrqExit                  ; If not, exit
-000CD5r 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
-000CD8r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000CDBr 2               @IrqExit:
-000CDBr 2  FA             plx
-000CDCr 2  7A             ply
-000CDDr 2  68             pla
-000CDEr 2  40             rti
-000CDFr 2               @IrqBrk:
-000CDFr 2  FA             plx                           ; Restore saved registers
-000CE0r 2  7A             ply
-000CE1r 2  68             pla
-000CE2r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
-000CE3r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
-000CE6r 2               
-000CE6r 2               ; NMI Vector
-000CE6r 2               NmiVec:
-000CE6r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
-000CE9r 2               
-000CE9r 2               ; Reset Vector
-000CE9r 2               ResetVec:
-000CE9r 2  4C rr rr       jmp Reset                     ; Initialize the system
-000CECr 2               
-000CECr 2               ; IRQ Vector
-000CECr 2               IrqVec:
-000CECr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
-000CEFr 2               
-000CEFr 1               .segment "CHARS"
+000CA4r 2  AD 0D 03       lda HW_PRESENT
+000CA7r 2  29 10          and #HW_SC
+000CA9r 2  F0 1B          beq @IrqCheckKB               ; Serial not present — skip
+000CABr 2  AD 01 90       lda SC_STATUS
+000CAEr 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+000CB0r 2  F0 14          beq @IrqCheckKB               ; If not, check keyboard
+000CB2r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
+000CB5r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000CB8r 2  20 rr rr       jsr BufferSize
+000CBBr 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
+000CBDr 2  90 2A          bcc @IrqExit                  ; If not, exit
+000CBFr 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+000CC1r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+000CC4r 2  80 23          bra @IrqExit
+000CC6r 2               @IrqCheckKB:
+000CC6r 2  AD 0D 03       lda HW_PRESENT
+000CC9r 2  29 20          and #HW_GPIO
+000CCBr 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
+000CCDr 2  AD 0D 94       lda GPIO_IFR
+000CD0r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
+000CD2r 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
+000CD4r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
+000CD7r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000CDAr 2  80 0D          bra @IrqExit
+000CDCr 2               @IrqCheckPS2:
+000CDCr 2  AD 0D 94       lda GPIO_IFR
+000CDFr 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
+000CE1r 2  F0 06          beq @IrqExit                  ; If not, exit
+000CE3r 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
+000CE6r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000CE9r 2               @IrqExit:
+000CE9r 2  FA             plx
+000CEAr 2  7A             ply
+000CEBr 2  68             pla
+000CECr 2  40             rti
+000CEDr 2               @IrqBrk:
+000CEDr 2  FA             plx                           ; Restore saved registers
+000CEEr 2  7A             ply
+000CEFr 2  68             pla
+000CF0r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
+000CF1r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+000CF4r 2               
+000CF4r 2               ; NMI Vector
+000CF4r 2               NmiVec:
+000CF4r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
+000CF7r 2               
+000CF7r 2               ; Reset Vector
+000CF7r 2               ResetVec:
+000CF7r 2  4C rr rr       jmp Reset                     ; Initialize the system
+000CFAr 2               
+000CFAr 2               ; IRQ Vector
+000CFAr 2               IrqVec:
+000CFAr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+000CFDr 2               
+000CFDr 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; IBM Code Page 437 Character Set
 000000r 2               ; 6x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)

@@ -2155,6 +2155,9 @@ Irq:
   and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
   bne @IrqBrk                   ; Branch if this was a BRK instruction
 @IrqSc:
+  lda HW_PRESENT
+  and #HW_SC
+  beq @IrqCheckKB               ; Serial not present — skip
   lda SC_STATUS
   and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
   beq @IrqCheckKB               ; If not, check keyboard
@@ -2167,6 +2170,9 @@ Irq:
   sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
   bra @IrqExit
 @IrqCheckKB:
+  lda HW_PRESENT
+  and #HW_GPIO
+  beq @IrqExit                  ; GPIO not present — skip
   lda GPIO_IFR
   and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
   beq @IrqCheckPS2              ; If not, check PS/2 keyboard

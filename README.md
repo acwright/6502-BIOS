@@ -12,7 +12,7 @@ COBBIOS is the firmware ROM for the COB, a homebrew 6502 single-board computer. 
 On reset, the Kernal initialises all hardware subsystems (video, keyboard, serial, sound, RTC, and CompactFlash storage), plays a short beep, and displays a splash screen:
 
 ```
--- The 'COB' v1.0 --
+  -- The 'COB' v1.0 --
 ENTER=BASIC  ESC=MONITOR
 ```
 

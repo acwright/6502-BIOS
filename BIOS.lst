@@ -3254,1102 +3254,1466 @@ Current file: BIOS.asm
 0000CEr 2  rr rr          .word MonCmdM - 1
 0000D0r 2  44             .byte 'D'
 0000D1r 2  rr rr          .word MonCmdD - 1
-0000D3r 2  00             .byte 0                       ; End of table sentinel
-0000D4r 2               
-0000D4r 2               ; ============================================================================
-0000D4r 2               ; MonCmdX — Exit to BASIC
-0000D4r 2               ; ============================================================================
-0000D4r 2               
-0000D4r 2               MonCmdX:
-0000D4r 2  20 rr rr       jsr VideoClear                ; Clear screen before entering BASIC
-0000D7r 2  4C rr rr       jmp BasColdStart
-0000DAr 2               
-0000DAr 2               ; ============================================================================
-0000DAr 2               ; MonCmdR — Display CPU registers
-0000DAr 2               ; ============================================================================
-0000DAr 2               
-0000DAr 2               MonCmdR:
-0000DAr 2  20 rr rr       jsr MonShowRegs
-0000DDr 2  60             rts
-0000DEr 2               
-0000DEr 2               ; ============================================================================
-0000DEr 2               ; MonCmdM — Memory dump (hex + ASCII, 8 bytes/row)
-0000DEr 2               ; Syntax: M [addr] [addr]
-0000DEr 2               ; Default: 8 lines (64 bytes). Remembers position for continuation.
-0000DEr 2               ; ============================================================================
-0000DEr 2               
-0000DEr 2               MonCmdM:
-0000DEr 2  20 rr rr       jsr MonSkipSpaces
-0000E1r 2  20 rr rr       jsr MonParseHex4
-0000E4r 2  90 2A          bcc @UseDefault               ; No address given — use current MON_ADDR
-0000E6r 2                 ; Got first address in MON_ADDR — save it
-0000E6r 2  A5 2E          lda MON_ADDR
-0000E8r 2  85 32          sta MON_TMP
-0000EAr 2  A5 2F          lda MON_ADDR+1
-0000ECr 2  85 33          sta MON_TMP+1
-0000EEr 2  20 rr rr       jsr MonSkipSpaces
-0000F1r 2  20 rr rr       jsr MonParseHex4
-0000F4r 2  90 12          bcc @StartOnly
-0000F6r 2                 ; Got second address (end) in MON_ADDR
-0000F6r 2  A5 2E          lda MON_ADDR
-0000F8r 2  85 30          sta MON_END
-0000FAr 2  A5 2F          lda MON_ADDR+1
-0000FCr 2  85 31          sta MON_END+1
-0000FEr 2                 ; Restore start address
-0000FEr 2  A5 32          lda MON_TMP
-000100r 2  85 2E          sta MON_ADDR
-000102r 2  A5 33          lda MON_TMP+1
-000104r 2  85 2F          sta MON_ADDR+1
-000106r 2  80 15          bra @DumpRange
-000108r 2               @StartOnly:
-000108r 2                 ; Only start address — restore from MON_TMP
-000108r 2  A5 32          lda MON_TMP
-00010Ar 2  85 2E          sta MON_ADDR
-00010Cr 2  A5 33          lda MON_TMP+1
-00010Er 2  85 2F          sta MON_ADDR+1
-000110r 2               @UseDefault:
-000110r 2                 ; Set end = start + 63 (8 lines x 8 bytes)
-000110r 2  18             clc
-000111r 2  A5 2E          lda MON_ADDR
-000113r 2  69 3F          adc #63
-000115r 2  85 30          sta MON_END
-000117r 2  A5 2F          lda MON_ADDR+1
-000119r 2  69 00          adc #0
-00011Br 2  85 31          sta MON_END+1
-00011Dr 2               @DumpRange:
-00011Dr 2  20 rr rr       jsr MonDumpLine
-000120r 2  B0 0E          bcs @DumpDone                 ; Carry set = address wrapped past $FFFF
-000122r 2                 ; Check if MON_ADDR > MON_END
-000122r 2  A5 31          lda MON_END+1
-000124r 2  C5 2F          cmp MON_ADDR+1
-000126r 2  90 08          bcc @DumpDone
-000128r 2  D0 F3          bne @DumpRange
-00012Ar 2  A5 30          lda MON_END
-00012Cr 2  C5 2E          cmp MON_ADDR
-00012Er 2  B0 ED          bcs @DumpRange
-000130r 2               @DumpDone:
-000130r 2  60             rts
-000131r 2               
-000131r 2               ; MonDumpLine — Dump 8 bytes at MON_ADDR as hex + ASCII, advance by 8
-000131r 2               
-000131r 2               MonDumpLine:
-000131r 2                 ; Print ".:ADDR " (39 chars/line avoids 40-col auto-wrap + CRLF double-newline)
-000131r 2  A9 2E          lda #'.'
-000133r 2  20 rr rr       jsr Chrout
-000136r 2  A9 3A          lda #':'
-000138r 2  20 rr rr       jsr Chrout
-00013Br 2  20 rr rr       jsr MonPrintHex4
-00013Er 2  20 rr rr       jsr MonPrintSpace
-000141r 2                 ; Print 8 hex bytes
-000141r 2  A0 00          ldy #0
-000143r 2               @HexLoop:
-000143r 2  B1 2E          lda (MON_ADDR),y
-000145r 2  5A             phy
-000146r 2  20 rr rr       jsr MonPrintHex2
-000149r 2  20 rr rr       jsr MonPrintSpace
-00014Cr 2  7A             ply
-00014Dr 2  C8             iny
-00014Er 2  C0 08          cpy #8
-000150r 2  90 F1          bcc @HexLoop
-000152r 2                 ; Print 8 ASCII characters (no extra space — fits 40 cols)
-000152r 2  A0 00          ldy #0
-000154r 2               @AsciiLoop:
-000154r 2  B1 2E          lda (MON_ADDR),y
-000156r 2  C9 20          cmp #$20
-000158r 2  90 04          bcc @NotPrint
-00015Ar 2  C9 7F          cmp #$7F
-00015Cr 2  90 02          bcc @DoPrint
-00015Er 2               @NotPrint:
-00015Er 2  A9 2E          lda #'.'
-000160r 2               @DoPrint:
-000160r 2  5A             phy
-000161r 2  20 rr rr       jsr Chrout
-000164r 2  7A             ply
-000165r 2  C8             iny
-000166r 2  C0 08          cpy #8
-000168r 2  90 EA          bcc @AsciiLoop
-00016Ar 2                 ; Advance MON_ADDR by 8
-00016Ar 2  18             clc
-00016Br 2  A5 2E          lda MON_ADDR
-00016Dr 2  69 08          adc #8
-00016Fr 2  85 2E          sta MON_ADDR
-000171r 2  90 04          bcc @NoCarry
-000173r 2  E6 2F          inc MON_ADDR+1
-000175r 2  F0 05          beq @Wrapped                  ; High byte became $00 = wrapped past $FFFF
-000177r 2               @NoCarry:
-000177r 2  20 rr rr       jsr MonPrintCRLF
-00017Ar 2  18             clc                           ; Signal no overflow
-00017Br 2  60             rts
-00017Cr 2               @Wrapped:
-00017Cr 2  20 rr rr       jsr MonPrintCRLF
-00017Fr 2  38             sec                           ; Signal overflow
-000180r 2  60             rts
-000181r 2               
-000181r 2               ; ============================================================================
-000181r 2               ; MonCmdD — Disassemble 65C02 instructions
-000181r 2               ; Syntax: D [addr] [addr]
-000181r 2               ; Default: 20 lines. Remembers position for continuation.
-000181r 2               ; ============================================================================
-000181r 2               
-000181r 2               MonCmdD:
-000181r 2  20 rr rr       jsr MonSkipSpaces
-000184r 2  20 rr rr       jsr MonParseHex4
-000187r 2  90 2A          bcc @UseDefault
-000189r 2                 ; Got first address
-000189r 2  A5 2E          lda MON_ADDR
-00018Br 2  85 32          sta MON_TMP
+0000D3r 2  3E             .byte '>'
+0000D4r 2  rr rr          .word MonCmdDeposit - 1
+0000D6r 2  46             .byte 'F'
+0000D7r 2  rr rr          .word MonCmdFill - 1
+0000D9r 2  54             .byte 'T'
+0000DAr 2  rr rr          .word MonCmdTransfer - 1
+0000DCr 2  48             .byte 'H'
+0000DDr 2  rr rr          .word MonCmdHunt - 1
+0000DFr 2  43             .byte 'C'
+0000E0r 2  rr rr          .word MonCmdCompare - 1
+0000E2r 2  00             .byte 0                       ; End of table sentinel
+0000E3r 2               
+0000E3r 2               ; ============================================================================
+0000E3r 2               ; MonCmdX — Exit to BASIC
+0000E3r 2               ; ============================================================================
+0000E3r 2               
+0000E3r 2               MonCmdX:
+0000E3r 2  20 rr rr       jsr VideoClear                ; Clear screen before entering BASIC
+0000E6r 2  4C rr rr       jmp BasColdStart
+0000E9r 2               
+0000E9r 2               ; ============================================================================
+0000E9r 2               ; MonCmdR — Display CPU registers
+0000E9r 2               ; ============================================================================
+0000E9r 2               
+0000E9r 2               MonCmdR:
+0000E9r 2  20 rr rr       jsr MonShowRegs
+0000ECr 2  60             rts
+0000EDr 2               
+0000EDr 2               ; ============================================================================
+0000EDr 2               ; MonCmdDeposit — Deposit (write) bytes to memory
+0000EDr 2               ; Syntax: > ADDR XX [XX XX ...]
+0000EDr 2               ; ============================================================================
+0000EDr 2               
+0000EDr 2               MonCmdDeposit:
+0000EDr 2  20 rr rr       jsr MonSkipSpaces
+0000F0r 2  20 rr rr       jsr MonParseHex4              ; Parse target address into MON_ADDR
+0000F3r 2  90 16          bcc @DepError                 ; No address → error
+0000F5r 2  A0 00          ldy #0                        ; Byte offset from MON_ADDR
+0000F7r 2               @DepLoop:
+0000F7r 2  5A             phy                           ; Save byte offset (Y clobbered by parse routines)
+0000F8r 2  20 rr rr       jsr MonSkipSpaces
+0000FBr 2  20 rr rr       jsr MonParseHex2              ; Parse next byte into A
+0000FEr 2  7A             ply                           ; Restore byte offset (PLY doesn't affect carry)
+0000FFr 2  90 05          bcc @DepDone                  ; No more bytes → done
+000101r 2  91 2E          sta (MON_ADDR),y
+000103r 2  C8             iny
+000104r 2  D0 F1          bne @DepLoop                  ; Up to 256 bytes (Y wraps)
+000106r 2               @DepDone:
+000106r 2  C0 00          cpy #0                        ; Did we deposit at least one byte?
+000108r 2  F0 01          beq @DepError                 ; No bytes given → error
+00010Ar 2  60             rts
+00010Br 2               @DepError:
+00010Br 2  4C rr rr       jmp MonPrintError
+00010Er 2               
+00010Er 2               ; ============================================================================
+00010Er 2               ; MonCmdFill — Fill memory range with a byte value
+00010Er 2               ; Syntax: F ADDR1 ADDR2 XX
+00010Er 2               ; ============================================================================
+00010Er 2               
+00010Er 2               MonCmdFill:
+00010Er 2  20 rr rr       jsr MonSkipSpaces
+000111r 2  20 rr rr       jsr MonParseHex4              ; Parse start address → MON_ADDR
+000114r 2  90 43          bcc @FillError
+000116r 2  A5 2E          lda MON_ADDR
+000118r 2  85 32          sta MON_TMP
+00011Ar 2  A5 2F          lda MON_ADDR+1
+00011Cr 2  85 33          sta MON_TMP+1                 ; Save start in MON_TMP
+00011Er 2  20 rr rr       jsr MonSkipSpaces
+000121r 2  20 rr rr       jsr MonParseHex4              ; Parse end address → MON_ADDR
+000124r 2  90 33          bcc @FillError
+000126r 2  A5 2E          lda MON_ADDR
+000128r 2  85 30          sta MON_END
+00012Ar 2  A5 2F          lda MON_ADDR+1
+00012Cr 2  85 31          sta MON_END+1                 ; Save end in MON_END
+00012Er 2                 ; Restore start into MON_ADDR
+00012Er 2  A5 32          lda MON_TMP
+000130r 2  85 2E          sta MON_ADDR
+000132r 2  A5 33          lda MON_TMP+1
+000134r 2  85 2F          sta MON_ADDR+1
+000136r 2  20 rr rr       jsr MonSkipSpaces
+000139r 2  20 rr rr       jsr MonParseHex2              ; Parse fill byte → A
+00013Cr 2  90 1B          bcc @FillError
+00013Er 2                 ; A = fill byte, MON_ADDR = start, MON_END = end (inclusive)
+00013Er 2  A0 00          ldy #0
+000140r 2               @FillLoop:
+000140r 2  91 2E          sta (MON_ADDR),y
+000142r 2                 ; Check if MON_ADDR == MON_END
+000142r 2  A6 2F          ldx MON_ADDR+1
+000144r 2  E4 31          cpx MON_END+1
+000146r 2  D0 06          bne @FillNext
+000148r 2  A6 2E          ldx MON_ADDR
+00014Ar 2  E4 30          cpx MON_END
+00014Cr 2  F0 0A          beq @FillDone
+00014Er 2               @FillNext:
+00014Er 2                 ; Advance MON_ADDR
+00014Er 2  48             pha                           ; Save fill byte
+00014Fr 2  E6 2E          inc MON_ADDR
+000151r 2  D0 02          bne @FillNoHi
+000153r 2  E6 2F          inc MON_ADDR+1
+000155r 2               @FillNoHi:
+000155r 2  68             pla                           ; Restore fill byte
+000156r 2  80 E8          bra @FillLoop
+000158r 2               @FillDone:
+000158r 2  60             rts
+000159r 2               @FillError:
+000159r 2  4C rr rr       jmp MonPrintError
+00015Cr 2               
+00015Cr 2               ; ============================================================================
+00015Cr 2               ; MonCmdTransfer — Copy memory block (handles overlapping regions)
+00015Cr 2               ; Syntax: T SRC_START SRC_END DEST
+00015Cr 2               ; ============================================================================
+00015Cr 2               
+00015Cr 2               MonCmdTransfer:
+00015Cr 2  20 rr rr       jsr MonSkipSpaces
+00015Fr 2  20 rr rr       jsr MonParseHex4              ; Parse source start → MON_ADDR
+000162r 2  B0 03          bcs @XferGotStart
+000164r 2  4C rr rr       jmp @XferError                ; No address → error
+000167r 2               @XferGotStart:
+000167r 2  A5 2E          lda MON_ADDR
+000169r 2  85 32          sta MON_TMP
+00016Br 2  A5 2F          lda MON_ADDR+1
+00016Dr 2  85 33          sta MON_TMP+1                 ; MON_TMP = source start
+00016Fr 2  20 rr rr       jsr MonSkipSpaces
+000172r 2  20 rr rr       jsr MonParseHex4              ; Parse source end → MON_ADDR
+000175r 2  B0 03          bcs @XferGotEnd
+000177r 2  4C rr rr       jmp @XferError
+00017Ar 2               @XferGotEnd:
+00017Ar 2  A5 2E          lda MON_ADDR
+00017Cr 2  85 30          sta MON_END
+00017Er 2  A5 2F          lda MON_ADDR+1
+000180r 2  85 31          sta MON_END+1                 ; MON_END = source end (inclusive)
+000182r 2  20 rr rr       jsr MonSkipSpaces
+000185r 2  20 rr rr       jsr MonParseHex4              ; Parse dest → MON_ADDR
+000188r 2  B0 03          bcs @XferGotDest
+00018Ar 2  4C rr rr       jmp @XferError
+00018Dr 2               @XferGotDest:
+00018Dr 2                 ; MON_ADDR = dest, MON_TMP = src start, MON_END = src end
+00018Dr 2                 ; Determine copy direction: if dest > src_start, copy backward to handle overlap
 00018Dr 2  A5 2F          lda MON_ADDR+1
-00018Fr 2  85 33          sta MON_TMP+1
-000191r 2  20 rr rr       jsr MonSkipSpaces
-000194r 2  20 rr rr       jsr MonParseHex4
-000197r 2  90 12          bcc @StartOnly
-000199r 2                 ; Got end address
-000199r 2  A5 2E          lda MON_ADDR
-00019Br 2  85 30          sta MON_END
-00019Dr 2  A5 2F          lda MON_ADDR+1
-00019Fr 2  85 31          sta MON_END+1
-0001A1r 2  A5 32          lda MON_TMP
-0001A3r 2  85 2E          sta MON_ADDR
-0001A5r 2  A5 33          lda MON_TMP+1
-0001A7r 2  85 2F          sta MON_ADDR+1
-0001A9r 2  80 15          bra @DisRange
-0001ABr 2               @StartOnly:
-0001ABr 2  A5 32          lda MON_TMP
-0001ADr 2  85 2E          sta MON_ADDR
-0001AFr 2  A5 33          lda MON_TMP+1
-0001B1r 2  85 2F          sta MON_ADDR+1
-0001B3r 2               @UseDefault:
-0001B3r 2                 ; Disassemble 20 lines
-0001B3r 2  A2 14          ldx #20
-0001B5r 2               @DisCountLoop:
-0001B5r 2  DA             phx
-0001B6r 2  20 rr rr       jsr DisOneLine
-0001B9r 2  FA             plx
-0001BAr 2  B0 17          bcs @DisDone                  ; Carry set = address wrapped past $FFFF
-0001BCr 2  CA             dex
-0001BDr 2  D0 F6          bne @DisCountLoop
-0001BFr 2  60             rts
-0001C0r 2               @DisRange:
-0001C0r 2  20 rr rr       jsr DisOneLine
-0001C3r 2  B0 0E          bcs @DisDone                  ; Carry set = address wrapped past $FFFF
-0001C5r 2                 ; Check if MON_ADDR > MON_END
-0001C5r 2  A5 31          lda MON_END+1
-0001C7r 2  C5 2F          cmp MON_ADDR+1
-0001C9r 2  90 08          bcc @DisDone
-0001CBr 2  D0 F3          bne @DisRange
-0001CDr 2  A5 30          lda MON_END
-0001CFr 2  C5 2E          cmp MON_ADDR
-0001D1r 2  B0 ED          bcs @DisRange
-0001D3r 2               @DisDone:
-0001D3r 2  60             rts
-0001D4r 2               
-0001D4r 2               ; ============================================================================
-0001D4r 2               ; DisOneLine — Disassemble one instruction at MON_ADDR
-0001D4r 2               ; Prints line, advances MON_ADDR by instruction length.
-0001D4r 2               ; Uses: MON_BYTE=opcode, MON_TMP=mnemonic idx, MON_TMP+1=mode
-0001D4r 2               ;       Stack holds instruction length throughout.
-0001D4r 2               ; ============================================================================
-0001D4r 2               
-0001D4r 2               DisOneLine:
-0001D4r 2                 ; Read opcode and look up table
-0001D4r 2  A0 00          ldy #0
-0001D6r 2  B1 2E          lda (MON_ADDR),y
-0001D8r 2  85 34          sta MON_BYTE                  ; save opcode
-0001DAr 2  0A             asl a                         ; opcode * 2 for table index
-0001DBr 2  AA             tax
-0001DCr 2  90 0C          bcc @LowHalf                  ; carry clear = opcodes $00-$7F
-0001DEr 2  BD rr rr       lda DisOpcodeTable+256,x      ; opcodes $80-$FF: offset by 256
-0001E1r 2  85 32          sta MON_TMP                   ; mnemonic index
-0001E3r 2  BD rr rr       lda DisOpcodeTable+257,x
-0001E6r 2  85 33          sta MON_TMP+1                 ; addressing mode
-0001E8r 2  80 0A          bra @GotEntry
-0001EAr 2               @LowHalf:
-0001EAr 2  BD rr rr       lda DisOpcodeTable,x
-0001EDr 2  85 32          sta MON_TMP                   ; mnemonic index
-0001EFr 2  BD rr rr       lda DisOpcodeTable+1,x
-0001F2r 2  85 33          sta MON_TMP+1                 ; addressing mode
-0001F4r 2               @GotEntry:
-0001F4r 2                 ; Get instruction length from mode
-0001F4r 2  A6 33          ldx MON_TMP+1
-0001F6r 2  BD rr rr       lda DisModeSizes,x
-0001F9r 2  1A             inc a                         ; +1 for opcode = total length
-0001FAr 2  48             pha                           ; save on stack (stays until end)
-0001FBr 2                 ; Print prefix ".,ADDR" (no space — consistent with M command's .:ADDR)
-0001FBr 2  A9 2E          lda #'.'
-0001FDr 2  20 rr rr       jsr Chrout
-000200r 2  A9 2C          lda #','
-000202r 2  20 rr rr       jsr Chrout
-000205r 2                 ; Print address
-000205r 2  20 rr rr       jsr MonPrintHex4
-000208r 2  20 rr rr       jsr MonPrintSpace
-00020Br 2  20 rr rr       jsr MonPrintSpace
-00020Er 2                 ; Print opcode byte
-00020Er 2  A5 34          lda MON_BYTE
-000210r 2  20 rr rr       jsr MonPrintHex2
-000213r 2                 ; Print 2nd byte or padding
-000213r 2  68             pla
-000214r 2  48             pha                           ; peek at length
-000215r 2  C9 02          cmp #2
-000217r 2  90 0C          bcc @Pad1
-000219r 2  20 rr rr       jsr MonPrintSpace
-00021Cr 2  A0 01          ldy #1
-00021Er 2  B1 2E          lda (MON_ADDR),y
-000220r 2  20 rr rr       jsr MonPrintHex2
-000223r 2  80 09          bra @Check3
-000225r 2               @Pad1:
-000225r 2  20 rr rr       jsr MonPrintSpace
-000228r 2  20 rr rr       jsr MonPrintSpace
-00022Br 2  20 rr rr       jsr MonPrintSpace
-00022Er 2               @Check3:
-00022Er 2  68             pla
-00022Fr 2  48             pha
-000230r 2  C9 03          cmp #3
-000232r 2  90 0C          bcc @Pad2
-000234r 2  20 rr rr       jsr MonPrintSpace
-000237r 2  A0 02          ldy #2
-000239r 2  B1 2E          lda (MON_ADDR),y
-00023Br 2  20 rr rr       jsr MonPrintHex2
-00023Er 2  80 09          bra @AfterBytes
-000240r 2               @Pad2:
-000240r 2  20 rr rr       jsr MonPrintSpace
-000243r 2  20 rr rr       jsr MonPrintSpace
-000246r 2  20 rr rr       jsr MonPrintSpace
-000249r 2               @AfterBytes:
-000249r 2                 ; Separator before mnemonic
-000249r 2  20 rr rr       jsr MonPrintSpace
-00024Cr 2  20 rr rr       jsr MonPrintSpace
-00024Fr 2                 ; Print mnemonic (3 chars)
-00024Fr 2  20 rr rr       jsr DisPrintMnemonic
-000252r 2                 ; For RMB/SMB/BBR/BBS, append bit number digit
-000252r 2  A5 32          lda MON_TMP
-000254r 2  C9 03          cmp #MN_BBR
-000256r 2  F0 11          beq @BitNum
-000258r 2  C9 04          cmp #MN_BBS
-00025Ar 2  F0 0D          beq @BitNum
-00025Cr 2  C9 2E          cmp #MN_RMB
-00025Er 2  F0 09          beq @BitNum
-000260r 2  C9 37          cmp #MN_SMB
-000262r 2  F0 05          beq @BitNum
-000264r 2  20 rr rr       jsr MonPrintSpace             ; normal mnemonic — space separator
-000267r 2  80 11          bra @Operand
-000269r 2               @BitNum:
-000269r 2  A5 34          lda MON_BYTE                  ; opcode encodes bit in upper nibble
-00026Br 2  4A             lsr a
-00026Cr 2  4A             lsr a
-00026Dr 2  4A             lsr a
-00026Er 2  4A             lsr a
-00026Fr 2  29 07          and #$07
-000271r 2  18             clc
-000272r 2  69 30          adc #'0'
-000274r 2  20 rr rr       jsr Chrout
-000277r 2  20 rr rr       jsr MonPrintSpace
-00027Ar 2               @Operand:
-00027Ar 2                 ; Print operand based on addressing mode
-00027Ar 2  A5 33          lda MON_TMP+1
-00027Cr 2  20 rr rr       jsr DisPrintOperand
-00027Fr 2                 ; CRLF
-00027Fr 2  20 rr rr       jsr MonPrintCRLF
-000282r 2                 ; Advance MON_ADDR by instruction length
-000282r 2  68             pla                           ; length from stack
-000283r 2  18             clc
-000284r 2  65 2E          adc MON_ADDR
-000286r 2  85 2E          sta MON_ADDR
-000288r 2  90 04          bcc @NoWrap
-00028Ar 2  E6 2F          inc MON_ADDR+1
-00028Cr 2  F0 02          beq @DisWrapped               ; High byte became $00 = wrapped past $FFFF
-00028Er 2               @NoWrap:
-00028Er 2  18             clc                           ; Signal no overflow
-00028Fr 2  60             rts
-000290r 2               @DisWrapped:
-000290r 2  38             sec                           ; Signal overflow
-000291r 2  60             rts
-000292r 2               
-000292r 2               ; DisPrintMnemonic — Print 3-char mnemonic from MON_TMP index
-000292r 2               
-000292r 2               DisPrintMnemonic:
-000292r 2  A5 32          lda MON_TMP                   ; mnemonic index
-000294r 2  0A             asl a                         ; index * 2
-000295r 2  18             clc
-000296r 2  65 32          adc MON_TMP                   ; + index = index * 3
-000298r 2  AA             tax
-000299r 2  BD rr rr       lda DisMnemonics,x
-00029Cr 2  DA             phx
-00029Dr 2  20 rr rr       jsr Chrout
-0002A0r 2  FA             plx
-0002A1r 2  BD rr rr       lda DisMnemonics+1,x
-0002A4r 2  DA             phx
-0002A5r 2  20 rr rr       jsr Chrout
-0002A8r 2  FA             plx
-0002A9r 2  BD rr rr       lda DisMnemonics+2,x
-0002ACr 2  4C rr rr       jmp Chrout
-0002AFr 2               
-0002AFr 2               ; DisPrintOperand — Dispatch to addressing mode operand printer
-0002AFr 2               ; Input: A = addressing mode index
-0002AFr 2               
-0002AFr 2               DisPrintOperand:
-0002AFr 2  0A             asl a                         ; mode * 2 for word table index
-0002B0r 2  AA             tax
-0002B1r 2  7C rr rr       jmp (DisOperandJmpTable,x)    ; handler does RTS to our caller
-0002B4r 2               
-0002B4r 2               ; ============================================================================
-0002B4r 2               ; Addressing Mode Operand Handlers
-0002B4r 2               ; Each handler prints the operand and returns via RTS.
-0002B4r 2               ; ============================================================================
-0002B4r 2               
-0002B4r 2               DisOpImp:
-0002B4r 2  60             rts
-0002B5r 2               
-0002B5r 2               DisOpAcc:
-0002B5r 2  A9 41          lda #'A'
-0002B7r 2  4C rr rr       jmp Chrout
-0002BAr 2               
-0002BAr 2               DisOpImm:
-0002BAr 2  A9 23          lda #'#'
-0002BCr 2  20 rr rr       jsr Chrout
-0002BFr 2  A9 24          lda #'$'
-0002C1r 2  20 rr rr       jsr Chrout
-0002C4r 2  A0 01          ldy #1
-0002C6r 2  B1 2E          lda (MON_ADDR),y
-0002C8r 2  4C rr rr       jmp MonPrintHex2
-0002CBr 2               
-0002CBr 2               DisOpZp:
-0002CBr 2  A9 24          lda #'$'
-0002CDr 2  20 rr rr       jsr Chrout
-0002D0r 2  A0 01          ldy #1
-0002D2r 2  B1 2E          lda (MON_ADDR),y
-0002D4r 2  4C rr rr       jmp MonPrintHex2
-0002D7r 2               
-0002D7r 2               DisOpZpx:
-0002D7r 2  20 rr rr       jsr DisOpZp
-0002DAr 2  A9 2C          lda #','
-0002DCr 2  20 rr rr       jsr Chrout
-0002DFr 2  A9 58          lda #'X'
-0002E1r 2  4C rr rr       jmp Chrout
-0002E4r 2               
-0002E4r 2               DisOpZpy:
-0002E4r 2  20 rr rr       jsr DisOpZp
-0002E7r 2  A9 2C          lda #','
-0002E9r 2  20 rr rr       jsr Chrout
-0002ECr 2  A9 59          lda #'Y'
-0002EEr 2  4C rr rr       jmp Chrout
-0002F1r 2               
-0002F1r 2               DisOpAbs:
-0002F1r 2  A9 24          lda #'$'
-0002F3r 2  20 rr rr       jsr Chrout
-0002F6r 2  A0 02          ldy #2
-0002F8r 2  B1 2E          lda (MON_ADDR),y              ; high byte
-0002FAr 2  20 rr rr       jsr MonPrintHex2
-0002FDr 2  A0 01          ldy #1
-0002FFr 2  B1 2E          lda (MON_ADDR),y              ; low byte
-000301r 2  4C rr rr       jmp MonPrintHex2
-000304r 2               
-000304r 2               DisOpAbx:
-000304r 2  20 rr rr       jsr DisOpAbs
-000307r 2  A9 2C          lda #','
-000309r 2  20 rr rr       jsr Chrout
-00030Cr 2  A9 58          lda #'X'
-00030Er 2  4C rr rr       jmp Chrout
-000311r 2               
-000311r 2               DisOpAby:
-000311r 2  20 rr rr       jsr DisOpAbs
-000314r 2  A9 2C          lda #','
-000316r 2  20 rr rr       jsr Chrout
-000319r 2  A9 59          lda #'Y'
-00031Br 2  4C rr rr       jmp Chrout
-00031Er 2               
-00031Er 2               DisOpInd:
-00031Er 2  A9 28          lda #'('
-000320r 2  20 rr rr       jsr Chrout
-000323r 2  20 rr rr       jsr DisOpAbs
-000326r 2  A9 29          lda #')'
-000328r 2  4C rr rr       jmp Chrout
-00032Br 2               
-00032Br 2               DisOpIzx:
-00032Br 2  A9 28          lda #'('
-00032Dr 2  20 rr rr       jsr Chrout
-000330r 2  20 rr rr       jsr DisOpZp
-000333r 2  A9 2C          lda #','
-000335r 2  20 rr rr       jsr Chrout
-000338r 2  A9 58          lda #'X'
+00018Fr 2  C5 33          cmp MON_TMP+1
+000191r 2  90 5C          bcc @CopyForward              ; dest < src → forward is safe
+000193r 2  D0 08          bne @CopyBackward             ; dest > src → need backward
+000195r 2  A5 2E          lda MON_ADDR
+000197r 2  C5 32          cmp MON_TMP
+000199r 2  90 54          bcc @CopyForward
+00019Br 2  F0 72          beq @XferDone                 ; dest == src → nothing to do
+00019Dr 2               @CopyBackward:
+00019Dr 2                 ; Compute offset = src_end - src_start
+00019Dr 2  38             sec
+00019Er 2  A5 30          lda MON_END
+0001A0r 2  E5 32          sbc MON_TMP
+0001A2r 2  85 34          sta MON_BYTE                  ; low byte of offset
+0001A4r 2  A5 31          lda MON_END+1
+0001A6r 2  E5 33          sbc MON_TMP+1
+0001A8r 2  85 35          sta MON_IDX                   ; high byte of offset (reuse MON_IDX as scratch)
+0001AAr 2                 ; Point MON_TMP to src_end, MON_ADDR to dest + offset
+0001AAr 2                 ; MON_TMP already needs to be src_end (currently src_start)
+0001AAr 2                 ; Swap: MON_TMP = MON_END (src_end)
+0001AAr 2  A5 30          lda MON_END
+0001ACr 2  48             pha
+0001ADr 2  A5 31          lda MON_END+1
+0001AFr 2  48             pha
+0001B0r 2                 ; MON_END = src_start (save for later comparison)
+0001B0r 2  A5 32          lda MON_TMP
+0001B2r 2  85 30          sta MON_END
+0001B4r 2  A5 33          lda MON_TMP+1
+0001B6r 2  85 31          sta MON_END+1
+0001B8r 2                 ; MON_TMP = src_end
+0001B8r 2  68             pla
+0001B9r 2  85 33          sta MON_TMP+1
+0001BBr 2  68             pla
+0001BCr 2  85 32          sta MON_TMP
+0001BEr 2                 ; dest_end = MON_ADDR + offset
+0001BEr 2  18             clc
+0001BFr 2  A5 2E          lda MON_ADDR
+0001C1r 2  65 34          adc MON_BYTE
+0001C3r 2  85 2E          sta MON_ADDR
+0001C5r 2  A5 2F          lda MON_ADDR+1
+0001C7r 2  65 35          adc MON_IDX
+0001C9r 2  85 2F          sta MON_ADDR+1
+0001CBr 2               @BackLoop:
+0001CBr 2  A0 00          ldy #0
+0001CDr 2  B1 32          lda (MON_TMP),y
+0001CFr 2  91 2E          sta (MON_ADDR),y
+0001D1r 2                 ; Check if MON_TMP == MON_END (src start, our stop address)
+0001D1r 2  A5 33          lda MON_TMP+1
+0001D3r 2  C5 31          cmp MON_END+1
+0001D5r 2  D0 06          bne @BackDec
+0001D7r 2  A5 32          lda MON_TMP
+0001D9r 2  C5 30          cmp MON_END
+0001DBr 2  F0 32          beq @XferDone
+0001DDr 2               @BackDec:
+0001DDr 2                 ; Decrement both pointers
+0001DDr 2  A5 32          lda MON_TMP
+0001DFr 2  D0 02          bne @BackDecTmpLo
+0001E1r 2  C6 33          dec MON_TMP+1
+0001E3r 2               @BackDecTmpLo:
+0001E3r 2  C6 32          dec MON_TMP
+0001E5r 2  A5 2E          lda MON_ADDR
+0001E7r 2  D0 02          bne @BackDecDstLo
+0001E9r 2  C6 2F          dec MON_ADDR+1
+0001EBr 2               @BackDecDstLo:
+0001EBr 2  C6 2E          dec MON_ADDR
+0001EDr 2  80 DC          bra @BackLoop
+0001EFr 2               
+0001EFr 2               @CopyForward:
+0001EFr 2                 ; Copy from MON_TMP (src) to MON_ADDR (dest), up to MON_END (src end)
+0001EFr 2  A0 00          ldy #0
+0001F1r 2               @FwdLoop:
+0001F1r 2  B1 32          lda (MON_TMP),y
+0001F3r 2  91 2E          sta (MON_ADDR),y
+0001F5r 2                 ; Check if MON_TMP == MON_END
+0001F5r 2  A5 33          lda MON_TMP+1
+0001F7r 2  C5 31          cmp MON_END+1
+0001F9r 2  D0 06          bne @FwdNext
+0001FBr 2  A5 32          lda MON_TMP
+0001FDr 2  C5 30          cmp MON_END
+0001FFr 2  F0 0E          beq @XferDone
+000201r 2               @FwdNext:
+000201r 2                 ; Advance both pointers
+000201r 2  E6 32          inc MON_TMP
+000203r 2  D0 02          bne @FwdNoDstCarry
+000205r 2  E6 33          inc MON_TMP+1
+000207r 2               @FwdNoDstCarry:
+000207r 2  E6 2E          inc MON_ADDR
+000209r 2  D0 E6          bne @FwdLoop
+00020Br 2  E6 2F          inc MON_ADDR+1
+00020Dr 2  80 E2          bra @FwdLoop
+00020Fr 2               
+00020Fr 2               @XferDone:
+00020Fr 2  60             rts
+000210r 2               @XferError:
+000210r 2  4C rr rr       jmp MonPrintError
+000213r 2               
+000213r 2               ; ============================================================================
+000213r 2               ; MonCmdHunt — Search for byte pattern in memory range
+000213r 2               ; Syntax: H ADDR1 ADDR2 XX [XX XX ...]
+000213r 2               ; Prints address of each match on its own line.
+000213r 2               ; ============================================================================
+000213r 2               
+000213r 2               ; Hunt uses a temp buffer at end of MON_LINBUF area for the pattern.
+000213r 2               ; Pattern bytes stored at MON_LINBUF+128, max 64 pattern bytes.
+000213r 2               MON_HUNT_PAT        = MON_LINBUF + 128
+000213r 2               MON_HUNT_PAT_MAX    = 64
+000213r 2               
+000213r 2               MonCmdHunt:
+000213r 2  20 rr rr       jsr MonSkipSpaces
+000216r 2  20 rr rr       jsr MonParseHex4              ; Parse start address → MON_ADDR
+000219r 2  90 65          bcc @HuntError
+00021Br 2  A5 2E          lda MON_ADDR
+00021Dr 2  85 32          sta MON_TMP
+00021Fr 2  A5 2F          lda MON_ADDR+1
+000221r 2  85 33          sta MON_TMP+1                 ; MON_TMP = search start
+000223r 2  20 rr rr       jsr MonSkipSpaces
+000226r 2  20 rr rr       jsr MonParseHex4              ; Parse end address → MON_ADDR
+000229r 2  90 55          bcc @HuntError
+00022Br 2  A5 2E          lda MON_ADDR
+00022Dr 2  85 30          sta MON_END
+00022Fr 2  A5 2F          lda MON_ADDR+1
+000231r 2  85 31          sta MON_END+1                 ; MON_END = search end
+000233r 2                 ; Restore start
+000233r 2  A5 32          lda MON_TMP
+000235r 2  85 2E          sta MON_ADDR
+000237r 2  A5 33          lda MON_TMP+1
+000239r 2  85 2F          sta MON_ADDR+1
+00023Br 2                 ; Parse pattern bytes into MON_HUNT_PAT
+00023Br 2  A2 00          ldx #0                        ; Pattern length counter
+00023Dr 2               @HuntParseByte:
+00023Dr 2  DA             phx                           ; Save pattern counter (X clobbered by MonParseHex2)
+00023Er 2  20 rr rr       jsr MonSkipSpaces
+000241r 2  20 rr rr       jsr MonParseHex2              ; Next byte → A
+000244r 2  FA             plx                           ; Restore pattern counter (PLX doesn't affect carry)
+000245r 2  90 0A          bcc @HuntParseEnd
+000247r 2  E0 40          cpx #MON_HUNT_PAT_MAX
+000249r 2  B0 06          bcs @HuntParseEnd             ; Pattern buffer full
+00024Br 2  9D B4 04       sta MON_HUNT_PAT,x
+00024Er 2  E8             inx
+00024Fr 2  80 EC          bra @HuntParseByte
+000251r 2               @HuntParseEnd:
+000251r 2  E0 00          cpx #0
+000253r 2  F0 2B          beq @HuntError                ; No pattern bytes → error
+000255r 2  86 34          stx MON_BYTE                  ; MON_BYTE = pattern length
+000257r 2                 ; Search: scan MON_ADDR to MON_END for pattern match
+000257r 2               @HuntScanLoop:
+000257r 2  A0 00          ldy #0                        ; Pattern match index
+000259r 2               @HuntMatchLoop:
+000259r 2  B1 2E          lda (MON_ADDR),y
+00025Br 2  D9 B4 04       cmp MON_HUNT_PAT,y
+00025Er 2  D0 0B          bne @HuntNoMatch
+000260r 2  C8             iny
+000261r 2  C4 34          cpy MON_BYTE                  ; Matched all pattern bytes?
+000263r 2  90 F4          bcc @HuntMatchLoop
+000265r 2                 ; Full match — print address
+000265r 2  20 rr rr       jsr MonPrintHex4
+000268r 2  20 rr rr       jsr MonPrintCRLF
+00026Br 2               @HuntNoMatch:
+00026Br 2                 ; Check if MON_ADDR == MON_END
+00026Br 2  A5 2F          lda MON_ADDR+1
+00026Dr 2  C5 31          cmp MON_END+1
+00026Fr 2  D0 06          bne @HuntAdvance
+000271r 2  A5 2E          lda MON_ADDR
+000273r 2  C5 30          cmp MON_END
+000275r 2  F0 08          beq @HuntDone
+000277r 2               @HuntAdvance:
+000277r 2  E6 2E          inc MON_ADDR
+000279r 2  D0 DC          bne @HuntScanLoop
+00027Br 2  E6 2F          inc MON_ADDR+1
+00027Dr 2  80 D8          bra @HuntScanLoop
+00027Fr 2               @HuntDone:
+00027Fr 2  60             rts
+000280r 2               @HuntError:
+000280r 2  4C rr rr       jmp MonPrintError
+000283r 2               
+000283r 2               ; ============================================================================
+000283r 2               ; MonCmdCompare — Compare two memory regions
+000283r 2               ; Syntax: C ADDR1 ADDR2 ADDR3
+000283r 2               ; Compares [addr1,addr2] with block at addr3, prints differing addresses.
+000283r 2               ; ============================================================================
+000283r 2               
+000283r 2               MonCmdCompare:
+000283r 2  20 rr rr       jsr MonSkipSpaces
+000286r 2  20 rr rr       jsr MonParseHex4              ; Parse addr1 (region1 start) → MON_ADDR
+000289r 2  90 57          bcc @CmpError
+00028Br 2                 ; Save addr1 on stack
+00028Br 2  A5 2F          lda MON_ADDR+1
+00028Dr 2  48             pha
+00028Er 2  A5 2E          lda MON_ADDR
+000290r 2  48             pha
+000291r 2  20 rr rr       jsr MonSkipSpaces
+000294r 2  20 rr rr       jsr MonParseHex4              ; Parse addr2 (region1 end) → MON_ADDR
+000297r 2  90 47          bcc @CmpErrorPop
+000299r 2  A5 2E          lda MON_ADDR
+00029Br 2  85 30          sta MON_END
+00029Dr 2  A5 2F          lda MON_ADDR+1
+00029Fr 2  85 31          sta MON_END+1                 ; MON_END = region1 end (inclusive)
+0002A1r 2  20 rr rr       jsr MonSkipSpaces
+0002A4r 2  20 rr rr       jsr MonParseHex4              ; Parse addr3 (region2 base) → MON_ADDR
+0002A7r 2  90 37          bcc @CmpErrorPop
+0002A9r 2  A5 2E          lda MON_ADDR
+0002ABr 2  85 32          sta MON_TMP
+0002ADr 2  A5 2F          lda MON_ADDR+1
+0002AFr 2  85 33          sta MON_TMP+1                 ; MON_TMP = region2 pointer
+0002B1r 2                 ; Restore addr1 → MON_ADDR
+0002B1r 2  68             pla
+0002B2r 2  85 2E          sta MON_ADDR
+0002B4r 2  68             pla
+0002B5r 2  85 2F          sta MON_ADDR+1
+0002B7r 2                 ; Compare loop: [MON_ADDR..MON_END] vs [MON_TMP..]
+0002B7r 2  A0 00          ldy #0
+0002B9r 2               @CmpLoop:
+0002B9r 2  B1 2E          lda (MON_ADDR),y
+0002BBr 2  D1 32          cmp (MON_TMP),y
+0002BDr 2  F0 06          beq @CmpMatch
+0002BFr 2                 ; Mismatch — print addr1 address
+0002BFr 2  20 rr rr       jsr MonPrintHex4
+0002C2r 2  20 rr rr       jsr MonPrintCRLF
+0002C5r 2               @CmpMatch:
+0002C5r 2                 ; Check if MON_ADDR == MON_END
+0002C5r 2  A5 2F          lda MON_ADDR+1
+0002C7r 2  C5 31          cmp MON_END+1
+0002C9r 2  D0 06          bne @CmpNext
+0002CBr 2  A5 2E          lda MON_ADDR
+0002CDr 2  C5 30          cmp MON_END
+0002CFr 2  F0 0E          beq @CmpDone
+0002D1r 2               @CmpNext:
+0002D1r 2                 ; Advance both pointers
+0002D1r 2  E6 2E          inc MON_ADDR
+0002D3r 2  D0 02          bne @CmpNoHi1
+0002D5r 2  E6 2F          inc MON_ADDR+1
+0002D7r 2               @CmpNoHi1:
+0002D7r 2  E6 32          inc MON_TMP
+0002D9r 2  D0 DE          bne @CmpLoop
+0002DBr 2  E6 33          inc MON_TMP+1
+0002DDr 2  80 DA          bra @CmpLoop
+0002DFr 2               @CmpDone:
+0002DFr 2  60             rts
+0002E0r 2               @CmpErrorPop:
+0002E0r 2  68             pla                           ; Clean up stack
+0002E1r 2  68             pla
+0002E2r 2               @CmpError:
+0002E2r 2  4C rr rr       jmp MonPrintError
+0002E5r 2               
+0002E5r 2               ; ============================================================================
+0002E5r 2               ; MonCmdM — Memory dump (hex + ASCII, 8 bytes/row)
+0002E5r 2               ; Syntax: M [addr] [addr]
+0002E5r 2               ; Default: 8 lines (64 bytes). Remembers position for continuation.
+0002E5r 2               ; ============================================================================
+0002E5r 2               
+0002E5r 2               MonCmdM:
+0002E5r 2  20 rr rr       jsr MonSkipSpaces
+0002E8r 2  20 rr rr       jsr MonParseHex4
+0002EBr 2  90 2A          bcc @UseDefault               ; No address given — use current MON_ADDR
+0002EDr 2                 ; Got first address in MON_ADDR — save it
+0002EDr 2  A5 2E          lda MON_ADDR
+0002EFr 2  85 32          sta MON_TMP
+0002F1r 2  A5 2F          lda MON_ADDR+1
+0002F3r 2  85 33          sta MON_TMP+1
+0002F5r 2  20 rr rr       jsr MonSkipSpaces
+0002F8r 2  20 rr rr       jsr MonParseHex4
+0002FBr 2  90 12          bcc @StartOnly
+0002FDr 2                 ; Got second address (end) in MON_ADDR
+0002FDr 2  A5 2E          lda MON_ADDR
+0002FFr 2  85 30          sta MON_END
+000301r 2  A5 2F          lda MON_ADDR+1
+000303r 2  85 31          sta MON_END+1
+000305r 2                 ; Restore start address
+000305r 2  A5 32          lda MON_TMP
+000307r 2  85 2E          sta MON_ADDR
+000309r 2  A5 33          lda MON_TMP+1
+00030Br 2  85 2F          sta MON_ADDR+1
+00030Dr 2  80 15          bra @DumpRange
+00030Fr 2               @StartOnly:
+00030Fr 2                 ; Only start address — restore from MON_TMP
+00030Fr 2  A5 32          lda MON_TMP
+000311r 2  85 2E          sta MON_ADDR
+000313r 2  A5 33          lda MON_TMP+1
+000315r 2  85 2F          sta MON_ADDR+1
+000317r 2               @UseDefault:
+000317r 2                 ; Set end = start + 63 (8 lines x 8 bytes)
+000317r 2  18             clc
+000318r 2  A5 2E          lda MON_ADDR
+00031Ar 2  69 3F          adc #63
+00031Cr 2  85 30          sta MON_END
+00031Er 2  A5 2F          lda MON_ADDR+1
+000320r 2  69 00          adc #0
+000322r 2  85 31          sta MON_END+1
+000324r 2               @DumpRange:
+000324r 2  20 rr rr       jsr MonDumpLine
+000327r 2  B0 0E          bcs @DumpDone                 ; Carry set = address wrapped past $FFFF
+000329r 2                 ; Check if MON_ADDR > MON_END
+000329r 2  A5 31          lda MON_END+1
+00032Br 2  C5 2F          cmp MON_ADDR+1
+00032Dr 2  90 08          bcc @DumpDone
+00032Fr 2  D0 F3          bne @DumpRange
+000331r 2  A5 30          lda MON_END
+000333r 2  C5 2E          cmp MON_ADDR
+000335r 2  B0 ED          bcs @DumpRange
+000337r 2               @DumpDone:
+000337r 2  60             rts
+000338r 2               
+000338r 2               ; MonDumpLine — Dump 8 bytes at MON_ADDR as hex + ASCII, advance by 8
+000338r 2               
+000338r 2               MonDumpLine:
+000338r 2                 ; Print ".:ADDR " (39 chars/line avoids 40-col auto-wrap + CRLF double-newline)
+000338r 2  A9 2E          lda #'.'
 00033Ar 2  20 rr rr       jsr Chrout
-00033Dr 2  A9 29          lda #')'
-00033Fr 2  4C rr rr       jmp Chrout
-000342r 2               
-000342r 2               DisOpIzy:
-000342r 2  A9 28          lda #'('
-000344r 2  20 rr rr       jsr Chrout
-000347r 2  20 rr rr       jsr DisOpZp
-00034Ar 2  A9 29          lda #')'
-00034Cr 2  20 rr rr       jsr Chrout
-00034Fr 2  A9 2C          lda #','
-000351r 2  20 rr rr       jsr Chrout
-000354r 2  A9 59          lda #'Y'
-000356r 2  4C rr rr       jmp Chrout
-000359r 2               
-000359r 2               DisOpZpi:
-000359r 2  A9 28          lda #'('
-00035Br 2  20 rr rr       jsr Chrout
-00035Er 2  20 rr rr       jsr DisOpZp
-000361r 2  A9 29          lda #')'
-000363r 2  4C rr rr       jmp Chrout
-000366r 2               
-000366r 2               DisOpRel:
-000366r 2                 ; Target = current_addr + 2 + signed_offset
-000366r 2  A0 01          ldy #1
-000368r 2  B1 2E          lda (MON_ADDR),y              ; offset byte
-00036Ar 2  30 0D          bmi @Neg
-00036Cr 2                 ; Positive offset
-00036Cr 2  18             clc
-00036Dr 2  65 2E          adc MON_ADDR
-00036Fr 2  85 32          sta MON_TMP
-000371r 2  A5 2F          lda MON_ADDR+1
-000373r 2  69 00          adc #0
-000375r 2  85 33          sta MON_TMP+1
-000377r 2  80 0B          bra @Add2
-000379r 2               @Neg:
-000379r 2  18             clc
-00037Ar 2  65 2E          adc MON_ADDR
-00037Cr 2  85 32          sta MON_TMP
-00037Er 2  A5 2F          lda MON_ADDR+1
-000380r 2  69 FF          adc #$FF                      ; sign extension
-000382r 2  85 33          sta MON_TMP+1
-000384r 2               @Add2:
-000384r 2  18             clc
-000385r 2  A5 32          lda MON_TMP
-000387r 2  69 02          adc #2
-000389r 2  85 32          sta MON_TMP
-00038Br 2  A5 33          lda MON_TMP+1
-00038Dr 2  69 00          adc #0
-00038Fr 2  85 33          sta MON_TMP+1
-000391r 2                 ; Print "$XXXX"
-000391r 2  A9 24          lda #'$'
-000393r 2  20 rr rr       jsr Chrout
-000396r 2  A5 33          lda MON_TMP+1
-000398r 2  20 rr rr       jsr MonPrintHex2
-00039Br 2  A5 32          lda MON_TMP
-00039Dr 2  4C rr rr       jmp MonPrintHex2
-0003A0r 2               
-0003A0r 2               DisOpZpr:
-0003A0r 2                 ; ZP byte first
-0003A0r 2  A9 24          lda #'$'
-0003A2r 2  20 rr rr       jsr Chrout
-0003A5r 2  A0 01          ldy #1
-0003A7r 2  B1 2E          lda (MON_ADDR),y
-0003A9r 2  20 rr rr       jsr MonPrintHex2
-0003ACr 2  A9 2C          lda #','
-0003AEr 2  20 rr rr       jsr Chrout
-0003B1r 2                 ; Branch target = addr + 3 + signed_offset(byte 2)
-0003B1r 2  A0 02          ldy #2
-0003B3r 2  B1 2E          lda (MON_ADDR),y
-0003B5r 2  30 0D          bmi @Neg
-0003B7r 2  18             clc
-0003B8r 2  65 2E          adc MON_ADDR
-0003BAr 2  85 32          sta MON_TMP
-0003BCr 2  A5 2F          lda MON_ADDR+1
-0003BEr 2  69 00          adc #0
-0003C0r 2  85 33          sta MON_TMP+1
-0003C2r 2  80 0B          bra @Add3
-0003C4r 2               @Neg:
-0003C4r 2  18             clc
-0003C5r 2  65 2E          adc MON_ADDR
-0003C7r 2  85 32          sta MON_TMP
-0003C9r 2  A5 2F          lda MON_ADDR+1
-0003CBr 2  69 FF          adc #$FF
-0003CDr 2  85 33          sta MON_TMP+1
-0003CFr 2               @Add3:
-0003CFr 2  18             clc
-0003D0r 2  A5 32          lda MON_TMP
-0003D2r 2  69 03          adc #3
-0003D4r 2  85 32          sta MON_TMP
-0003D6r 2  A5 33          lda MON_TMP+1
-0003D8r 2  69 00          adc #0
-0003DAr 2  85 33          sta MON_TMP+1
-0003DCr 2  A9 24          lda #'$'
-0003DEr 2  20 rr rr       jsr Chrout
-0003E1r 2  A5 33          lda MON_TMP+1
-0003E3r 2  20 rr rr       jsr MonPrintHex2
-0003E6r 2  A5 32          lda MON_TMP
-0003E8r 2  4C rr rr       jmp MonPrintHex2
-0003EBr 2               
-0003EBr 2               DisOpAix:
-0003EBr 2  A9 28          lda #'('
-0003EDr 2  20 rr rr       jsr Chrout
-0003F0r 2  20 rr rr       jsr DisOpAbs
-0003F3r 2  A9 2C          lda #','
-0003F5r 2  20 rr rr       jsr Chrout
-0003F8r 2  A9 58          lda #'X'
-0003FAr 2  20 rr rr       jsr Chrout
-0003FDr 2  A9 29          lda #')'
-0003FFr 2  4C rr rr       jmp Chrout
-000402r 2               
-000402r 2               ; ============================================================================
-000402r 2               ; MonShowRegs — Print saved register state
-000402r 2               ; Format: PC=xxxx A=xx X=xx Y=xx SP=xx NV-BDIZC
-000402r 2               ; ============================================================================
-000402r 2               
-000402r 2               MonShowRegs:
-000402r 2                 ; "PC="
-000402r 2  A9 50          lda #'P'
+00033Dr 2  A9 3A          lda #':'
+00033Fr 2  20 rr rr       jsr Chrout
+000342r 2  20 rr rr       jsr MonPrintHex4
+000345r 2  20 rr rr       jsr MonPrintSpace
+000348r 2                 ; Print 8 hex bytes
+000348r 2  A0 00          ldy #0
+00034Ar 2               @HexLoop:
+00034Ar 2  B1 2E          lda (MON_ADDR),y
+00034Cr 2  5A             phy
+00034Dr 2  20 rr rr       jsr MonPrintHex2
+000350r 2  20 rr rr       jsr MonPrintSpace
+000353r 2  7A             ply
+000354r 2  C8             iny
+000355r 2  C0 08          cpy #8
+000357r 2  90 F1          bcc @HexLoop
+000359r 2                 ; Print 8 ASCII characters (no extra space — fits 40 cols)
+000359r 2  A0 00          ldy #0
+00035Br 2               @AsciiLoop:
+00035Br 2  B1 2E          lda (MON_ADDR),y
+00035Dr 2  C9 20          cmp #$20
+00035Fr 2  90 04          bcc @NotPrint
+000361r 2  C9 7F          cmp #$7F
+000363r 2  90 02          bcc @DoPrint
+000365r 2               @NotPrint:
+000365r 2  A9 2E          lda #'.'
+000367r 2               @DoPrint:
+000367r 2  5A             phy
+000368r 2  20 rr rr       jsr Chrout
+00036Br 2  7A             ply
+00036Cr 2  C8             iny
+00036Dr 2  C0 08          cpy #8
+00036Fr 2  90 EA          bcc @AsciiLoop
+000371r 2                 ; Advance MON_ADDR by 8
+000371r 2  18             clc
+000372r 2  A5 2E          lda MON_ADDR
+000374r 2  69 08          adc #8
+000376r 2  85 2E          sta MON_ADDR
+000378r 2  90 04          bcc @NoCarry
+00037Ar 2  E6 2F          inc MON_ADDR+1
+00037Cr 2  F0 05          beq @Wrapped                  ; High byte became $00 = wrapped past $FFFF
+00037Er 2               @NoCarry:
+00037Er 2  20 rr rr       jsr MonPrintCRLF
+000381r 2  18             clc                           ; Signal no overflow
+000382r 2  60             rts
+000383r 2               @Wrapped:
+000383r 2  20 rr rr       jsr MonPrintCRLF
+000386r 2  38             sec                           ; Signal overflow
+000387r 2  60             rts
+000388r 2               
+000388r 2               ; ============================================================================
+000388r 2               ; MonCmdD — Disassemble 65C02 instructions
+000388r 2               ; Syntax: D [addr] [addr]
+000388r 2               ; Default: 20 lines. Remembers position for continuation.
+000388r 2               ; ============================================================================
+000388r 2               
+000388r 2               MonCmdD:
+000388r 2  20 rr rr       jsr MonSkipSpaces
+00038Br 2  20 rr rr       jsr MonParseHex4
+00038Er 2  90 2A          bcc @UseDefault
+000390r 2                 ; Got first address
+000390r 2  A5 2E          lda MON_ADDR
+000392r 2  85 32          sta MON_TMP
+000394r 2  A5 2F          lda MON_ADDR+1
+000396r 2  85 33          sta MON_TMP+1
+000398r 2  20 rr rr       jsr MonSkipSpaces
+00039Br 2  20 rr rr       jsr MonParseHex4
+00039Er 2  90 12          bcc @StartOnly
+0003A0r 2                 ; Got end address
+0003A0r 2  A5 2E          lda MON_ADDR
+0003A2r 2  85 30          sta MON_END
+0003A4r 2  A5 2F          lda MON_ADDR+1
+0003A6r 2  85 31          sta MON_END+1
+0003A8r 2  A5 32          lda MON_TMP
+0003AAr 2  85 2E          sta MON_ADDR
+0003ACr 2  A5 33          lda MON_TMP+1
+0003AEr 2  85 2F          sta MON_ADDR+1
+0003B0r 2  80 15          bra @DisRange
+0003B2r 2               @StartOnly:
+0003B2r 2  A5 32          lda MON_TMP
+0003B4r 2  85 2E          sta MON_ADDR
+0003B6r 2  A5 33          lda MON_TMP+1
+0003B8r 2  85 2F          sta MON_ADDR+1
+0003BAr 2               @UseDefault:
+0003BAr 2                 ; Disassemble 20 lines
+0003BAr 2  A2 14          ldx #20
+0003BCr 2               @DisCountLoop:
+0003BCr 2  DA             phx
+0003BDr 2  20 rr rr       jsr DisOneLine
+0003C0r 2  FA             plx
+0003C1r 2  B0 17          bcs @DisDone                  ; Carry set = address wrapped past $FFFF
+0003C3r 2  CA             dex
+0003C4r 2  D0 F6          bne @DisCountLoop
+0003C6r 2  60             rts
+0003C7r 2               @DisRange:
+0003C7r 2  20 rr rr       jsr DisOneLine
+0003CAr 2  B0 0E          bcs @DisDone                  ; Carry set = address wrapped past $FFFF
+0003CCr 2                 ; Check if MON_ADDR > MON_END
+0003CCr 2  A5 31          lda MON_END+1
+0003CEr 2  C5 2F          cmp MON_ADDR+1
+0003D0r 2  90 08          bcc @DisDone
+0003D2r 2  D0 F3          bne @DisRange
+0003D4r 2  A5 30          lda MON_END
+0003D6r 2  C5 2E          cmp MON_ADDR
+0003D8r 2  B0 ED          bcs @DisRange
+0003DAr 2               @DisDone:
+0003DAr 2  60             rts
+0003DBr 2               
+0003DBr 2               ; ============================================================================
+0003DBr 2               ; DisOneLine — Disassemble one instruction at MON_ADDR
+0003DBr 2               ; Prints line, advances MON_ADDR by instruction length.
+0003DBr 2               ; Uses: MON_BYTE=opcode, MON_TMP=mnemonic idx, MON_TMP+1=mode
+0003DBr 2               ;       Stack holds instruction length throughout.
+0003DBr 2               ; ============================================================================
+0003DBr 2               
+0003DBr 2               DisOneLine:
+0003DBr 2                 ; Read opcode and look up table
+0003DBr 2  A0 00          ldy #0
+0003DDr 2  B1 2E          lda (MON_ADDR),y
+0003DFr 2  85 34          sta MON_BYTE                  ; save opcode
+0003E1r 2  0A             asl a                         ; opcode * 2 for table index
+0003E2r 2  AA             tax
+0003E3r 2  90 0C          bcc @LowHalf                  ; carry clear = opcodes $00-$7F
+0003E5r 2  BD rr rr       lda DisOpcodeTable+256,x      ; opcodes $80-$FF: offset by 256
+0003E8r 2  85 32          sta MON_TMP                   ; mnemonic index
+0003EAr 2  BD rr rr       lda DisOpcodeTable+257,x
+0003EDr 2  85 33          sta MON_TMP+1                 ; addressing mode
+0003EFr 2  80 0A          bra @GotEntry
+0003F1r 2               @LowHalf:
+0003F1r 2  BD rr rr       lda DisOpcodeTable,x
+0003F4r 2  85 32          sta MON_TMP                   ; mnemonic index
+0003F6r 2  BD rr rr       lda DisOpcodeTable+1,x
+0003F9r 2  85 33          sta MON_TMP+1                 ; addressing mode
+0003FBr 2               @GotEntry:
+0003FBr 2                 ; Get instruction length from mode
+0003FBr 2  A6 33          ldx MON_TMP+1
+0003FDr 2  BD rr rr       lda DisModeSizes,x
+000400r 2  1A             inc a                         ; +1 for opcode = total length
+000401r 2  48             pha                           ; save on stack (stays until end)
+000402r 2                 ; Print prefix ".,ADDR" (no space — consistent with M command's .:ADDR)
+000402r 2  A9 2E          lda #'.'
 000404r 2  20 rr rr       jsr Chrout
-000407r 2  A9 43          lda #'C'
+000407r 2  A9 2C          lda #','
 000409r 2  20 rr rr       jsr Chrout
-00040Cr 2  A9 3D          lda #'='
-00040Er 2  20 rr rr       jsr Chrout
-000411r 2                 ; Print PC (adjusted: BRK_PC - 2)
-000411r 2  38             sec
-000412r 2  AD 11 03       lda BRK_PCL
-000415r 2  E9 02          sbc #2
-000417r 2  85 2E          sta MON_ADDR
-000419r 2  AD 12 03       lda BRK_PCH
-00041Cr 2  E9 00          sbc #0
-00041Er 2  85 2F          sta MON_ADDR + 1
-000420r 2  20 rr rr       jsr MonPrintHex4
-000423r 2  A9 20          lda #' '
-000425r 2  20 rr rr       jsr Chrout
-000428r 2               
-000428r 2                 ; "A="
-000428r 2  A9 41          lda #'A'
-00042Ar 2  20 rr rr       jsr Chrout
-00042Dr 2  A9 3D          lda #'='
-00042Fr 2  20 rr rr       jsr Chrout
-000432r 2  AD 13 03       lda BRK_A
-000435r 2  20 rr rr       jsr MonPrintHex2
-000438r 2  A9 20          lda #' '
-00043Ar 2  20 rr rr       jsr Chrout
-00043Dr 2               
-00043Dr 2                 ; "X="
-00043Dr 2  A9 58          lda #'X'
-00043Fr 2  20 rr rr       jsr Chrout
-000442r 2  A9 3D          lda #'='
-000444r 2  20 rr rr       jsr Chrout
-000447r 2  AD 14 03       lda BRK_X
-00044Ar 2  20 rr rr       jsr MonPrintHex2
-00044Dr 2  A9 20          lda #' '
-00044Fr 2  20 rr rr       jsr Chrout
-000452r 2               
-000452r 2                 ; "Y="
-000452r 2  A9 59          lda #'Y'
-000454r 2  20 rr rr       jsr Chrout
-000457r 2  A9 3D          lda #'='
-000459r 2  20 rr rr       jsr Chrout
-00045Cr 2  AD 15 03       lda BRK_Y
-00045Fr 2  20 rr rr       jsr MonPrintHex2
-000462r 2  A9 20          lda #' '
-000464r 2  20 rr rr       jsr Chrout
-000467r 2               
-000467r 2                 ; "SP="
-000467r 2  A9 53          lda #'S'
-000469r 2  20 rr rr       jsr Chrout
-00046Cr 2  A9 50          lda #'P'
-00046Er 2  20 rr rr       jsr Chrout
-000471r 2  A9 3D          lda #'='
-000473r 2  20 rr rr       jsr Chrout
-000476r 2  AD 16 03       lda BRK_SP
-000479r 2  20 rr rr       jsr MonPrintHex2
-00047Cr 2  A9 20          lda #' '
-00047Er 2  20 rr rr       jsr Chrout
-000481r 2               
-000481r 2                 ; Flags: NV-BDIZC
-000481r 2  AD 10 03       lda BRK_P
-000484r 2  85 34          sta MON_BYTE                  ; Save flags for bit testing
-000486r 2  A2 00          ldx #0
-000488r 2               @FlagLoop:
-000488r 2  BD rr rr       lda MonFlagChars,x
-00048Br 2  F0 11          beq @FlagsDone
-00048Dr 2  06 34          asl MON_BYTE                  ; Shift next flag bit into carry
-00048Fr 2  B0 04          bcs @FlagSet
-000491r 2  A9 2D          lda #'-'                      ; Flag clear — print dash
-000493r 2  80 03          bra @FlagPrint
-000495r 2               @FlagSet:
-000495r 2                 ; A already has the flag character
-000495r 2  BD rr rr       lda MonFlagChars,x
-000498r 2               @FlagPrint:
-000498r 2  20 rr rr       jsr Chrout
-00049Br 2  E8             inx
-00049Cr 2  80 EA          bra @FlagLoop
-00049Er 2               @FlagsDone:
-00049Er 2  20 rr rr       jsr MonPrintCRLF
-0004A1r 2  60             rts
-0004A2r 2               
-0004A2r 2               MonFlagChars:
-0004A2r 2  4E 56 2D 42    .byte "NV-BDIZC", 0
-0004A6r 2  44 49 5A 43  
-0004AAr 2  00           
-0004ABr 2               
-0004ABr 2               ; ============================================================================
-0004ABr 2               ; Hex Parsing Utilities
-0004ABr 2               ; ============================================================================
-0004ABr 2               
-0004ABr 2               ; MonParseHex4 — Parse up to 4 hex digits from MON_LINBUF into MON_ADDR
-0004ABr 2               ; Input:  MON_IDX points to current position in MON_LINBUF
-0004ABr 2               ; Output: MON_ADDR/MON_ADDR+1 = parsed 16-bit value, carry set if valid
-0004ABr 2               ;         MON_IDX advanced past parsed digits
-0004ABr 2               
-0004ABr 2               MonParseHex4:
-0004ABr 2  64 2E          stz MON_ADDR
-0004ADr 2  64 2F          stz MON_ADDR + 1
-0004AFr 2  A2 00          ldx #0                        ; Digit count
-0004B1r 2               @ParseLoop:
-0004B1r 2  A4 35          ldy MON_IDX
-0004B3r 2  B9 34 04       lda MON_LINBUF,y
-0004B6r 2  20 rr rr       jsr MonCharToNibble           ; Convert ASCII to 0-15, carry clear if valid
-0004B9r 2  B0 1B          bcs @ParseDone                ; Not a hex digit — stop
-0004BBr 2                 ; Shift result left 4 bits and OR in new nibble
-0004BBr 2  06 2E          asl MON_ADDR
-0004BDr 2  26 2F          rol MON_ADDR + 1
-0004BFr 2  06 2E          asl MON_ADDR
-0004C1r 2  26 2F          rol MON_ADDR + 1
-0004C3r 2  06 2E          asl MON_ADDR
-0004C5r 2  26 2F          rol MON_ADDR + 1
-0004C7r 2  06 2E          asl MON_ADDR
-0004C9r 2  26 2F          rol MON_ADDR + 1
-0004CBr 2  05 2E          ora MON_ADDR
-0004CDr 2  85 2E          sta MON_ADDR
-0004CFr 2  E6 35          inc MON_IDX
-0004D1r 2  E8             inx
-0004D2r 2  E0 04          cpx #4                        ; Max 4 digits
-0004D4r 2  90 DB          bcc @ParseLoop
-0004D6r 2               @ParseDone:
-0004D6r 2  E0 00          cpx #0                        ; Did we parse at least one digit?
-0004D8r 2  F0 02          beq @ParseFail
-0004DAr 2  38             sec                           ; Success
-0004DBr 2  60             rts
-0004DCr 2               @ParseFail:
-0004DCr 2  18             clc                           ; Failure — no digits parsed
-0004DDr 2  60             rts
+00040Cr 2                 ; Print address
+00040Cr 2  20 rr rr       jsr MonPrintHex4
+00040Fr 2  20 rr rr       jsr MonPrintSpace
+000412r 2  20 rr rr       jsr MonPrintSpace
+000415r 2                 ; Print opcode byte
+000415r 2  A5 34          lda MON_BYTE
+000417r 2  20 rr rr       jsr MonPrintHex2
+00041Ar 2                 ; Print 2nd byte or padding
+00041Ar 2  68             pla
+00041Br 2  48             pha                           ; peek at length
+00041Cr 2  C9 02          cmp #2
+00041Er 2  90 0C          bcc @Pad1
+000420r 2  20 rr rr       jsr MonPrintSpace
+000423r 2  A0 01          ldy #1
+000425r 2  B1 2E          lda (MON_ADDR),y
+000427r 2  20 rr rr       jsr MonPrintHex2
+00042Ar 2  80 09          bra @Check3
+00042Cr 2               @Pad1:
+00042Cr 2  20 rr rr       jsr MonPrintSpace
+00042Fr 2  20 rr rr       jsr MonPrintSpace
+000432r 2  20 rr rr       jsr MonPrintSpace
+000435r 2               @Check3:
+000435r 2  68             pla
+000436r 2  48             pha
+000437r 2  C9 03          cmp #3
+000439r 2  90 0C          bcc @Pad2
+00043Br 2  20 rr rr       jsr MonPrintSpace
+00043Er 2  A0 02          ldy #2
+000440r 2  B1 2E          lda (MON_ADDR),y
+000442r 2  20 rr rr       jsr MonPrintHex2
+000445r 2  80 09          bra @AfterBytes
+000447r 2               @Pad2:
+000447r 2  20 rr rr       jsr MonPrintSpace
+00044Ar 2  20 rr rr       jsr MonPrintSpace
+00044Dr 2  20 rr rr       jsr MonPrintSpace
+000450r 2               @AfterBytes:
+000450r 2                 ; Separator before mnemonic
+000450r 2  20 rr rr       jsr MonPrintSpace
+000453r 2  20 rr rr       jsr MonPrintSpace
+000456r 2                 ; Print mnemonic (3 chars)
+000456r 2  20 rr rr       jsr DisPrintMnemonic
+000459r 2                 ; For RMB/SMB/BBR/BBS, append bit number digit
+000459r 2  A5 32          lda MON_TMP
+00045Br 2  C9 03          cmp #MN_BBR
+00045Dr 2  F0 11          beq @BitNum
+00045Fr 2  C9 04          cmp #MN_BBS
+000461r 2  F0 0D          beq @BitNum
+000463r 2  C9 2E          cmp #MN_RMB
+000465r 2  F0 09          beq @BitNum
+000467r 2  C9 37          cmp #MN_SMB
+000469r 2  F0 05          beq @BitNum
+00046Br 2  20 rr rr       jsr MonPrintSpace             ; normal mnemonic — space separator
+00046Er 2  80 11          bra @Operand
+000470r 2               @BitNum:
+000470r 2  A5 34          lda MON_BYTE                  ; opcode encodes bit in upper nibble
+000472r 2  4A             lsr a
+000473r 2  4A             lsr a
+000474r 2  4A             lsr a
+000475r 2  4A             lsr a
+000476r 2  29 07          and #$07
+000478r 2  18             clc
+000479r 2  69 30          adc #'0'
+00047Br 2  20 rr rr       jsr Chrout
+00047Er 2  20 rr rr       jsr MonPrintSpace
+000481r 2               @Operand:
+000481r 2                 ; Print operand based on addressing mode
+000481r 2  A5 33          lda MON_TMP+1
+000483r 2  20 rr rr       jsr DisPrintOperand
+000486r 2                 ; CRLF
+000486r 2  20 rr rr       jsr MonPrintCRLF
+000489r 2                 ; Advance MON_ADDR by instruction length
+000489r 2  68             pla                           ; length from stack
+00048Ar 2  18             clc
+00048Br 2  65 2E          adc MON_ADDR
+00048Dr 2  85 2E          sta MON_ADDR
+00048Fr 2  90 04          bcc @NoWrap
+000491r 2  E6 2F          inc MON_ADDR+1
+000493r 2  F0 02          beq @DisWrapped               ; High byte became $00 = wrapped past $FFFF
+000495r 2               @NoWrap:
+000495r 2  18             clc                           ; Signal no overflow
+000496r 2  60             rts
+000497r 2               @DisWrapped:
+000497r 2  38             sec                           ; Signal overflow
+000498r 2  60             rts
+000499r 2               
+000499r 2               ; DisPrintMnemonic — Print 3-char mnemonic from MON_TMP index
+000499r 2               
+000499r 2               DisPrintMnemonic:
+000499r 2  A5 32          lda MON_TMP                   ; mnemonic index
+00049Br 2  0A             asl a                         ; index * 2
+00049Cr 2  18             clc
+00049Dr 2  65 32          adc MON_TMP                   ; + index = index * 3
+00049Fr 2  AA             tax
+0004A0r 2  BD rr rr       lda DisMnemonics,x
+0004A3r 2  DA             phx
+0004A4r 2  20 rr rr       jsr Chrout
+0004A7r 2  FA             plx
+0004A8r 2  BD rr rr       lda DisMnemonics+1,x
+0004ABr 2  DA             phx
+0004ACr 2  20 rr rr       jsr Chrout
+0004AFr 2  FA             plx
+0004B0r 2  BD rr rr       lda DisMnemonics+2,x
+0004B3r 2  4C rr rr       jmp Chrout
+0004B6r 2               
+0004B6r 2               ; DisPrintOperand — Dispatch to addressing mode operand printer
+0004B6r 2               ; Input: A = addressing mode index
+0004B6r 2               
+0004B6r 2               DisPrintOperand:
+0004B6r 2  0A             asl a                         ; mode * 2 for word table index
+0004B7r 2  AA             tax
+0004B8r 2  7C rr rr       jmp (DisOperandJmpTable,x)    ; handler does RTS to our caller
+0004BBr 2               
+0004BBr 2               ; ============================================================================
+0004BBr 2               ; Addressing Mode Operand Handlers
+0004BBr 2               ; Each handler prints the operand and returns via RTS.
+0004BBr 2               ; ============================================================================
+0004BBr 2               
+0004BBr 2               DisOpImp:
+0004BBr 2  60             rts
+0004BCr 2               
+0004BCr 2               DisOpAcc:
+0004BCr 2  A9 41          lda #'A'
+0004BEr 2  4C rr rr       jmp Chrout
+0004C1r 2               
+0004C1r 2               DisOpImm:
+0004C1r 2  A9 23          lda #'#'
+0004C3r 2  20 rr rr       jsr Chrout
+0004C6r 2  A9 24          lda #'$'
+0004C8r 2  20 rr rr       jsr Chrout
+0004CBr 2  A0 01          ldy #1
+0004CDr 2  B1 2E          lda (MON_ADDR),y
+0004CFr 2  4C rr rr       jmp MonPrintHex2
+0004D2r 2               
+0004D2r 2               DisOpZp:
+0004D2r 2  A9 24          lda #'$'
+0004D4r 2  20 rr rr       jsr Chrout
+0004D7r 2  A0 01          ldy #1
+0004D9r 2  B1 2E          lda (MON_ADDR),y
+0004DBr 2  4C rr rr       jmp MonPrintHex2
 0004DEr 2               
-0004DEr 2               ; MonParseHex2 — Parse up to 2 hex digits from MON_LINBUF into A
-0004DEr 2               ; Input:  MON_IDX points to current position in MON_LINBUF
-0004DEr 2               ; Output: A = parsed 8-bit value, carry set if valid
-0004DEr 2               ;         MON_IDX advanced past parsed digits
-0004DEr 2               
-0004DEr 2               MonParseHex2:
-0004DEr 2  64 34          stz MON_BYTE
-0004E0r 2  A2 00          ldx #0                        ; Digit count
-0004E2r 2               @ParseLoop:
-0004E2r 2  A4 35          ldy MON_IDX
-0004E4r 2  B9 34 04       lda MON_LINBUF,y
-0004E7r 2  20 rr rr       jsr MonCharToNibble
-0004EAr 2  B0 13          bcs @ParseDone
-0004ECr 2  06 34          asl MON_BYTE
-0004EEr 2  06 34          asl MON_BYTE
-0004F0r 2  06 34          asl MON_BYTE
-0004F2r 2  06 34          asl MON_BYTE
-0004F4r 2  05 34          ora MON_BYTE
-0004F6r 2  85 34          sta MON_BYTE
-0004F8r 2  E6 35          inc MON_IDX
-0004FAr 2  E8             inx
-0004FBr 2  E0 02          cpx #2
-0004FDr 2  90 E3          bcc @ParseLoop
-0004FFr 2               @ParseDone:
-0004FFr 2  E0 00          cpx #0
-000501r 2  F0 04          beq @ParseFail
-000503r 2  A5 34          lda MON_BYTE
-000505r 2  38             sec
-000506r 2  60             rts
-000507r 2               @ParseFail:
-000507r 2  18             clc
-000508r 2  60             rts
-000509r 2               
-000509r 2               ; MonCharToNibble — Convert ASCII hex char in A to nibble value 0-15
-000509r 2               ; Input:  A = ASCII character
-000509r 2               ; Output: A = 0-15 if valid hex digit, carry clear
-000509r 2               ;         carry set if not a valid hex digit (A preserved)
-000509r 2               
-000509r 2               MonCharToNibble:
-000509r 2  C9 30          cmp #'0'
-00050Br 2  90 23          bcc @NotHex
-00050Dr 2  C9 3A          cmp #'9'+1
-00050Fr 2  90 15          bcc @IsDigit
-000511r 2  C9 41          cmp #'A'
-000513r 2  90 04          bcc @CheckLower
-000515r 2  C9 47          cmp #'F'+1
-000517r 2  90 12          bcc @IsUpper
-000519r 2               @CheckLower:
-000519r 2  C9 61          cmp #'a'
-00051Br 2  90 13          bcc @NotHex
-00051Dr 2  C9 67          cmp #'f'+1
-00051Fr 2  B0 0F          bcs @NotHex
-000521r 2                 ; Lowercase a-f
-000521r 2  38             sec
-000522r 2  E9 57          sbc #('a' - 10)
-000524r 2  18             clc
-000525r 2  60             rts
-000526r 2               @IsDigit:
-000526r 2  38             sec
-000527r 2  E9 30          sbc #'0'
-000529r 2  18             clc
-00052Ar 2  60             rts
-00052Br 2               @IsUpper:
-00052Br 2  38             sec
-00052Cr 2  E9 37          sbc #('A' - 10)
-00052Er 2  18             clc
-00052Fr 2  60             rts
-000530r 2               @NotHex:
-000530r 2  38             sec
-000531r 2  60             rts
+0004DEr 2               DisOpZpx:
+0004DEr 2  20 rr rr       jsr DisOpZp
+0004E1r 2  A9 2C          lda #','
+0004E3r 2  20 rr rr       jsr Chrout
+0004E6r 2  A9 58          lda #'X'
+0004E8r 2  4C rr rr       jmp Chrout
+0004EBr 2               
+0004EBr 2               DisOpZpy:
+0004EBr 2  20 rr rr       jsr DisOpZp
+0004EEr 2  A9 2C          lda #','
+0004F0r 2  20 rr rr       jsr Chrout
+0004F3r 2  A9 59          lda #'Y'
+0004F5r 2  4C rr rr       jmp Chrout
+0004F8r 2               
+0004F8r 2               DisOpAbs:
+0004F8r 2  A9 24          lda #'$'
+0004FAr 2  20 rr rr       jsr Chrout
+0004FDr 2  A0 02          ldy #2
+0004FFr 2  B1 2E          lda (MON_ADDR),y              ; high byte
+000501r 2  20 rr rr       jsr MonPrintHex2
+000504r 2  A0 01          ldy #1
+000506r 2  B1 2E          lda (MON_ADDR),y              ; low byte
+000508r 2  4C rr rr       jmp MonPrintHex2
+00050Br 2               
+00050Br 2               DisOpAbx:
+00050Br 2  20 rr rr       jsr DisOpAbs
+00050Er 2  A9 2C          lda #','
+000510r 2  20 rr rr       jsr Chrout
+000513r 2  A9 58          lda #'X'
+000515r 2  4C rr rr       jmp Chrout
+000518r 2               
+000518r 2               DisOpAby:
+000518r 2  20 rr rr       jsr DisOpAbs
+00051Br 2  A9 2C          lda #','
+00051Dr 2  20 rr rr       jsr Chrout
+000520r 2  A9 59          lda #'Y'
+000522r 2  4C rr rr       jmp Chrout
+000525r 2               
+000525r 2               DisOpInd:
+000525r 2  A9 28          lda #'('
+000527r 2  20 rr rr       jsr Chrout
+00052Ar 2  20 rr rr       jsr DisOpAbs
+00052Dr 2  A9 29          lda #')'
+00052Fr 2  4C rr rr       jmp Chrout
 000532r 2               
-000532r 2               ; MonSkipSpaces — Advance MON_IDX past whitespace in MON_LINBUF
-000532r 2               
-000532r 2               MonSkipSpaces:
-000532r 2  A4 35          ldy MON_IDX
-000534r 2  B9 34 04       lda MON_LINBUF,y
-000537r 2  C9 20          cmp #' '
-000539r 2  D0 04          bne @Done
-00053Br 2  E6 35          inc MON_IDX
-00053Dr 2  80 F3          bra MonSkipSpaces
-00053Fr 2               @Done:
-00053Fr 2  60             rts
-000540r 2               
-000540r 2               ; ============================================================================
-000540r 2               ; Hex Output Utilities
-000540r 2               ; ============================================================================
-000540r 2               
-000540r 2               ; MonPrintHex2 — Print A as two hex digits
-000540r 2               ; Input:  A = byte to print
-000540r 2               ; Modifies: A, flags
-000540r 2               
-000540r 2               MonPrintHex2:
-000540r 2  48             pha                           ; Save original byte
-000541r 2  4A             lsr                           ; Shift high nibble down
-000542r 2  4A             lsr
-000543r 2  4A             lsr
-000544r 2  4A             lsr
-000545r 2  20 rr rr       jsr @PrintNibble              ; Print high nibble
-000548r 2  68             pla                           ; Restore original byte
-000549r 2  29 0F          and #$0F                      ; Isolate low nibble
-00054Br 2               @PrintNibble:
-00054Br 2  C9 0A          cmp #10
-00054Dr 2  90 06          bcc @IsDigit
-00054Fr 2  18             clc
-000550r 2  69 37          adc #('A' - 10)
-000552r 2  4C rr rr       jmp Chrout
-000555r 2               @IsDigit:
-000555r 2  18             clc
-000556r 2  69 30          adc #'0'
-000558r 2  4C rr rr       jmp Chrout
-00055Br 2               
-00055Br 2               ; MonPrintHex4 — Print MON_ADDR as four hex digits
-00055Br 2               ; Input:  MON_ADDR, MON_ADDR+1 = 16-bit value
-00055Br 2               ; Modifies: A, flags
-00055Br 2               
-00055Br 2               MonPrintHex4:
-00055Br 2  A5 2F          lda MON_ADDR + 1              ; High byte first
-00055Dr 2  20 rr rr       jsr MonPrintHex2
-000560r 2  A5 2E          lda MON_ADDR                  ; Then low byte
-000562r 2  4C rr rr       jmp MonPrintHex2
-000565r 2               
-000565r 2               ; MonPrintSpace — Print a space character
-000565r 2               
-000565r 2               MonPrintSpace:
-000565r 2  A9 20          lda #' '
-000567r 2  4C rr rr       jmp Chrout
-00056Ar 2               
-00056Ar 2               ; MonPrintCRLF — Print carriage return + line feed
-00056Ar 2               
-00056Ar 2               MonPrintCRLF:
-00056Ar 2  A9 0D          lda #$0D
-00056Cr 2  20 rr rr       jsr Chrout
-00056Fr 2  A9 0A          lda #$0A
-000571r 2  4C rr rr       jmp Chrout
-000574r 2               
-000574r 2               ; MonPrintError — Print "?" for unrecognized command
-000574r 2               
-000574r 2               MonPrintError:
-000574r 2  A9 3F          lda #'?'
-000576r 2  20 rr rr       jsr Chrout
-000579r 2  4C rr rr       jmp MonPrintCRLF
-00057Cr 2               
-00057Cr 2               ; MonPrintBanner — Print the monitor banner string
-00057Cr 2               
-00057Cr 2               MonPrintBanner:
-00057Cr 2  A2 00          ldx #0
-00057Er 2               @Loop:
-00057Er 2  BD rr rr       lda MonStrBanner,x
-000581r 2  F0 06          beq @Done
-000583r 2  20 rr rr       jsr Chrout
-000586r 2  E8             inx
-000587r 2  80 F5          bra @Loop
-000589r 2               @Done:
-000589r 2  60             rts
-00058Ar 2               
-00058Ar 2               ; ============================================================================
-00058Ar 2               ; String Data
-00058Ar 2               ; ============================================================================
-00058Ar 2               
-00058Ar 2               MonStrBanner:
-00058Ar 2  43 4F 42 20    .byte "COB MONITOR v1.0", $0D, $0A, 0
-00058Er 2  4D 4F 4E 49  
-000592r 2  54 4F 52 20  
-00059Dr 2               MonStrBrk:
-00059Dr 2  42 52 4B 20    .byte "BRK AT $", 0
-0005A1r 2  41 54 20 24  
-0005A5r 2  00           
-0005A6r 2               
-0005A6r 2               ; ============================================================================
-0005A6r 2               ; Disassembler Data Tables
-0005A6r 2               ; ============================================================================
-0005A6r 2               
-0005A6r 2               ; Mnemonic string table — 71 entries x 3 chars = 213 bytes
-0005A6r 2               DisMnemonics:
-0005A6r 2  41 44 43       .byte "ADC"              ; 0
-0005A9r 2  41 4E 44       .byte "AND"              ; 1
-0005ACr 2  41 53 4C       .byte "ASL"              ; 2
-0005AFr 2  42 42 52       .byte "BBR"              ; 3
-0005B2r 2  42 42 53       .byte "BBS"              ; 4
-0005B5r 2  42 43 43       .byte "BCC"              ; 5
-0005B8r 2  42 43 53       .byte "BCS"              ; 6
-0005BBr 2  42 45 51       .byte "BEQ"              ; 7
-0005BEr 2  42 49 54       .byte "BIT"              ; 8
-0005C1r 2  42 4D 49       .byte "BMI"              ; 9
-0005C4r 2  42 4E 45       .byte "BNE"              ; 10
-0005C7r 2  42 50 4C       .byte "BPL"              ; 11
-0005CAr 2  42 52 41       .byte "BRA"              ; 12
-0005CDr 2  42 52 4B       .byte "BRK"              ; 13
-0005D0r 2  42 56 43       .byte "BVC"              ; 14
-0005D3r 2  42 56 53       .byte "BVS"              ; 15
-0005D6r 2  43 4C 43       .byte "CLC"              ; 16
-0005D9r 2  43 4C 44       .byte "CLD"              ; 17
-0005DCr 2  43 4C 49       .byte "CLI"              ; 18
-0005DFr 2  43 4C 56       .byte "CLV"              ; 19
-0005E2r 2  43 4D 50       .byte "CMP"              ; 20
-0005E5r 2  43 50 58       .byte "CPX"              ; 21
-0005E8r 2  43 50 59       .byte "CPY"              ; 22
-0005EBr 2  44 45 43       .byte "DEC"              ; 23
-0005EEr 2  44 45 58       .byte "DEX"              ; 24
-0005F1r 2  44 45 59       .byte "DEY"              ; 25
-0005F4r 2  45 4F 52       .byte "EOR"              ; 26
-0005F7r 2  49 4E 43       .byte "INC"              ; 27
-0005FAr 2  49 4E 58       .byte "INX"              ; 28
-0005FDr 2  49 4E 59       .byte "INY"              ; 29
-000600r 2  4A 4D 50       .byte "JMP"              ; 30
-000603r 2  4A 53 52       .byte "JSR"              ; 31
-000606r 2  4C 44 41       .byte "LDA"              ; 32
-000609r 2  4C 44 58       .byte "LDX"              ; 33
-00060Cr 2  4C 44 59       .byte "LDY"              ; 34
-00060Fr 2  4C 53 52       .byte "LSR"              ; 35
-000612r 2  4E 4F 50       .byte "NOP"              ; 36
-000615r 2  4F 52 41       .byte "ORA"              ; 37
-000618r 2  50 48 41       .byte "PHA"              ; 38
-00061Br 2  50 48 50       .byte "PHP"              ; 39
-00061Er 2  50 48 58       .byte "PHX"              ; 40
-000621r 2  50 48 59       .byte "PHY"              ; 41
-000624r 2  50 4C 41       .byte "PLA"              ; 42
-000627r 2  50 4C 50       .byte "PLP"              ; 43
-00062Ar 2  50 4C 58       .byte "PLX"              ; 44
-00062Dr 2  50 4C 59       .byte "PLY"              ; 45
-000630r 2  52 4D 42       .byte "RMB"              ; 46
-000633r 2  52 4F 4C       .byte "ROL"              ; 47
-000636r 2  52 4F 52       .byte "ROR"              ; 48
-000639r 2  52 54 49       .byte "RTI"              ; 49
-00063Cr 2  52 54 53       .byte "RTS"              ; 50
-00063Fr 2  53 42 43       .byte "SBC"              ; 51
-000642r 2  53 45 43       .byte "SEC"              ; 52
-000645r 2  53 45 44       .byte "SED"              ; 53
-000648r 2  53 45 49       .byte "SEI"              ; 54
-00064Br 2  53 4D 42       .byte "SMB"              ; 55
-00064Er 2  53 54 41       .byte "STA"              ; 56
-000651r 2  53 54 50       .byte "STP"              ; 57
-000654r 2  53 54 58       .byte "STX"              ; 58
-000657r 2  53 54 59       .byte "STY"              ; 59
-00065Ar 2  53 54 5A       .byte "STZ"              ; 60
-00065Dr 2  54 41 58       .byte "TAX"              ; 61
-000660r 2  54 41 59       .byte "TAY"              ; 62
-000663r 2  54 52 42       .byte "TRB"              ; 63
-000666r 2  54 53 42       .byte "TSB"              ; 64
-000669r 2  54 53 58       .byte "TSX"              ; 65
-00066Cr 2  54 58 41       .byte "TXA"              ; 66
-00066Fr 2  54 58 53       .byte "TXS"              ; 67
-000672r 2  54 59 41       .byte "TYA"              ; 68
-000675r 2  57 41 49       .byte "WAI"              ; 69
-000678r 2  3F 3F 3F       .byte "???"              ; 70 (undefined)
-00067Br 2               
-00067Br 2               ; Addressing mode operand size table (bytes beyond opcode)
-00067Br 2               DisModeSizes:
-00067Br 2  00             .byte 0                  ; AM_IMP  = 0
-00067Cr 2  00             .byte 0                  ; AM_ACC  = 1
-00067Dr 2  01             .byte 1                  ; AM_IMM  = 2
-00067Er 2  01             .byte 1                  ; AM_ZP   = 3
-00067Fr 2  01             .byte 1                  ; AM_ZPX  = 4
-000680r 2  01             .byte 1                  ; AM_ZPY  = 5
-000681r 2  02             .byte 2                  ; AM_ABS  = 6
-000682r 2  02             .byte 2                  ; AM_ABX  = 7
-000683r 2  02             .byte 2                  ; AM_ABY  = 8
-000684r 2  02             .byte 2                  ; AM_IND  = 9
-000685r 2  01             .byte 1                  ; AM_IZX  = 10
-000686r 2  01             .byte 1                  ; AM_IZY  = 11
-000687r 2  01             .byte 1                  ; AM_ZPI  = 12
-000688r 2  01             .byte 1                  ; AM_REL  = 13
-000689r 2  02             .byte 2                  ; AM_ZPR  = 14
-00068Ar 2  02             .byte 2                  ; AM_AIX  = 15
-00068Br 2               
-00068Br 2               ; Operand print dispatch table (16 addressing modes)
-00068Br 2               DisOperandJmpTable:
-00068Br 2  rr rr          .word DisOpImp             ; AM_IMP  = 0
-00068Dr 2  rr rr          .word DisOpAcc             ; AM_ACC  = 1
-00068Fr 2  rr rr          .word DisOpImm             ; AM_IMM  = 2
-000691r 2  rr rr          .word DisOpZp              ; AM_ZP   = 3
-000693r 2  rr rr          .word DisOpZpx             ; AM_ZPX  = 4
-000695r 2  rr rr          .word DisOpZpy             ; AM_ZPY  = 5
-000697r 2  rr rr          .word DisOpAbs             ; AM_ABS  = 6
-000699r 2  rr rr          .word DisOpAbx             ; AM_ABX  = 7
-00069Br 2  rr rr          .word DisOpAby             ; AM_ABY  = 8
-00069Dr 2  rr rr          .word DisOpInd             ; AM_IND  = 9
-00069Fr 2  rr rr          .word DisOpIzx             ; AM_IZX  = 10
-0006A1r 2  rr rr          .word DisOpIzy             ; AM_IZY  = 11
-0006A3r 2  rr rr          .word DisOpZpi             ; AM_ZPI  = 12
-0006A5r 2  rr rr          .word DisOpRel             ; AM_REL  = 13
-0006A7r 2  rr rr          .word DisOpZpr             ; AM_ZPR  = 14
-0006A9r 2  rr rr          .word DisOpAix             ; AM_AIX  = 15
-0006ABr 2               
-0006ABr 2               ; 65C02 Opcode Table — 256 entries x 2 bytes (mnemonic index, addressing mode)
-0006ABr 2               DisOpcodeTable:
-0006ABr 2                 ; --- $0x ---
-0006ABr 2  0D 00 25 0A    .byte MN_BRK,AM_IMP, MN_ORA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $00-$03
-0006AFr 2  46 00 46 00  
-0006B3r 2  40 03 25 03    .byte MN_TSB,AM_ZP,  MN_ORA,AM_ZP,  MN_ASL,AM_ZP,  MN_RMB,AM_ZP   ; $04-$07
-0006B7r 2  02 03 2E 03  
-0006BBr 2  27 00 25 02    .byte MN_PHP,AM_IMP, MN_ORA,AM_IMM, MN_ASL,AM_ACC, MN_UND,AM_IMP  ; $08-$0B
-0006BFr 2  02 01 46 00  
-0006C3r 2  40 06 25 06    .byte MN_TSB,AM_ABS, MN_ORA,AM_ABS, MN_ASL,AM_ABS, MN_BBR,AM_ZPR  ; $0C-$0F
-0006C7r 2  02 06 03 0E  
-0006CBr 2                 ; --- $1x ---
-0006CBr 2  0B 0D 25 0B    .byte MN_BPL,AM_REL, MN_ORA,AM_IZY, MN_ORA,AM_ZPI, MN_UND,AM_IMP  ; $10-$13
-0006CFr 2  25 0C 46 00  
-0006D3r 2  3F 03 25 04    .byte MN_TRB,AM_ZP,  MN_ORA,AM_ZPX, MN_ASL,AM_ZPX, MN_RMB,AM_ZP   ; $14-$17
-0006D7r 2  02 04 2E 03  
-0006DBr 2  10 00 25 08    .byte MN_CLC,AM_IMP, MN_ORA,AM_ABY, MN_INC,AM_ACC, MN_UND,AM_IMP  ; $18-$1B
-0006DFr 2  1B 01 46 00  
-0006E3r 2  3F 06 25 07    .byte MN_TRB,AM_ABS, MN_ORA,AM_ABX, MN_ASL,AM_ABX, MN_BBR,AM_ZPR  ; $1C-$1F
-0006E7r 2  02 07 03 0E  
-0006EBr 2                 ; --- $2x ---
-0006EBr 2  1F 06 01 0A    .byte MN_JSR,AM_ABS, MN_AND,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $20-$23
-0006EFr 2  46 00 46 00  
-0006F3r 2  08 03 01 03    .byte MN_BIT,AM_ZP,  MN_AND,AM_ZP,  MN_ROL,AM_ZP,  MN_RMB,AM_ZP   ; $24-$27
-0006F7r 2  2F 03 2E 03  
-0006FBr 2  2B 00 01 02    .byte MN_PLP,AM_IMP, MN_AND,AM_IMM, MN_ROL,AM_ACC, MN_UND,AM_IMP  ; $28-$2B
-0006FFr 2  2F 01 46 00  
-000703r 2  08 06 01 06    .byte MN_BIT,AM_ABS, MN_AND,AM_ABS, MN_ROL,AM_ABS, MN_BBR,AM_ZPR  ; $2C-$2F
-000707r 2  2F 06 03 0E  
-00070Br 2                 ; --- $3x ---
-00070Br 2  09 0D 01 0B    .byte MN_BMI,AM_REL, MN_AND,AM_IZY, MN_AND,AM_ZPI, MN_UND,AM_IMP  ; $30-$33
-00070Fr 2  01 0C 46 00  
-000713r 2  08 04 01 04    .byte MN_BIT,AM_ZPX, MN_AND,AM_ZPX, MN_ROL,AM_ZPX, MN_RMB,AM_ZP   ; $34-$37
-000717r 2  2F 04 2E 03  
-00071Br 2  34 00 01 08    .byte MN_SEC,AM_IMP, MN_AND,AM_ABY, MN_DEC,AM_ACC, MN_UND,AM_IMP  ; $38-$3B
-00071Fr 2  17 01 46 00  
-000723r 2  08 07 01 07    .byte MN_BIT,AM_ABX, MN_AND,AM_ABX, MN_ROL,AM_ABX, MN_BBR,AM_ZPR  ; $3C-$3F
-000727r 2  2F 07 03 0E  
-00072Br 2                 ; --- $4x ---
-00072Br 2  31 00 1A 0A    .byte MN_RTI,AM_IMP, MN_EOR,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $40-$43
-00072Fr 2  46 00 46 00  
-000733r 2  46 00 1A 03    .byte MN_UND,AM_IMP, MN_EOR,AM_ZP,  MN_LSR,AM_ZP,  MN_RMB,AM_ZP   ; $44-$47
-000737r 2  23 03 2E 03  
-00073Br 2  26 00 1A 02    .byte MN_PHA,AM_IMP, MN_EOR,AM_IMM, MN_LSR,AM_ACC, MN_UND,AM_IMP  ; $48-$4B
-00073Fr 2  23 01 46 00  
-000743r 2  1E 06 1A 06    .byte MN_JMP,AM_ABS, MN_EOR,AM_ABS, MN_LSR,AM_ABS, MN_BBR,AM_ZPR  ; $4C-$4F
-000747r 2  23 06 03 0E  
-00074Br 2                 ; --- $5x ---
-00074Br 2  0E 0D 1A 0B    .byte MN_BVC,AM_REL, MN_EOR,AM_IZY, MN_EOR,AM_ZPI, MN_UND,AM_IMP  ; $50-$53
-00074Fr 2  1A 0C 46 00  
-000753r 2  46 00 1A 04    .byte MN_UND,AM_IMP, MN_EOR,AM_ZPX, MN_LSR,AM_ZPX, MN_RMB,AM_ZP   ; $54-$57
-000757r 2  23 04 2E 03  
-00075Br 2  12 00 1A 08    .byte MN_CLI,AM_IMP, MN_EOR,AM_ABY, MN_PHY,AM_IMP, MN_UND,AM_IMP  ; $58-$5B
-00075Fr 2  29 00 46 00  
-000763r 2  46 00 1A 07    .byte MN_UND,AM_IMP, MN_EOR,AM_ABX, MN_LSR,AM_ABX, MN_BBR,AM_ZPR  ; $5C-$5F
-000767r 2  23 07 03 0E  
-00076Br 2                 ; --- $6x ---
-00076Br 2  32 00 00 0A    .byte MN_RTS,AM_IMP, MN_ADC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $60-$63
-00076Fr 2  46 00 46 00  
-000773r 2  3C 03 00 03    .byte MN_STZ,AM_ZP,  MN_ADC,AM_ZP,  MN_ROR,AM_ZP,  MN_RMB,AM_ZP   ; $64-$67
-000777r 2  30 03 2E 03  
-00077Br 2  2A 00 00 02    .byte MN_PLA,AM_IMP, MN_ADC,AM_IMM, MN_ROR,AM_ACC, MN_UND,AM_IMP  ; $68-$6B
-00077Fr 2  30 01 46 00  
-000783r 2  1E 09 00 06    .byte MN_JMP,AM_IND, MN_ADC,AM_ABS, MN_ROR,AM_ABS, MN_BBR,AM_ZPR  ; $6C-$6F
-000787r 2  30 06 03 0E  
-00078Br 2                 ; --- $7x ---
-00078Br 2  0F 0D 00 0B    .byte MN_BVS,AM_REL, MN_ADC,AM_IZY, MN_ADC,AM_ZPI, MN_UND,AM_IMP  ; $70-$73
-00078Fr 2  00 0C 46 00  
-000793r 2  3C 04 00 04    .byte MN_STZ,AM_ZPX, MN_ADC,AM_ZPX, MN_ROR,AM_ZPX, MN_RMB,AM_ZP   ; $74-$77
-000797r 2  30 04 2E 03  
-00079Br 2  36 00 00 08    .byte MN_SEI,AM_IMP, MN_ADC,AM_ABY, MN_PLY,AM_IMP, MN_UND,AM_IMP  ; $78-$7B
-00079Fr 2  2D 00 46 00  
-0007A3r 2  1E 0F 00 07    .byte MN_JMP,AM_AIX, MN_ADC,AM_ABX, MN_ROR,AM_ABX, MN_BBR,AM_ZPR  ; $7C-$7F
-0007A7r 2  30 07 03 0E  
-0007ABr 2                 ; --- $8x ---
-0007ABr 2  0C 0D 38 0A    .byte MN_BRA,AM_REL, MN_STA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $80-$83
-0007AFr 2  46 00 46 00  
-0007B3r 2  3B 03 38 03    .byte MN_STY,AM_ZP,  MN_STA,AM_ZP,  MN_STX,AM_ZP,  MN_SMB,AM_ZP   ; $84-$87
-0007B7r 2  3A 03 37 03  
-0007BBr 2  19 00 08 02    .byte MN_DEY,AM_IMP, MN_BIT,AM_IMM, MN_TXA,AM_IMP, MN_UND,AM_IMP  ; $88-$8B
-0007BFr 2  42 00 46 00  
-0007C3r 2  3B 06 38 06    .byte MN_STY,AM_ABS, MN_STA,AM_ABS, MN_STX,AM_ABS, MN_BBS,AM_ZPR  ; $8C-$8F
-0007C7r 2  3A 06 04 0E  
-0007CBr 2                 ; --- $9x ---
-0007CBr 2  05 0D 38 0B    .byte MN_BCC,AM_REL, MN_STA,AM_IZY, MN_STA,AM_ZPI, MN_UND,AM_IMP  ; $90-$93
-0007CFr 2  38 0C 46 00  
-0007D3r 2  3B 04 38 04    .byte MN_STY,AM_ZPX, MN_STA,AM_ZPX, MN_STX,AM_ZPY, MN_SMB,AM_ZP   ; $94-$97
-0007D7r 2  3A 05 37 03  
-0007DBr 2  44 00 38 08    .byte MN_TYA,AM_IMP, MN_STA,AM_ABY, MN_TXS,AM_IMP, MN_UND,AM_IMP  ; $98-$9B
-0007DFr 2  43 00 46 00  
-0007E3r 2  3C 06 38 07    .byte MN_STZ,AM_ABS, MN_STA,AM_ABX, MN_STZ,AM_ABX, MN_BBS,AM_ZPR  ; $9C-$9F
-0007E7r 2  3C 07 04 0E  
-0007EBr 2                 ; --- $Ax ---
-0007EBr 2  22 02 20 0A    .byte MN_LDY,AM_IMM, MN_LDA,AM_IZX, MN_LDX,AM_IMM, MN_UND,AM_IMP  ; $A0-$A3
-0007EFr 2  21 02 46 00  
-0007F3r 2  22 03 20 03    .byte MN_LDY,AM_ZP,  MN_LDA,AM_ZP,  MN_LDX,AM_ZP,  MN_SMB,AM_ZP   ; $A4-$A7
-0007F7r 2  21 03 37 03  
-0007FBr 2  3E 00 20 02    .byte MN_TAY,AM_IMP, MN_LDA,AM_IMM, MN_TAX,AM_IMP, MN_UND,AM_IMP  ; $A8-$AB
-0007FFr 2  3D 00 46 00  
-000803r 2  22 06 20 06    .byte MN_LDY,AM_ABS, MN_LDA,AM_ABS, MN_LDX,AM_ABS, MN_BBS,AM_ZPR  ; $AC-$AF
-000807r 2  21 06 04 0E  
-00080Br 2                 ; --- $Bx ---
-00080Br 2  06 0D 20 0B    .byte MN_BCS,AM_REL, MN_LDA,AM_IZY, MN_LDA,AM_ZPI, MN_UND,AM_IMP  ; $B0-$B3
-00080Fr 2  20 0C 46 00  
-000813r 2  22 04 20 04    .byte MN_LDY,AM_ZPX, MN_LDA,AM_ZPX, MN_LDX,AM_ZPY, MN_SMB,AM_ZP   ; $B4-$B7
-000817r 2  21 05 37 03  
-00081Br 2  13 00 20 08    .byte MN_CLV,AM_IMP, MN_LDA,AM_ABY, MN_TSX,AM_IMP, MN_UND,AM_IMP  ; $B8-$BB
-00081Fr 2  41 00 46 00  
-000823r 2  22 07 20 07    .byte MN_LDY,AM_ABX, MN_LDA,AM_ABX, MN_LDX,AM_ABY, MN_BBS,AM_ZPR  ; $BC-$BF
-000827r 2  21 08 04 0E  
-00082Br 2                 ; --- $Cx ---
-00082Br 2  16 02 14 0A    .byte MN_CPY,AM_IMM, MN_CMP,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $C0-$C3
-00082Fr 2  46 00 46 00  
-000833r 2  16 03 14 03    .byte MN_CPY,AM_ZP,  MN_CMP,AM_ZP,  MN_DEC,AM_ZP,  MN_SMB,AM_ZP   ; $C4-$C7
-000837r 2  17 03 37 03  
-00083Br 2  1D 00 14 02    .byte MN_INY,AM_IMP, MN_CMP,AM_IMM, MN_DEX,AM_IMP, MN_WAI,AM_IMP  ; $C8-$CB
-00083Fr 2  18 00 45 00  
-000843r 2  16 06 14 06    .byte MN_CPY,AM_ABS, MN_CMP,AM_ABS, MN_DEC,AM_ABS, MN_BBS,AM_ZPR  ; $CC-$CF
-000847r 2  17 06 04 0E  
-00084Br 2                 ; --- $Dx ---
-00084Br 2  0A 0D 14 0B    .byte MN_BNE,AM_REL, MN_CMP,AM_IZY, MN_CMP,AM_ZPI, MN_UND,AM_IMP  ; $D0-$D3
-00084Fr 2  14 0C 46 00  
-000853r 2  46 00 14 04    .byte MN_UND,AM_IMP, MN_CMP,AM_ZPX, MN_DEC,AM_ZPX, MN_SMB,AM_ZP   ; $D4-$D7
-000857r 2  17 04 37 03  
-00085Br 2  11 00 14 08    .byte MN_CLD,AM_IMP, MN_CMP,AM_ABY, MN_PHX,AM_IMP, MN_STP,AM_IMP  ; $D8-$DB
-00085Fr 2  28 00 39 00  
-000863r 2  46 00 14 07    .byte MN_UND,AM_IMP, MN_CMP,AM_ABX, MN_DEC,AM_ABX, MN_BBS,AM_ZPR  ; $DC-$DF
-000867r 2  17 07 04 0E  
-00086Br 2                 ; --- $Ex ---
-00086Br 2  15 02 33 0A    .byte MN_CPX,AM_IMM, MN_SBC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $E0-$E3
-00086Fr 2  46 00 46 00  
-000873r 2  15 03 33 03    .byte MN_CPX,AM_ZP,  MN_SBC,AM_ZP,  MN_INC,AM_ZP,  MN_SMB,AM_ZP   ; $E4-$E7
-000877r 2  1B 03 37 03  
-00087Br 2  1C 00 33 02    .byte MN_INX,AM_IMP, MN_SBC,AM_IMM, MN_NOP,AM_IMP, MN_UND,AM_IMP  ; $E8-$EB
-00087Fr 2  24 00 46 00  
-000883r 2  15 06 33 06    .byte MN_CPX,AM_ABS, MN_SBC,AM_ABS, MN_INC,AM_ABS, MN_BBS,AM_ZPR  ; $EC-$EF
-000887r 2  1B 06 04 0E  
-00088Br 2                 ; --- $Fx ---
-00088Br 2  07 0D 33 0B    .byte MN_BEQ,AM_REL, MN_SBC,AM_IZY, MN_SBC,AM_ZPI, MN_UND,AM_IMP  ; $F0-$F3
-00088Fr 2  33 0C 46 00  
-000893r 2  46 00 33 04    .byte MN_UND,AM_IMP, MN_SBC,AM_ZPX, MN_INC,AM_ZPX, MN_SMB,AM_ZP   ; $F4-$F7
-000897r 2  1B 04 37 03  
-00089Br 2  35 00 33 08    .byte MN_SED,AM_IMP, MN_SBC,AM_ABY, MN_PLX,AM_IMP, MN_UND,AM_IMP  ; $F8-$FB
-00089Fr 2  2C 00 46 00  
-0008A3r 2  46 00 33 07    .byte MN_UND,AM_IMP, MN_SBC,AM_ABX, MN_INC,AM_ABX, MN_BBS,AM_ZPR  ; $FC-$FF
-0008A7r 2  1B 07 04 0E  
-0008ABr 2               
-0008ABr 1               .segment "BASIC"
+000532r 2               DisOpIzx:
+000532r 2  A9 28          lda #'('
+000534r 2  20 rr rr       jsr Chrout
+000537r 2  20 rr rr       jsr DisOpZp
+00053Ar 2  A9 2C          lda #','
+00053Cr 2  20 rr rr       jsr Chrout
+00053Fr 2  A9 58          lda #'X'
+000541r 2  20 rr rr       jsr Chrout
+000544r 2  A9 29          lda #')'
+000546r 2  4C rr rr       jmp Chrout
+000549r 2               
+000549r 2               DisOpIzy:
+000549r 2  A9 28          lda #'('
+00054Br 2  20 rr rr       jsr Chrout
+00054Er 2  20 rr rr       jsr DisOpZp
+000551r 2  A9 29          lda #')'
+000553r 2  20 rr rr       jsr Chrout
+000556r 2  A9 2C          lda #','
+000558r 2  20 rr rr       jsr Chrout
+00055Br 2  A9 59          lda #'Y'
+00055Dr 2  4C rr rr       jmp Chrout
+000560r 2               
+000560r 2               DisOpZpi:
+000560r 2  A9 28          lda #'('
+000562r 2  20 rr rr       jsr Chrout
+000565r 2  20 rr rr       jsr DisOpZp
+000568r 2  A9 29          lda #')'
+00056Ar 2  4C rr rr       jmp Chrout
+00056Dr 2               
+00056Dr 2               DisOpRel:
+00056Dr 2                 ; Target = current_addr + 2 + signed_offset
+00056Dr 2  A0 01          ldy #1
+00056Fr 2  B1 2E          lda (MON_ADDR),y              ; offset byte
+000571r 2  30 0D          bmi @Neg
+000573r 2                 ; Positive offset
+000573r 2  18             clc
+000574r 2  65 2E          adc MON_ADDR
+000576r 2  85 32          sta MON_TMP
+000578r 2  A5 2F          lda MON_ADDR+1
+00057Ar 2  69 00          adc #0
+00057Cr 2  85 33          sta MON_TMP+1
+00057Er 2  80 0B          bra @Add2
+000580r 2               @Neg:
+000580r 2  18             clc
+000581r 2  65 2E          adc MON_ADDR
+000583r 2  85 32          sta MON_TMP
+000585r 2  A5 2F          lda MON_ADDR+1
+000587r 2  69 FF          adc #$FF                      ; sign extension
+000589r 2  85 33          sta MON_TMP+1
+00058Br 2               @Add2:
+00058Br 2  18             clc
+00058Cr 2  A5 32          lda MON_TMP
+00058Er 2  69 02          adc #2
+000590r 2  85 32          sta MON_TMP
+000592r 2  A5 33          lda MON_TMP+1
+000594r 2  69 00          adc #0
+000596r 2  85 33          sta MON_TMP+1
+000598r 2                 ; Print "$XXXX"
+000598r 2  A9 24          lda #'$'
+00059Ar 2  20 rr rr       jsr Chrout
+00059Dr 2  A5 33          lda MON_TMP+1
+00059Fr 2  20 rr rr       jsr MonPrintHex2
+0005A2r 2  A5 32          lda MON_TMP
+0005A4r 2  4C rr rr       jmp MonPrintHex2
+0005A7r 2               
+0005A7r 2               DisOpZpr:
+0005A7r 2                 ; ZP byte first
+0005A7r 2  A9 24          lda #'$'
+0005A9r 2  20 rr rr       jsr Chrout
+0005ACr 2  A0 01          ldy #1
+0005AEr 2  B1 2E          lda (MON_ADDR),y
+0005B0r 2  20 rr rr       jsr MonPrintHex2
+0005B3r 2  A9 2C          lda #','
+0005B5r 2  20 rr rr       jsr Chrout
+0005B8r 2                 ; Branch target = addr + 3 + signed_offset(byte 2)
+0005B8r 2  A0 02          ldy #2
+0005BAr 2  B1 2E          lda (MON_ADDR),y
+0005BCr 2  30 0D          bmi @Neg
+0005BEr 2  18             clc
+0005BFr 2  65 2E          adc MON_ADDR
+0005C1r 2  85 32          sta MON_TMP
+0005C3r 2  A5 2F          lda MON_ADDR+1
+0005C5r 2  69 00          adc #0
+0005C7r 2  85 33          sta MON_TMP+1
+0005C9r 2  80 0B          bra @Add3
+0005CBr 2               @Neg:
+0005CBr 2  18             clc
+0005CCr 2  65 2E          adc MON_ADDR
+0005CEr 2  85 32          sta MON_TMP
+0005D0r 2  A5 2F          lda MON_ADDR+1
+0005D2r 2  69 FF          adc #$FF
+0005D4r 2  85 33          sta MON_TMP+1
+0005D6r 2               @Add3:
+0005D6r 2  18             clc
+0005D7r 2  A5 32          lda MON_TMP
+0005D9r 2  69 03          adc #3
+0005DBr 2  85 32          sta MON_TMP
+0005DDr 2  A5 33          lda MON_TMP+1
+0005DFr 2  69 00          adc #0
+0005E1r 2  85 33          sta MON_TMP+1
+0005E3r 2  A9 24          lda #'$'
+0005E5r 2  20 rr rr       jsr Chrout
+0005E8r 2  A5 33          lda MON_TMP+1
+0005EAr 2  20 rr rr       jsr MonPrintHex2
+0005EDr 2  A5 32          lda MON_TMP
+0005EFr 2  4C rr rr       jmp MonPrintHex2
+0005F2r 2               
+0005F2r 2               DisOpAix:
+0005F2r 2  A9 28          lda #'('
+0005F4r 2  20 rr rr       jsr Chrout
+0005F7r 2  20 rr rr       jsr DisOpAbs
+0005FAr 2  A9 2C          lda #','
+0005FCr 2  20 rr rr       jsr Chrout
+0005FFr 2  A9 58          lda #'X'
+000601r 2  20 rr rr       jsr Chrout
+000604r 2  A9 29          lda #')'
+000606r 2  4C rr rr       jmp Chrout
+000609r 2               
+000609r 2               ; ============================================================================
+000609r 2               ; MonShowRegs — Print saved register state
+000609r 2               ; Format: PC=xxxx A=xx X=xx Y=xx SP=xx NV-BDIZC
+000609r 2               ; ============================================================================
+000609r 2               
+000609r 2               MonShowRegs:
+000609r 2                 ; "PC="
+000609r 2  A9 50          lda #'P'
+00060Br 2  20 rr rr       jsr Chrout
+00060Er 2  A9 43          lda #'C'
+000610r 2  20 rr rr       jsr Chrout
+000613r 2  A9 3D          lda #'='
+000615r 2  20 rr rr       jsr Chrout
+000618r 2                 ; Print PC (adjusted: BRK_PC - 2)
+000618r 2  38             sec
+000619r 2  AD 11 03       lda BRK_PCL
+00061Cr 2  E9 02          sbc #2
+00061Er 2  85 2E          sta MON_ADDR
+000620r 2  AD 12 03       lda BRK_PCH
+000623r 2  E9 00          sbc #0
+000625r 2  85 2F          sta MON_ADDR + 1
+000627r 2  20 rr rr       jsr MonPrintHex4
+00062Ar 2  A9 20          lda #' '
+00062Cr 2  20 rr rr       jsr Chrout
+00062Fr 2               
+00062Fr 2                 ; "A="
+00062Fr 2  A9 41          lda #'A'
+000631r 2  20 rr rr       jsr Chrout
+000634r 2  A9 3D          lda #'='
+000636r 2  20 rr rr       jsr Chrout
+000639r 2  AD 13 03       lda BRK_A
+00063Cr 2  20 rr rr       jsr MonPrintHex2
+00063Fr 2  A9 20          lda #' '
+000641r 2  20 rr rr       jsr Chrout
+000644r 2               
+000644r 2                 ; "X="
+000644r 2  A9 58          lda #'X'
+000646r 2  20 rr rr       jsr Chrout
+000649r 2  A9 3D          lda #'='
+00064Br 2  20 rr rr       jsr Chrout
+00064Er 2  AD 14 03       lda BRK_X
+000651r 2  20 rr rr       jsr MonPrintHex2
+000654r 2  A9 20          lda #' '
+000656r 2  20 rr rr       jsr Chrout
+000659r 2               
+000659r 2                 ; "Y="
+000659r 2  A9 59          lda #'Y'
+00065Br 2  20 rr rr       jsr Chrout
+00065Er 2  A9 3D          lda #'='
+000660r 2  20 rr rr       jsr Chrout
+000663r 2  AD 15 03       lda BRK_Y
+000666r 2  20 rr rr       jsr MonPrintHex2
+000669r 2  A9 20          lda #' '
+00066Br 2  20 rr rr       jsr Chrout
+00066Er 2               
+00066Er 2                 ; "SP="
+00066Er 2  A9 53          lda #'S'
+000670r 2  20 rr rr       jsr Chrout
+000673r 2  A9 50          lda #'P'
+000675r 2  20 rr rr       jsr Chrout
+000678r 2  A9 3D          lda #'='
+00067Ar 2  20 rr rr       jsr Chrout
+00067Dr 2  AD 16 03       lda BRK_SP
+000680r 2  20 rr rr       jsr MonPrintHex2
+000683r 2  A9 20          lda #' '
+000685r 2  20 rr rr       jsr Chrout
+000688r 2               
+000688r 2                 ; Flags: NV-BDIZC
+000688r 2  AD 10 03       lda BRK_P
+00068Br 2  85 34          sta MON_BYTE                  ; Save flags for bit testing
+00068Dr 2  A2 00          ldx #0
+00068Fr 2               @FlagLoop:
+00068Fr 2  BD rr rr       lda MonFlagChars,x
+000692r 2  F0 11          beq @FlagsDone
+000694r 2  06 34          asl MON_BYTE                  ; Shift next flag bit into carry
+000696r 2  B0 04          bcs @FlagSet
+000698r 2  A9 2D          lda #'-'                      ; Flag clear — print dash
+00069Ar 2  80 03          bra @FlagPrint
+00069Cr 2               @FlagSet:
+00069Cr 2                 ; A already has the flag character
+00069Cr 2  BD rr rr       lda MonFlagChars,x
+00069Fr 2               @FlagPrint:
+00069Fr 2  20 rr rr       jsr Chrout
+0006A2r 2  E8             inx
+0006A3r 2  80 EA          bra @FlagLoop
+0006A5r 2               @FlagsDone:
+0006A5r 2  20 rr rr       jsr MonPrintCRLF
+0006A8r 2  60             rts
+0006A9r 2               
+0006A9r 2               MonFlagChars:
+0006A9r 2  4E 56 2D 42    .byte "NV-BDIZC", 0
+0006ADr 2  44 49 5A 43  
+0006B1r 2  00           
+0006B2r 2               
+0006B2r 2               ; ============================================================================
+0006B2r 2               ; Hex Parsing Utilities
+0006B2r 2               ; ============================================================================
+0006B2r 2               
+0006B2r 2               ; MonParseHex4 — Parse up to 4 hex digits from MON_LINBUF into MON_ADDR
+0006B2r 2               ; Input:  MON_IDX points to current position in MON_LINBUF
+0006B2r 2               ; Output: MON_ADDR/MON_ADDR+1 = parsed 16-bit value, carry set if valid
+0006B2r 2               ;         MON_IDX advanced past parsed digits
+0006B2r 2               
+0006B2r 2               MonParseHex4:
+0006B2r 2  64 2E          stz MON_ADDR
+0006B4r 2  64 2F          stz MON_ADDR + 1
+0006B6r 2  A2 00          ldx #0                        ; Digit count
+0006B8r 2               @ParseLoop:
+0006B8r 2  A4 35          ldy MON_IDX
+0006BAr 2  B9 34 04       lda MON_LINBUF,y
+0006BDr 2  20 rr rr       jsr MonCharToNibble           ; Convert ASCII to 0-15, carry clear if valid
+0006C0r 2  B0 1B          bcs @ParseDone                ; Not a hex digit — stop
+0006C2r 2                 ; Shift result left 4 bits and OR in new nibble
+0006C2r 2  06 2E          asl MON_ADDR
+0006C4r 2  26 2F          rol MON_ADDR + 1
+0006C6r 2  06 2E          asl MON_ADDR
+0006C8r 2  26 2F          rol MON_ADDR + 1
+0006CAr 2  06 2E          asl MON_ADDR
+0006CCr 2  26 2F          rol MON_ADDR + 1
+0006CEr 2  06 2E          asl MON_ADDR
+0006D0r 2  26 2F          rol MON_ADDR + 1
+0006D2r 2  05 2E          ora MON_ADDR
+0006D4r 2  85 2E          sta MON_ADDR
+0006D6r 2  E6 35          inc MON_IDX
+0006D8r 2  E8             inx
+0006D9r 2  E0 04          cpx #4                        ; Max 4 digits
+0006DBr 2  90 DB          bcc @ParseLoop
+0006DDr 2               @ParseDone:
+0006DDr 2  E0 00          cpx #0                        ; Did we parse at least one digit?
+0006DFr 2  F0 02          beq @ParseFail
+0006E1r 2  38             sec                           ; Success
+0006E2r 2  60             rts
+0006E3r 2               @ParseFail:
+0006E3r 2  18             clc                           ; Failure — no digits parsed
+0006E4r 2  60             rts
+0006E5r 2               
+0006E5r 2               ; MonParseHex2 — Parse up to 2 hex digits from MON_LINBUF into A
+0006E5r 2               ; Input:  MON_IDX points to current position in MON_LINBUF
+0006E5r 2               ; Output: A = parsed 8-bit value, carry set if valid
+0006E5r 2               ;         MON_IDX advanced past parsed digits
+0006E5r 2               
+0006E5r 2               MonParseHex2:
+0006E5r 2  64 34          stz MON_BYTE
+0006E7r 2  A2 00          ldx #0                        ; Digit count
+0006E9r 2               @ParseLoop:
+0006E9r 2  A4 35          ldy MON_IDX
+0006EBr 2  B9 34 04       lda MON_LINBUF,y
+0006EEr 2  20 rr rr       jsr MonCharToNibble
+0006F1r 2  B0 13          bcs @ParseDone
+0006F3r 2  06 34          asl MON_BYTE
+0006F5r 2  06 34          asl MON_BYTE
+0006F7r 2  06 34          asl MON_BYTE
+0006F9r 2  06 34          asl MON_BYTE
+0006FBr 2  05 34          ora MON_BYTE
+0006FDr 2  85 34          sta MON_BYTE
+0006FFr 2  E6 35          inc MON_IDX
+000701r 2  E8             inx
+000702r 2  E0 02          cpx #2
+000704r 2  90 E3          bcc @ParseLoop
+000706r 2               @ParseDone:
+000706r 2  E0 00          cpx #0
+000708r 2  F0 04          beq @ParseFail
+00070Ar 2  A5 34          lda MON_BYTE
+00070Cr 2  38             sec
+00070Dr 2  60             rts
+00070Er 2               @ParseFail:
+00070Er 2  18             clc
+00070Fr 2  60             rts
+000710r 2               
+000710r 2               ; MonCharToNibble — Convert ASCII hex char in A to nibble value 0-15
+000710r 2               ; Input:  A = ASCII character
+000710r 2               ; Output: A = 0-15 if valid hex digit, carry clear
+000710r 2               ;         carry set if not a valid hex digit (A preserved)
+000710r 2               
+000710r 2               MonCharToNibble:
+000710r 2  C9 30          cmp #'0'
+000712r 2  90 23          bcc @NotHex
+000714r 2  C9 3A          cmp #'9'+1
+000716r 2  90 15          bcc @IsDigit
+000718r 2  C9 41          cmp #'A'
+00071Ar 2  90 04          bcc @CheckLower
+00071Cr 2  C9 47          cmp #'F'+1
+00071Er 2  90 12          bcc @IsUpper
+000720r 2               @CheckLower:
+000720r 2  C9 61          cmp #'a'
+000722r 2  90 13          bcc @NotHex
+000724r 2  C9 67          cmp #'f'+1
+000726r 2  B0 0F          bcs @NotHex
+000728r 2                 ; Lowercase a-f
+000728r 2  38             sec
+000729r 2  E9 57          sbc #('a' - 10)
+00072Br 2  18             clc
+00072Cr 2  60             rts
+00072Dr 2               @IsDigit:
+00072Dr 2  38             sec
+00072Er 2  E9 30          sbc #'0'
+000730r 2  18             clc
+000731r 2  60             rts
+000732r 2               @IsUpper:
+000732r 2  38             sec
+000733r 2  E9 37          sbc #('A' - 10)
+000735r 2  18             clc
+000736r 2  60             rts
+000737r 2               @NotHex:
+000737r 2  38             sec
+000738r 2  60             rts
+000739r 2               
+000739r 2               ; MonSkipSpaces — Advance MON_IDX past whitespace in MON_LINBUF
+000739r 2               
+000739r 2               MonSkipSpaces:
+000739r 2  A4 35          ldy MON_IDX
+00073Br 2  B9 34 04       lda MON_LINBUF,y
+00073Er 2  C9 20          cmp #' '
+000740r 2  D0 04          bne @Done
+000742r 2  E6 35          inc MON_IDX
+000744r 2  80 F3          bra MonSkipSpaces
+000746r 2               @Done:
+000746r 2  60             rts
+000747r 2               
+000747r 2               ; ============================================================================
+000747r 2               ; Hex Output Utilities
+000747r 2               ; ============================================================================
+000747r 2               
+000747r 2               ; MonPrintHex2 — Print A as two hex digits
+000747r 2               ; Input:  A = byte to print
+000747r 2               ; Modifies: A, flags
+000747r 2               
+000747r 2               MonPrintHex2:
+000747r 2  48             pha                           ; Save original byte
+000748r 2  4A             lsr                           ; Shift high nibble down
+000749r 2  4A             lsr
+00074Ar 2  4A             lsr
+00074Br 2  4A             lsr
+00074Cr 2  20 rr rr       jsr @PrintNibble              ; Print high nibble
+00074Fr 2  68             pla                           ; Restore original byte
+000750r 2  29 0F          and #$0F                      ; Isolate low nibble
+000752r 2               @PrintNibble:
+000752r 2  C9 0A          cmp #10
+000754r 2  90 06          bcc @IsDigit
+000756r 2  18             clc
+000757r 2  69 37          adc #('A' - 10)
+000759r 2  4C rr rr       jmp Chrout
+00075Cr 2               @IsDigit:
+00075Cr 2  18             clc
+00075Dr 2  69 30          adc #'0'
+00075Fr 2  4C rr rr       jmp Chrout
+000762r 2               
+000762r 2               ; MonPrintHex4 — Print MON_ADDR as four hex digits
+000762r 2               ; Input:  MON_ADDR, MON_ADDR+1 = 16-bit value
+000762r 2               ; Modifies: A, flags
+000762r 2               
+000762r 2               MonPrintHex4:
+000762r 2  A5 2F          lda MON_ADDR + 1              ; High byte first
+000764r 2  20 rr rr       jsr MonPrintHex2
+000767r 2  A5 2E          lda MON_ADDR                  ; Then low byte
+000769r 2  4C rr rr       jmp MonPrintHex2
+00076Cr 2               
+00076Cr 2               ; MonPrintSpace — Print a space character
+00076Cr 2               
+00076Cr 2               MonPrintSpace:
+00076Cr 2  A9 20          lda #' '
+00076Er 2  4C rr rr       jmp Chrout
+000771r 2               
+000771r 2               ; MonPrintCRLF — Print carriage return + line feed
+000771r 2               
+000771r 2               MonPrintCRLF:
+000771r 2  A9 0D          lda #$0D
+000773r 2  20 rr rr       jsr Chrout
+000776r 2  A9 0A          lda #$0A
+000778r 2  4C rr rr       jmp Chrout
+00077Br 2               
+00077Br 2               ; MonPrintError — Print "?" for unrecognized command
+00077Br 2               
+00077Br 2               MonPrintError:
+00077Br 2  A9 3F          lda #'?'
+00077Dr 2  20 rr rr       jsr Chrout
+000780r 2  4C rr rr       jmp MonPrintCRLF
+000783r 2               
+000783r 2               ; MonPrintBanner — Print the monitor banner string
+000783r 2               
+000783r 2               MonPrintBanner:
+000783r 2  A2 00          ldx #0
+000785r 2               @Loop:
+000785r 2  BD rr rr       lda MonStrBanner,x
+000788r 2  F0 06          beq @Done
+00078Ar 2  20 rr rr       jsr Chrout
+00078Dr 2  E8             inx
+00078Er 2  80 F5          bra @Loop
+000790r 2               @Done:
+000790r 2  60             rts
+000791r 2               
+000791r 2               ; ============================================================================
+000791r 2               ; String Data
+000791r 2               ; ============================================================================
+000791r 2               
+000791r 2               MonStrBanner:
+000791r 2  43 4F 42 20    .byte "COB MONITOR v1.0", $0D, $0A, 0
+000795r 2  4D 4F 4E 49  
+000799r 2  54 4F 52 20  
+0007A4r 2               MonStrBrk:
+0007A4r 2  42 52 4B 20    .byte "BRK AT $", 0
+0007A8r 2  41 54 20 24  
+0007ACr 2  00           
+0007ADr 2               
+0007ADr 2               ; ============================================================================
+0007ADr 2               ; Disassembler Data Tables
+0007ADr 2               ; ============================================================================
+0007ADr 2               
+0007ADr 2               ; Mnemonic string table — 71 entries x 3 chars = 213 bytes
+0007ADr 2               DisMnemonics:
+0007ADr 2  41 44 43       .byte "ADC"              ; 0
+0007B0r 2  41 4E 44       .byte "AND"              ; 1
+0007B3r 2  41 53 4C       .byte "ASL"              ; 2
+0007B6r 2  42 42 52       .byte "BBR"              ; 3
+0007B9r 2  42 42 53       .byte "BBS"              ; 4
+0007BCr 2  42 43 43       .byte "BCC"              ; 5
+0007BFr 2  42 43 53       .byte "BCS"              ; 6
+0007C2r 2  42 45 51       .byte "BEQ"              ; 7
+0007C5r 2  42 49 54       .byte "BIT"              ; 8
+0007C8r 2  42 4D 49       .byte "BMI"              ; 9
+0007CBr 2  42 4E 45       .byte "BNE"              ; 10
+0007CEr 2  42 50 4C       .byte "BPL"              ; 11
+0007D1r 2  42 52 41       .byte "BRA"              ; 12
+0007D4r 2  42 52 4B       .byte "BRK"              ; 13
+0007D7r 2  42 56 43       .byte "BVC"              ; 14
+0007DAr 2  42 56 53       .byte "BVS"              ; 15
+0007DDr 2  43 4C 43       .byte "CLC"              ; 16
+0007E0r 2  43 4C 44       .byte "CLD"              ; 17
+0007E3r 2  43 4C 49       .byte "CLI"              ; 18
+0007E6r 2  43 4C 56       .byte "CLV"              ; 19
+0007E9r 2  43 4D 50       .byte "CMP"              ; 20
+0007ECr 2  43 50 58       .byte "CPX"              ; 21
+0007EFr 2  43 50 59       .byte "CPY"              ; 22
+0007F2r 2  44 45 43       .byte "DEC"              ; 23
+0007F5r 2  44 45 58       .byte "DEX"              ; 24
+0007F8r 2  44 45 59       .byte "DEY"              ; 25
+0007FBr 2  45 4F 52       .byte "EOR"              ; 26
+0007FEr 2  49 4E 43       .byte "INC"              ; 27
+000801r 2  49 4E 58       .byte "INX"              ; 28
+000804r 2  49 4E 59       .byte "INY"              ; 29
+000807r 2  4A 4D 50       .byte "JMP"              ; 30
+00080Ar 2  4A 53 52       .byte "JSR"              ; 31
+00080Dr 2  4C 44 41       .byte "LDA"              ; 32
+000810r 2  4C 44 58       .byte "LDX"              ; 33
+000813r 2  4C 44 59       .byte "LDY"              ; 34
+000816r 2  4C 53 52       .byte "LSR"              ; 35
+000819r 2  4E 4F 50       .byte "NOP"              ; 36
+00081Cr 2  4F 52 41       .byte "ORA"              ; 37
+00081Fr 2  50 48 41       .byte "PHA"              ; 38
+000822r 2  50 48 50       .byte "PHP"              ; 39
+000825r 2  50 48 58       .byte "PHX"              ; 40
+000828r 2  50 48 59       .byte "PHY"              ; 41
+00082Br 2  50 4C 41       .byte "PLA"              ; 42
+00082Er 2  50 4C 50       .byte "PLP"              ; 43
+000831r 2  50 4C 58       .byte "PLX"              ; 44
+000834r 2  50 4C 59       .byte "PLY"              ; 45
+000837r 2  52 4D 42       .byte "RMB"              ; 46
+00083Ar 2  52 4F 4C       .byte "ROL"              ; 47
+00083Dr 2  52 4F 52       .byte "ROR"              ; 48
+000840r 2  52 54 49       .byte "RTI"              ; 49
+000843r 2  52 54 53       .byte "RTS"              ; 50
+000846r 2  53 42 43       .byte "SBC"              ; 51
+000849r 2  53 45 43       .byte "SEC"              ; 52
+00084Cr 2  53 45 44       .byte "SED"              ; 53
+00084Fr 2  53 45 49       .byte "SEI"              ; 54
+000852r 2  53 4D 42       .byte "SMB"              ; 55
+000855r 2  53 54 41       .byte "STA"              ; 56
+000858r 2  53 54 50       .byte "STP"              ; 57
+00085Br 2  53 54 58       .byte "STX"              ; 58
+00085Er 2  53 54 59       .byte "STY"              ; 59
+000861r 2  53 54 5A       .byte "STZ"              ; 60
+000864r 2  54 41 58       .byte "TAX"              ; 61
+000867r 2  54 41 59       .byte "TAY"              ; 62
+00086Ar 2  54 52 42       .byte "TRB"              ; 63
+00086Dr 2  54 53 42       .byte "TSB"              ; 64
+000870r 2  54 53 58       .byte "TSX"              ; 65
+000873r 2  54 58 41       .byte "TXA"              ; 66
+000876r 2  54 58 53       .byte "TXS"              ; 67
+000879r 2  54 59 41       .byte "TYA"              ; 68
+00087Cr 2  57 41 49       .byte "WAI"              ; 69
+00087Fr 2  3F 3F 3F       .byte "???"              ; 70 (undefined)
+000882r 2               
+000882r 2               ; Addressing mode operand size table (bytes beyond opcode)
+000882r 2               DisModeSizes:
+000882r 2  00             .byte 0                  ; AM_IMP  = 0
+000883r 2  00             .byte 0                  ; AM_ACC  = 1
+000884r 2  01             .byte 1                  ; AM_IMM  = 2
+000885r 2  01             .byte 1                  ; AM_ZP   = 3
+000886r 2  01             .byte 1                  ; AM_ZPX  = 4
+000887r 2  01             .byte 1                  ; AM_ZPY  = 5
+000888r 2  02             .byte 2                  ; AM_ABS  = 6
+000889r 2  02             .byte 2                  ; AM_ABX  = 7
+00088Ar 2  02             .byte 2                  ; AM_ABY  = 8
+00088Br 2  02             .byte 2                  ; AM_IND  = 9
+00088Cr 2  01             .byte 1                  ; AM_IZX  = 10
+00088Dr 2  01             .byte 1                  ; AM_IZY  = 11
+00088Er 2  01             .byte 1                  ; AM_ZPI  = 12
+00088Fr 2  01             .byte 1                  ; AM_REL  = 13
+000890r 2  02             .byte 2                  ; AM_ZPR  = 14
+000891r 2  02             .byte 2                  ; AM_AIX  = 15
+000892r 2               
+000892r 2               ; Operand print dispatch table (16 addressing modes)
+000892r 2               DisOperandJmpTable:
+000892r 2  rr rr          .word DisOpImp             ; AM_IMP  = 0
+000894r 2  rr rr          .word DisOpAcc             ; AM_ACC  = 1
+000896r 2  rr rr          .word DisOpImm             ; AM_IMM  = 2
+000898r 2  rr rr          .word DisOpZp              ; AM_ZP   = 3
+00089Ar 2  rr rr          .word DisOpZpx             ; AM_ZPX  = 4
+00089Cr 2  rr rr          .word DisOpZpy             ; AM_ZPY  = 5
+00089Er 2  rr rr          .word DisOpAbs             ; AM_ABS  = 6
+0008A0r 2  rr rr          .word DisOpAbx             ; AM_ABX  = 7
+0008A2r 2  rr rr          .word DisOpAby             ; AM_ABY  = 8
+0008A4r 2  rr rr          .word DisOpInd             ; AM_IND  = 9
+0008A6r 2  rr rr          .word DisOpIzx             ; AM_IZX  = 10
+0008A8r 2  rr rr          .word DisOpIzy             ; AM_IZY  = 11
+0008AAr 2  rr rr          .word DisOpZpi             ; AM_ZPI  = 12
+0008ACr 2  rr rr          .word DisOpRel             ; AM_REL  = 13
+0008AEr 2  rr rr          .word DisOpZpr             ; AM_ZPR  = 14
+0008B0r 2  rr rr          .word DisOpAix             ; AM_AIX  = 15
+0008B2r 2               
+0008B2r 2               ; 65C02 Opcode Table — 256 entries x 2 bytes (mnemonic index, addressing mode)
+0008B2r 2               DisOpcodeTable:
+0008B2r 2                 ; --- $0x ---
+0008B2r 2  0D 00 25 0A    .byte MN_BRK,AM_IMP, MN_ORA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $00-$03
+0008B6r 2  46 00 46 00  
+0008BAr 2  40 03 25 03    .byte MN_TSB,AM_ZP,  MN_ORA,AM_ZP,  MN_ASL,AM_ZP,  MN_RMB,AM_ZP   ; $04-$07
+0008BEr 2  02 03 2E 03  
+0008C2r 2  27 00 25 02    .byte MN_PHP,AM_IMP, MN_ORA,AM_IMM, MN_ASL,AM_ACC, MN_UND,AM_IMP  ; $08-$0B
+0008C6r 2  02 01 46 00  
+0008CAr 2  40 06 25 06    .byte MN_TSB,AM_ABS, MN_ORA,AM_ABS, MN_ASL,AM_ABS, MN_BBR,AM_ZPR  ; $0C-$0F
+0008CEr 2  02 06 03 0E  
+0008D2r 2                 ; --- $1x ---
+0008D2r 2  0B 0D 25 0B    .byte MN_BPL,AM_REL, MN_ORA,AM_IZY, MN_ORA,AM_ZPI, MN_UND,AM_IMP  ; $10-$13
+0008D6r 2  25 0C 46 00  
+0008DAr 2  3F 03 25 04    .byte MN_TRB,AM_ZP,  MN_ORA,AM_ZPX, MN_ASL,AM_ZPX, MN_RMB,AM_ZP   ; $14-$17
+0008DEr 2  02 04 2E 03  
+0008E2r 2  10 00 25 08    .byte MN_CLC,AM_IMP, MN_ORA,AM_ABY, MN_INC,AM_ACC, MN_UND,AM_IMP  ; $18-$1B
+0008E6r 2  1B 01 46 00  
+0008EAr 2  3F 06 25 07    .byte MN_TRB,AM_ABS, MN_ORA,AM_ABX, MN_ASL,AM_ABX, MN_BBR,AM_ZPR  ; $1C-$1F
+0008EEr 2  02 07 03 0E  
+0008F2r 2                 ; --- $2x ---
+0008F2r 2  1F 06 01 0A    .byte MN_JSR,AM_ABS, MN_AND,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $20-$23
+0008F6r 2  46 00 46 00  
+0008FAr 2  08 03 01 03    .byte MN_BIT,AM_ZP,  MN_AND,AM_ZP,  MN_ROL,AM_ZP,  MN_RMB,AM_ZP   ; $24-$27
+0008FEr 2  2F 03 2E 03  
+000902r 2  2B 00 01 02    .byte MN_PLP,AM_IMP, MN_AND,AM_IMM, MN_ROL,AM_ACC, MN_UND,AM_IMP  ; $28-$2B
+000906r 2  2F 01 46 00  
+00090Ar 2  08 06 01 06    .byte MN_BIT,AM_ABS, MN_AND,AM_ABS, MN_ROL,AM_ABS, MN_BBR,AM_ZPR  ; $2C-$2F
+00090Er 2  2F 06 03 0E  
+000912r 2                 ; --- $3x ---
+000912r 2  09 0D 01 0B    .byte MN_BMI,AM_REL, MN_AND,AM_IZY, MN_AND,AM_ZPI, MN_UND,AM_IMP  ; $30-$33
+000916r 2  01 0C 46 00  
+00091Ar 2  08 04 01 04    .byte MN_BIT,AM_ZPX, MN_AND,AM_ZPX, MN_ROL,AM_ZPX, MN_RMB,AM_ZP   ; $34-$37
+00091Er 2  2F 04 2E 03  
+000922r 2  34 00 01 08    .byte MN_SEC,AM_IMP, MN_AND,AM_ABY, MN_DEC,AM_ACC, MN_UND,AM_IMP  ; $38-$3B
+000926r 2  17 01 46 00  
+00092Ar 2  08 07 01 07    .byte MN_BIT,AM_ABX, MN_AND,AM_ABX, MN_ROL,AM_ABX, MN_BBR,AM_ZPR  ; $3C-$3F
+00092Er 2  2F 07 03 0E  
+000932r 2                 ; --- $4x ---
+000932r 2  31 00 1A 0A    .byte MN_RTI,AM_IMP, MN_EOR,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $40-$43
+000936r 2  46 00 46 00  
+00093Ar 2  46 00 1A 03    .byte MN_UND,AM_IMP, MN_EOR,AM_ZP,  MN_LSR,AM_ZP,  MN_RMB,AM_ZP   ; $44-$47
+00093Er 2  23 03 2E 03  
+000942r 2  26 00 1A 02    .byte MN_PHA,AM_IMP, MN_EOR,AM_IMM, MN_LSR,AM_ACC, MN_UND,AM_IMP  ; $48-$4B
+000946r 2  23 01 46 00  
+00094Ar 2  1E 06 1A 06    .byte MN_JMP,AM_ABS, MN_EOR,AM_ABS, MN_LSR,AM_ABS, MN_BBR,AM_ZPR  ; $4C-$4F
+00094Er 2  23 06 03 0E  
+000952r 2                 ; --- $5x ---
+000952r 2  0E 0D 1A 0B    .byte MN_BVC,AM_REL, MN_EOR,AM_IZY, MN_EOR,AM_ZPI, MN_UND,AM_IMP  ; $50-$53
+000956r 2  1A 0C 46 00  
+00095Ar 2  46 00 1A 04    .byte MN_UND,AM_IMP, MN_EOR,AM_ZPX, MN_LSR,AM_ZPX, MN_RMB,AM_ZP   ; $54-$57
+00095Er 2  23 04 2E 03  
+000962r 2  12 00 1A 08    .byte MN_CLI,AM_IMP, MN_EOR,AM_ABY, MN_PHY,AM_IMP, MN_UND,AM_IMP  ; $58-$5B
+000966r 2  29 00 46 00  
+00096Ar 2  46 00 1A 07    .byte MN_UND,AM_IMP, MN_EOR,AM_ABX, MN_LSR,AM_ABX, MN_BBR,AM_ZPR  ; $5C-$5F
+00096Er 2  23 07 03 0E  
+000972r 2                 ; --- $6x ---
+000972r 2  32 00 00 0A    .byte MN_RTS,AM_IMP, MN_ADC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $60-$63
+000976r 2  46 00 46 00  
+00097Ar 2  3C 03 00 03    .byte MN_STZ,AM_ZP,  MN_ADC,AM_ZP,  MN_ROR,AM_ZP,  MN_RMB,AM_ZP   ; $64-$67
+00097Er 2  30 03 2E 03  
+000982r 2  2A 00 00 02    .byte MN_PLA,AM_IMP, MN_ADC,AM_IMM, MN_ROR,AM_ACC, MN_UND,AM_IMP  ; $68-$6B
+000986r 2  30 01 46 00  
+00098Ar 2  1E 09 00 06    .byte MN_JMP,AM_IND, MN_ADC,AM_ABS, MN_ROR,AM_ABS, MN_BBR,AM_ZPR  ; $6C-$6F
+00098Er 2  30 06 03 0E  
+000992r 2                 ; --- $7x ---
+000992r 2  0F 0D 00 0B    .byte MN_BVS,AM_REL, MN_ADC,AM_IZY, MN_ADC,AM_ZPI, MN_UND,AM_IMP  ; $70-$73
+000996r 2  00 0C 46 00  
+00099Ar 2  3C 04 00 04    .byte MN_STZ,AM_ZPX, MN_ADC,AM_ZPX, MN_ROR,AM_ZPX, MN_RMB,AM_ZP   ; $74-$77
+00099Er 2  30 04 2E 03  
+0009A2r 2  36 00 00 08    .byte MN_SEI,AM_IMP, MN_ADC,AM_ABY, MN_PLY,AM_IMP, MN_UND,AM_IMP  ; $78-$7B
+0009A6r 2  2D 00 46 00  
+0009AAr 2  1E 0F 00 07    .byte MN_JMP,AM_AIX, MN_ADC,AM_ABX, MN_ROR,AM_ABX, MN_BBR,AM_ZPR  ; $7C-$7F
+0009AEr 2  30 07 03 0E  
+0009B2r 2                 ; --- $8x ---
+0009B2r 2  0C 0D 38 0A    .byte MN_BRA,AM_REL, MN_STA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $80-$83
+0009B6r 2  46 00 46 00  
+0009BAr 2  3B 03 38 03    .byte MN_STY,AM_ZP,  MN_STA,AM_ZP,  MN_STX,AM_ZP,  MN_SMB,AM_ZP   ; $84-$87
+0009BEr 2  3A 03 37 03  
+0009C2r 2  19 00 08 02    .byte MN_DEY,AM_IMP, MN_BIT,AM_IMM, MN_TXA,AM_IMP, MN_UND,AM_IMP  ; $88-$8B
+0009C6r 2  42 00 46 00  
+0009CAr 2  3B 06 38 06    .byte MN_STY,AM_ABS, MN_STA,AM_ABS, MN_STX,AM_ABS, MN_BBS,AM_ZPR  ; $8C-$8F
+0009CEr 2  3A 06 04 0E  
+0009D2r 2                 ; --- $9x ---
+0009D2r 2  05 0D 38 0B    .byte MN_BCC,AM_REL, MN_STA,AM_IZY, MN_STA,AM_ZPI, MN_UND,AM_IMP  ; $90-$93
+0009D6r 2  38 0C 46 00  
+0009DAr 2  3B 04 38 04    .byte MN_STY,AM_ZPX, MN_STA,AM_ZPX, MN_STX,AM_ZPY, MN_SMB,AM_ZP   ; $94-$97
+0009DEr 2  3A 05 37 03  
+0009E2r 2  44 00 38 08    .byte MN_TYA,AM_IMP, MN_STA,AM_ABY, MN_TXS,AM_IMP, MN_UND,AM_IMP  ; $98-$9B
+0009E6r 2  43 00 46 00  
+0009EAr 2  3C 06 38 07    .byte MN_STZ,AM_ABS, MN_STA,AM_ABX, MN_STZ,AM_ABX, MN_BBS,AM_ZPR  ; $9C-$9F
+0009EEr 2  3C 07 04 0E  
+0009F2r 2                 ; --- $Ax ---
+0009F2r 2  22 02 20 0A    .byte MN_LDY,AM_IMM, MN_LDA,AM_IZX, MN_LDX,AM_IMM, MN_UND,AM_IMP  ; $A0-$A3
+0009F6r 2  21 02 46 00  
+0009FAr 2  22 03 20 03    .byte MN_LDY,AM_ZP,  MN_LDA,AM_ZP,  MN_LDX,AM_ZP,  MN_SMB,AM_ZP   ; $A4-$A7
+0009FEr 2  21 03 37 03  
+000A02r 2  3E 00 20 02    .byte MN_TAY,AM_IMP, MN_LDA,AM_IMM, MN_TAX,AM_IMP, MN_UND,AM_IMP  ; $A8-$AB
+000A06r 2  3D 00 46 00  
+000A0Ar 2  22 06 20 06    .byte MN_LDY,AM_ABS, MN_LDA,AM_ABS, MN_LDX,AM_ABS, MN_BBS,AM_ZPR  ; $AC-$AF
+000A0Er 2  21 06 04 0E  
+000A12r 2                 ; --- $Bx ---
+000A12r 2  06 0D 20 0B    .byte MN_BCS,AM_REL, MN_LDA,AM_IZY, MN_LDA,AM_ZPI, MN_UND,AM_IMP  ; $B0-$B3
+000A16r 2  20 0C 46 00  
+000A1Ar 2  22 04 20 04    .byte MN_LDY,AM_ZPX, MN_LDA,AM_ZPX, MN_LDX,AM_ZPY, MN_SMB,AM_ZP   ; $B4-$B7
+000A1Er 2  21 05 37 03  
+000A22r 2  13 00 20 08    .byte MN_CLV,AM_IMP, MN_LDA,AM_ABY, MN_TSX,AM_IMP, MN_UND,AM_IMP  ; $B8-$BB
+000A26r 2  41 00 46 00  
+000A2Ar 2  22 07 20 07    .byte MN_LDY,AM_ABX, MN_LDA,AM_ABX, MN_LDX,AM_ABY, MN_BBS,AM_ZPR  ; $BC-$BF
+000A2Er 2  21 08 04 0E  
+000A32r 2                 ; --- $Cx ---
+000A32r 2  16 02 14 0A    .byte MN_CPY,AM_IMM, MN_CMP,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $C0-$C3
+000A36r 2  46 00 46 00  
+000A3Ar 2  16 03 14 03    .byte MN_CPY,AM_ZP,  MN_CMP,AM_ZP,  MN_DEC,AM_ZP,  MN_SMB,AM_ZP   ; $C4-$C7
+000A3Er 2  17 03 37 03  
+000A42r 2  1D 00 14 02    .byte MN_INY,AM_IMP, MN_CMP,AM_IMM, MN_DEX,AM_IMP, MN_WAI,AM_IMP  ; $C8-$CB
+000A46r 2  18 00 45 00  
+000A4Ar 2  16 06 14 06    .byte MN_CPY,AM_ABS, MN_CMP,AM_ABS, MN_DEC,AM_ABS, MN_BBS,AM_ZPR  ; $CC-$CF
+000A4Er 2  17 06 04 0E  
+000A52r 2                 ; --- $Dx ---
+000A52r 2  0A 0D 14 0B    .byte MN_BNE,AM_REL, MN_CMP,AM_IZY, MN_CMP,AM_ZPI, MN_UND,AM_IMP  ; $D0-$D3
+000A56r 2  14 0C 46 00  
+000A5Ar 2  46 00 14 04    .byte MN_UND,AM_IMP, MN_CMP,AM_ZPX, MN_DEC,AM_ZPX, MN_SMB,AM_ZP   ; $D4-$D7
+000A5Er 2  17 04 37 03  
+000A62r 2  11 00 14 08    .byte MN_CLD,AM_IMP, MN_CMP,AM_ABY, MN_PHX,AM_IMP, MN_STP,AM_IMP  ; $D8-$DB
+000A66r 2  28 00 39 00  
+000A6Ar 2  46 00 14 07    .byte MN_UND,AM_IMP, MN_CMP,AM_ABX, MN_DEC,AM_ABX, MN_BBS,AM_ZPR  ; $DC-$DF
+000A6Er 2  17 07 04 0E  
+000A72r 2                 ; --- $Ex ---
+000A72r 2  15 02 33 0A    .byte MN_CPX,AM_IMM, MN_SBC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $E0-$E3
+000A76r 2  46 00 46 00  
+000A7Ar 2  15 03 33 03    .byte MN_CPX,AM_ZP,  MN_SBC,AM_ZP,  MN_INC,AM_ZP,  MN_SMB,AM_ZP   ; $E4-$E7
+000A7Er 2  1B 03 37 03  
+000A82r 2  1C 00 33 02    .byte MN_INX,AM_IMP, MN_SBC,AM_IMM, MN_NOP,AM_IMP, MN_UND,AM_IMP  ; $E8-$EB
+000A86r 2  24 00 46 00  
+000A8Ar 2  15 06 33 06    .byte MN_CPX,AM_ABS, MN_SBC,AM_ABS, MN_INC,AM_ABS, MN_BBS,AM_ZPR  ; $EC-$EF
+000A8Er 2  1B 06 04 0E  
+000A92r 2                 ; --- $Fx ---
+000A92r 2  07 0D 33 0B    .byte MN_BEQ,AM_REL, MN_SBC,AM_IZY, MN_SBC,AM_ZPI, MN_UND,AM_IMP  ; $F0-$F3
+000A96r 2  33 0C 46 00  
+000A9Ar 2  46 00 33 04    .byte MN_UND,AM_IMP, MN_SBC,AM_ZPX, MN_INC,AM_ZPX, MN_SMB,AM_ZP   ; $F4-$F7
+000A9Er 2  1B 04 37 03  
+000AA2r 2  35 00 33 08    .byte MN_SED,AM_IMP, MN_SBC,AM_ABY, MN_PLX,AM_IMP, MN_UND,AM_IMP  ; $F8-$FB
+000AA6r 2  2C 00 46 00  
+000AAAr 2  46 00 33 07    .byte MN_UND,AM_IMP, MN_SBC,AM_ABX, MN_INC,AM_ABX, MN_BBS,AM_ZPR  ; $FC-$FF
+000AAEr 2  1B 07 04 0E  
+000AB2r 2               
+000AB2r 1               .segment "BASIC"
 000000r 1               .include "BASIC.asm"
 000000r 2               ; ***                         ***
 000000r 2               ; ***   Integer BASIC v1.0    ***

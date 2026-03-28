@@ -277,6 +277,16 @@ MonCmdTable:
   .word MonCmdM - 1
   .byte 'D'
   .word MonCmdD - 1
+  .byte '>'
+  .word MonCmdDeposit - 1
+  .byte 'F'
+  .word MonCmdFill - 1
+  .byte 'T'
+  .word MonCmdTransfer - 1
+  .byte 'H'
+  .word MonCmdHunt - 1
+  .byte 'C'
+  .word MonCmdCompare - 1
   .byte 0                       ; End of table sentinel
 
 ; ============================================================================
@@ -294,6 +304,360 @@ MonCmdX:
 MonCmdR:
   jsr MonShowRegs
   rts
+
+; ============================================================================
+; MonCmdDeposit — Deposit (write) bytes to memory
+; Syntax: > ADDR XX [XX XX ...]
+; ============================================================================
+
+MonCmdDeposit:
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse target address into MON_ADDR
+  bcc @DepError                 ; No address → error
+  ldy #0                        ; Byte offset from MON_ADDR
+@DepLoop:
+  phy                           ; Save byte offset (Y clobbered by parse routines)
+  jsr MonSkipSpaces
+  jsr MonParseHex2              ; Parse next byte into A
+  ply                           ; Restore byte offset (PLY doesn't affect carry)
+  bcc @DepDone                  ; No more bytes → done
+  sta (MON_ADDR),y
+  iny
+  bne @DepLoop                  ; Up to 256 bytes (Y wraps)
+@DepDone:
+  cpy #0                        ; Did we deposit at least one byte?
+  beq @DepError                 ; No bytes given → error
+  rts
+@DepError:
+  jmp MonPrintError
+
+; ============================================================================
+; MonCmdFill — Fill memory range with a byte value
+; Syntax: F ADDR1 ADDR2 XX
+; ============================================================================
+
+MonCmdFill:
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse start address → MON_ADDR
+  bcc @FillError
+  lda MON_ADDR
+  sta MON_TMP
+  lda MON_ADDR+1
+  sta MON_TMP+1                 ; Save start in MON_TMP
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse end address → MON_ADDR
+  bcc @FillError
+  lda MON_ADDR
+  sta MON_END
+  lda MON_ADDR+1
+  sta MON_END+1                 ; Save end in MON_END
+  ; Restore start into MON_ADDR
+  lda MON_TMP
+  sta MON_ADDR
+  lda MON_TMP+1
+  sta MON_ADDR+1
+  jsr MonSkipSpaces
+  jsr MonParseHex2              ; Parse fill byte → A
+  bcc @FillError
+  ; A = fill byte, MON_ADDR = start, MON_END = end (inclusive)
+  ldy #0
+@FillLoop:
+  sta (MON_ADDR),y
+  ; Check if MON_ADDR == MON_END
+  ldx MON_ADDR+1
+  cpx MON_END+1
+  bne @FillNext
+  ldx MON_ADDR
+  cpx MON_END
+  beq @FillDone
+@FillNext:
+  ; Advance MON_ADDR
+  pha                           ; Save fill byte
+  inc MON_ADDR
+  bne @FillNoHi
+  inc MON_ADDR+1
+@FillNoHi:
+  pla                           ; Restore fill byte
+  bra @FillLoop
+@FillDone:
+  rts
+@FillError:
+  jmp MonPrintError
+
+; ============================================================================
+; MonCmdTransfer — Copy memory block (handles overlapping regions)
+; Syntax: T SRC_START SRC_END DEST
+; ============================================================================
+
+MonCmdTransfer:
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse source start → MON_ADDR
+  bcs @XferGotStart
+  jmp @XferError                ; No address → error
+@XferGotStart:
+  lda MON_ADDR
+  sta MON_TMP
+  lda MON_ADDR+1
+  sta MON_TMP+1                 ; MON_TMP = source start
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse source end → MON_ADDR
+  bcs @XferGotEnd
+  jmp @XferError
+@XferGotEnd:
+  lda MON_ADDR
+  sta MON_END
+  lda MON_ADDR+1
+  sta MON_END+1                 ; MON_END = source end (inclusive)
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse dest → MON_ADDR
+  bcs @XferGotDest
+  jmp @XferError
+@XferGotDest:
+  ; MON_ADDR = dest, MON_TMP = src start, MON_END = src end
+  ; Determine copy direction: if dest > src_start, copy backward to handle overlap
+  lda MON_ADDR+1
+  cmp MON_TMP+1
+  bcc @CopyForward              ; dest < src → forward is safe
+  bne @CopyBackward             ; dest > src → need backward
+  lda MON_ADDR
+  cmp MON_TMP
+  bcc @CopyForward
+  beq @XferDone                 ; dest == src → nothing to do
+@CopyBackward:
+  ; Compute offset = src_end - src_start
+  sec
+  lda MON_END
+  sbc MON_TMP
+  sta MON_BYTE                  ; low byte of offset
+  lda MON_END+1
+  sbc MON_TMP+1
+  sta MON_IDX                   ; high byte of offset (reuse MON_IDX as scratch)
+  ; Point MON_TMP to src_end, MON_ADDR to dest + offset
+  ; MON_TMP already needs to be src_end (currently src_start)
+  ; Swap: MON_TMP = MON_END (src_end)
+  lda MON_END
+  pha
+  lda MON_END+1
+  pha
+  ; MON_END = src_start (save for later comparison)
+  lda MON_TMP
+  sta MON_END
+  lda MON_TMP+1
+  sta MON_END+1
+  ; MON_TMP = src_end
+  pla
+  sta MON_TMP+1
+  pla
+  sta MON_TMP
+  ; dest_end = MON_ADDR + offset
+  clc
+  lda MON_ADDR
+  adc MON_BYTE
+  sta MON_ADDR
+  lda MON_ADDR+1
+  adc MON_IDX
+  sta MON_ADDR+1
+@BackLoop:
+  ldy #0
+  lda (MON_TMP),y
+  sta (MON_ADDR),y
+  ; Check if MON_TMP == MON_END (src start, our stop address)
+  lda MON_TMP+1
+  cmp MON_END+1
+  bne @BackDec
+  lda MON_TMP
+  cmp MON_END
+  beq @XferDone
+@BackDec:
+  ; Decrement both pointers
+  lda MON_TMP
+  bne @BackDecTmpLo
+  dec MON_TMP+1
+@BackDecTmpLo:
+  dec MON_TMP
+  lda MON_ADDR
+  bne @BackDecDstLo
+  dec MON_ADDR+1
+@BackDecDstLo:
+  dec MON_ADDR
+  bra @BackLoop
+
+@CopyForward:
+  ; Copy from MON_TMP (src) to MON_ADDR (dest), up to MON_END (src end)
+  ldy #0
+@FwdLoop:
+  lda (MON_TMP),y
+  sta (MON_ADDR),y
+  ; Check if MON_TMP == MON_END
+  lda MON_TMP+1
+  cmp MON_END+1
+  bne @FwdNext
+  lda MON_TMP
+  cmp MON_END
+  beq @XferDone
+@FwdNext:
+  ; Advance both pointers
+  inc MON_TMP
+  bne @FwdNoDstCarry
+  inc MON_TMP+1
+@FwdNoDstCarry:
+  inc MON_ADDR
+  bne @FwdLoop
+  inc MON_ADDR+1
+  bra @FwdLoop
+
+@XferDone:
+  rts
+@XferError:
+  jmp MonPrintError
+
+; ============================================================================
+; MonCmdHunt — Search for byte pattern in memory range
+; Syntax: H ADDR1 ADDR2 XX [XX XX ...]
+; Prints address of each match on its own line.
+; ============================================================================
+
+; Hunt uses a temp buffer at end of MON_LINBUF area for the pattern.
+; Pattern bytes stored at MON_LINBUF+128, max 64 pattern bytes.
+MON_HUNT_PAT        = MON_LINBUF + 128
+MON_HUNT_PAT_MAX    = 64
+
+MonCmdHunt:
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse start address → MON_ADDR
+  bcc @HuntError
+  lda MON_ADDR
+  sta MON_TMP
+  lda MON_ADDR+1
+  sta MON_TMP+1                 ; MON_TMP = search start
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse end address → MON_ADDR
+  bcc @HuntError
+  lda MON_ADDR
+  sta MON_END
+  lda MON_ADDR+1
+  sta MON_END+1                 ; MON_END = search end
+  ; Restore start
+  lda MON_TMP
+  sta MON_ADDR
+  lda MON_TMP+1
+  sta MON_ADDR+1
+  ; Parse pattern bytes into MON_HUNT_PAT
+  ldx #0                        ; Pattern length counter
+@HuntParseByte:
+  phx                           ; Save pattern counter (X clobbered by MonParseHex2)
+  jsr MonSkipSpaces
+  jsr MonParseHex2              ; Next byte → A
+  plx                           ; Restore pattern counter (PLX doesn't affect carry)
+  bcc @HuntParseEnd
+  cpx #MON_HUNT_PAT_MAX
+  bcs @HuntParseEnd             ; Pattern buffer full
+  sta MON_HUNT_PAT,x
+  inx
+  bra @HuntParseByte
+@HuntParseEnd:
+  cpx #0
+  beq @HuntError                ; No pattern bytes → error
+  stx MON_BYTE                  ; MON_BYTE = pattern length
+  ; Search: scan MON_ADDR to MON_END for pattern match
+@HuntScanLoop:
+  ldy #0                        ; Pattern match index
+@HuntMatchLoop:
+  lda (MON_ADDR),y
+  cmp MON_HUNT_PAT,y
+  bne @HuntNoMatch
+  iny
+  cpy MON_BYTE                  ; Matched all pattern bytes?
+  bcc @HuntMatchLoop
+  ; Full match — print address
+  jsr MonPrintHex4
+  jsr MonPrintCRLF
+@HuntNoMatch:
+  ; Check if MON_ADDR == MON_END
+  lda MON_ADDR+1
+  cmp MON_END+1
+  bne @HuntAdvance
+  lda MON_ADDR
+  cmp MON_END
+  beq @HuntDone
+@HuntAdvance:
+  inc MON_ADDR
+  bne @HuntScanLoop
+  inc MON_ADDR+1
+  bra @HuntScanLoop
+@HuntDone:
+  rts
+@HuntError:
+  jmp MonPrintError
+
+; ============================================================================
+; MonCmdCompare — Compare two memory regions
+; Syntax: C ADDR1 ADDR2 ADDR3
+; Compares [addr1,addr2] with block at addr3, prints differing addresses.
+; ============================================================================
+
+MonCmdCompare:
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse addr1 (region1 start) → MON_ADDR
+  bcc @CmpError
+  ; Save addr1 on stack
+  lda MON_ADDR+1
+  pha
+  lda MON_ADDR
+  pha
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse addr2 (region1 end) → MON_ADDR
+  bcc @CmpErrorPop
+  lda MON_ADDR
+  sta MON_END
+  lda MON_ADDR+1
+  sta MON_END+1                 ; MON_END = region1 end (inclusive)
+  jsr MonSkipSpaces
+  jsr MonParseHex4              ; Parse addr3 (region2 base) → MON_ADDR
+  bcc @CmpErrorPop
+  lda MON_ADDR
+  sta MON_TMP
+  lda MON_ADDR+1
+  sta MON_TMP+1                 ; MON_TMP = region2 pointer
+  ; Restore addr1 → MON_ADDR
+  pla
+  sta MON_ADDR
+  pla
+  sta MON_ADDR+1
+  ; Compare loop: [MON_ADDR..MON_END] vs [MON_TMP..]
+  ldy #0
+@CmpLoop:
+  lda (MON_ADDR),y
+  cmp (MON_TMP),y
+  beq @CmpMatch
+  ; Mismatch — print addr1 address
+  jsr MonPrintHex4
+  jsr MonPrintCRLF
+@CmpMatch:
+  ; Check if MON_ADDR == MON_END
+  lda MON_ADDR+1
+  cmp MON_END+1
+  bne @CmpNext
+  lda MON_ADDR
+  cmp MON_END
+  beq @CmpDone
+@CmpNext:
+  ; Advance both pointers
+  inc MON_ADDR
+  bne @CmpNoHi1
+  inc MON_ADDR+1
+@CmpNoHi1:
+  inc MON_TMP
+  bne @CmpLoop
+  inc MON_TMP+1
+  bra @CmpLoop
+@CmpDone:
+  rts
+@CmpErrorPop:
+  pla                           ; Clean up stack
+  pla
+@CmpError:
+  jmp MonPrintError
 
 ; ============================================================================
 ; MonCmdM — Memory dump (hex + ASCII, 8 bytes/row)

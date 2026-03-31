@@ -58,7 +58,29 @@ All hardware-dependent operations are guarded at every level — Kernal, BASIC, 
 
 ### Integer BASIC
 
-A full interactive BASIC interpreter is included. Programs are typed line-numbered and executed with `RUN`. Beyond the core integer dialect, the following additional commands and functions are available:
+A full interactive BASIC interpreter is included. Programs are typed line-numbered and executed with `RUN`. All variables are single-letter (`A`–`Z`), signed 16-bit integers. Multiple statements per line are separated by `:`.
+
+**Core Statements**
+
+| Command | Syntax | Effect |
+|---------|--------|--------|
+| `PRINT` | `PRINT [item [sep item ...]]` | Output items to console. Items can be string literals or expressions. `;` continues on the same line (trailing `;` suppresses the CRLF); `,` inserts two spaces. Bare `PRINT` prints only CRLF |
+| `INPUT` | `INPUT ["prompt"{;|,}] var` | Read an integer from the user into `var`. With `;` appends `? ` to the prompt; with `,` prints the prompt only. Re-prompts with `?REDO` on non-numeric input |
+| `LET` | `LET var = expr` | Assign expression result to variable. `LET` is optional — `var = expr` is equivalent |
+| `GOTO` | `GOTO expr` | Jump unconditionally to the line numbered `expr`. `expr` can be any expression |
+| `GOSUB` | `GOSUB expr` | Push current position and jump to `expr`. Up to 64 levels deep |
+| `RETURN` | `RETURN` | Pop the GOSUB stack and resume after the calling `GOSUB` |
+| `IF` | `IF expr THEN stmt` | Execute `stmt` (or `GOTO linenum`) if `expr` is non-zero. No `ELSE` — false skips to the next line |
+| `FOR` | `FOR var = init TO limit [STEP step]` | Counted loop. Default step is `1`. Condition is `var ≤ limit` for positive step, `var ≥ limit` for negative. Up to 8 nested loops |
+| `NEXT` | `NEXT var` | Increment loop variable and branch back to matching `FOR` if condition holds |
+| `REM` | `REM [text]` | Comment — rest of line is ignored |
+| `END` | `END` | Stop execution and return to the `OK` prompt. Variables are preserved |
+| `LIST` | `LIST` | Print the entire program in detokenized form. Ctrl+C interrupts |
+| `RUN` | `RUN` | Clear all variables and run the program from the first line |
+| `NEW` | `NEW` | Erase the program and clear variables. No `OK` is printed afterward |
+| `CLR` | `CLR` | Clear all variables (A–Z) to zero and reset GOSUB/FOR stacks. Program is kept |
+| `POKE` | `POKE addr, value` | Write the low byte of `value` to memory address `addr` |
+| `BRK` | `BRK` | Drop into the machine-code monitor. Return to BASIC with `X` in the monitor |
 
 **Storage & System**
 
@@ -106,12 +128,32 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 
 | Function / Literal | Returns |
 |--------------------|---------|
-| `CHR(<n>)` | In `PRINT`, outputs the CP437 character glyph for code `n` directly (bypasses control-code handling, so `CHR($07)` draws the bullet glyph instead of beeping). In expressions, returns `n` unchanged |
-| `JOY(1)` / `JOY(2)` | Joystick bitmask byte for port 1 or 2 (R-L-D-U-Y-X-B-A) |
-| `SGN(<x>)` | Sign of x: `1`, `0`, or `-1` |
+| `ABS(x)` | Absolute value of `x` |
+| `RND(x)` | Pseudo-random integer in `[0, x)` for `x > 0`; raw PRNG value (0–32767) for `x ≤ 0` |
+| `SGN(x)` | Sign of `x`: `1`, `0`, or `-1` |
+| `PEEK(addr)` | Byte value at memory address `addr` (0–255) |
+| `NOT expr` | Logical NOT: `1` if `expr` is zero, `0` otherwise |
+| `expr AND expr` | Logical AND: `1` if both operands are non-zero, `0` otherwise |
+| `expr OR expr` | Logical OR: `1` if either operand is non-zero, `0` otherwise |
+| `expr MOD expr` | Integer remainder after division; sign follows the dividend. `DIVISION BY ZERO` if right side is zero |
+| `CHR(n)` | In `PRINT`, draws the CP437 glyph for code `n` directly (bypasses control-code handling). In expressions, returns `n` unchanged |
+| `JOY(1)` / `JOY(2)` | Joystick bitmask for port 1 or 2 (bit order: R-L-D-U-Y-X-B-A) |
 | `$xxxx` | Hexadecimal integer literal (e.g. `$FF` = 255, `$1000` = 4096) |
 
+**Operator Precedence** (high to low)
+
+| Level | Operators |
+|-------|-----------|
+| Unary | `-` (negate), `NOT` |
+| Multiplicative | `*`, `/`, `MOD` |
+| Additive | `+`, `-` |
+| Relational | `=`, `<>`, `<`, `>`, `<=`, `>=` |
+| Logical AND | `AND` |
+| Logical OR | `OR` |
+
 > **Note on integer range:** BASIC uses signed 16-bit integers (`-32768` to `32767`). Hex literals above `$7FFF` print as negative numbers (e.g. `$A000` = `-24576`).
+
+> **Stack limits:** GOSUB supports up to 64 nested levels; FOR/NEXT supports up to 8 nested loops. Exceeding either limit produces an `OUT OF MEMORY` error.
 
 ### Machine Code Monitor
 

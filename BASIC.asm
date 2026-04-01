@@ -174,17 +174,72 @@ BasEntry:
 ; ============================================================================
 
 BasColdStart:
-  ; Initialize program end pointer to start (empty program)
+  ; --- Auto-detect a pre-loaded program at BAS_PRG_START ---
+  ; A valid program has a next-line pointer whose high byte is in program
+  ; space ($08-$7F).  If detected, walk the chain to find BAS_PRGEND and
+  ; skip overwriting the sentinel.  Otherwise initialize fresh.
+  lda BAS_PRG_START + 1          ; High byte of first next-line pointer
+  beq @NoPrg                     ; $00 → sentinel or below program space
+  cmp #>BAS_PRG_START            ; Must be >= $08 (low bound of program space)
+  bcc @NoPrg
+  cmp #$80                       ; Must be <  $80 (below I/O area)
+  bcs @NoPrg
+
+  ; Pointer looks valid — walk the chain to locate the end sentinel
+  lda #<BAS_PRG_START
+  sta BAS_TMP1
+  lda #>BAS_PRG_START
+  sta BAS_TMP1 + 1
+
+@WalkChain:
+  ldy #LINE_NEXT
+  lda (BAS_TMP1),y               ; lo byte of next-line pointer
+  sta BAS_TMP2
+  iny
+  lda (BAS_TMP1),y               ; hi byte of next-line pointer
+  sta BAS_TMP2 + 1
+  ora BAS_TMP2                   ; lo | hi — zero means end sentinel
+  beq @ChainEnd
+  ; Validate: next ptr must be within program space
+  lda BAS_TMP2 + 1
+  cmp #>BAS_PRG_START
+  bcc @NoPrg                     ; < $08 → corrupt
+  cmp #$80
+  bcs @NoPrg                     ; >= $80 → corrupt
+  ; Validate: next ptr must be strictly greater than current (forward progress)
+  cmp BAS_TMP1 + 1
+  bcc @NoPrg
+  bne @DoAdvance
+  lda BAS_TMP2
+  cmp BAS_TMP1
+  bcc @NoPrg
+  beq @NoPrg                     ; same address → zero-length loop → corrupt
+@DoAdvance:
+  lda BAS_TMP2
+  sta BAS_TMP1
+  lda BAS_TMP2 + 1
+  sta BAS_TMP1 + 1
+  bra @WalkChain
+
+@ChainEnd:
+  ; BAS_TMP1 points to the $0000 end sentinel — use it as BAS_PRGEND
+  lda BAS_TMP1
+  sta BAS_PRGEND
+  lda BAS_TMP1 + 1
+  sta BAS_PRGEND + 1
+  bra @PrgDone
+
+@NoPrg:
+  ; No valid program detected — initialize fresh
   lda #<BAS_PRG_START
   sta BAS_PRGEND
   lda #>BAS_PRG_START
   sta BAS_PRGEND + 1
-
-  ; Write end-of-program sentinel ($0000 next-line pointer)
   lda #$00
   sta BAS_PRG_START
   sta BAS_PRG_START + 1
 
+@PrgDone:
   ; Clear variables and stacks
   jsr BasCmdClr
 

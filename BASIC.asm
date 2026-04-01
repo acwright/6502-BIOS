@@ -1,6 +1,6 @@
 ; ***                         ***
 ; ***   Integer BASIC v1.0    ***
-; ***   for 6502-COBBIOS      ***
+; ***     for 6502-BIOS       ***
 ; ***   $E000-$FEFF (7936B)   ***
 ; ***                         ***
 
@@ -3906,7 +3906,7 @@ BasPrintNoDevice:
 ; String Data
 ; ============================================================================
 
-BasStrWelcome:  .byte CH_CR, CH_LF, "COB BASIC v1.0", CH_CR, CH_LF, $00
+BasStrWelcome:  .byte CH_CR, CH_LF, "6502 BASIC v1.0", CH_CR, CH_LF, $00
 BasStrOK:       .byte CH_CR, CH_LF, "OK", CH_CR, CH_LF, $00
 BasStrFree:     .byte " BYTES FREE", $00
 BasStrError:    .byte " ERROR", $00

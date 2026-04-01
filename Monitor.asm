@@ -2512,7 +2512,7 @@ MonPrintBanner:
 ; ============================================================================
 
 MonStrBanner:
-  .byte "COB MONITOR v1.0", $0D, $0A, 0
+  .byte "6502 MONITOR v1.0", $0D, $0A, 0
 MonStrBrk:
   .byte "BRK AT $", 0
 MonStrReady:

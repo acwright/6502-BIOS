@@ -2474,9 +2474,9 @@ Current file: BIOS.asm
 000CDBr 2  85 03          sta STR_PTR + 1
 000CDDr 2  20 rr rr       jsr VideoPrintStrImpl
 000CE0r 2  60             rts
-000CE1r 2  2D 2D 20 54  @SplashTitle: .asciiz "-- The 'COB' v1.0 --"
-000CE5r 2  68 65 20 27  
-000CE9r 2  43 4F 42 27  
+000CE1r 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.0 --"
+000CE5r 2  35 30 32 20  
+000CE9r 2  42 49 4F 53  
 000CF6r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 000CFAr 2  52 3D 42 41  
 000CFEr 2  53 49 43 20  
@@ -5860,311 +5860,311 @@ Current file: BIOS.asm
 000DC0r 2               ; ============================================================================
 000DC0r 2               
 000DC0r 2               MonStrBanner:
-000DC0r 2  43 4F 42 20    .byte "COB MONITOR v1.0", $0D, $0A, 0
-000DC4r 2  4D 4F 4E 49  
-000DC8r 2  54 4F 52 20  
-000DD3r 2               MonStrBrk:
-000DD3r 2  42 52 4B 20    .byte "BRK AT $", 0
-000DD7r 2  41 54 20 24  
-000DDBr 2  00           
-000DDCr 2               MonStrReady:
-000DDCr 2  0D 0A 52 45    .byte $0D, $0A, "READY TO RECEIVE", $0D, $0A, 0
-000DE0r 2  41 44 59 20  
-000DE4r 2  54 4F 20 52  
-000DF1r 2               MonStrNotFound:
-000DF1r 2  46 49 4C 45    .byte "FILE NOT FOUND", 0
-000DF5r 2  20 4E 4F 54  
-000DF9r 2  20 46 4F 55  
-000E00r 2               MonStrDirFull:
-000E00r 2  44 49 52 45    .byte "DIRECTORY FULL", 0
-000E04r 2  43 54 4F 52  
-000E08r 2  59 20 46 55  
-000E0Fr 2               MonStrLoadPfx:
-000E0Fr 2  4C 4F 41 44    .byte "LOADED ", 0
-000E13r 2  45 44 20 00  
-000E17r 2               MonStrSavePfx:
-000E17r 2  53 41 56 45    .byte "SAVED ", 0
-000E1Br 2  44 20 00     
-000E1Er 2               MonStrBytesAt:
-000E1Er 2  20 42 59 54    .byte " BYTES AT $", 0
-000E22r 2  45 53 20 41  
-000E26r 2  54 20 24 00  
-000E2Ar 2               MonStrBytes:
-000E2Ar 2  20 42 59 54    .byte " BYTES", 0
-000E2Er 2  45 53 00     
-000E31r 2               MonStrIOErr:
-000E31r 2  49 2F 4F 20    .byte "I/O ERROR", 0
-000E35r 2  45 52 52 4F  
-000E39r 2  52 00        
-000E3Br 2               
-000E3Br 2               ; ============================================================================
-000E3Br 2               ; Disassembler Data Tables
-000E3Br 2               ; ============================================================================
-000E3Br 2               
-000E3Br 2               ; Mnemonic string table — 71 entries x 3 chars = 213 bytes
-000E3Br 2               DisMnemonics:
-000E3Br 2  41 44 43       .byte "ADC"              ; 0
-000E3Er 2  41 4E 44       .byte "AND"              ; 1
-000E41r 2  41 53 4C       .byte "ASL"              ; 2
-000E44r 2  42 42 52       .byte "BBR"              ; 3
-000E47r 2  42 42 53       .byte "BBS"              ; 4
-000E4Ar 2  42 43 43       .byte "BCC"              ; 5
-000E4Dr 2  42 43 53       .byte "BCS"              ; 6
-000E50r 2  42 45 51       .byte "BEQ"              ; 7
-000E53r 2  42 49 54       .byte "BIT"              ; 8
-000E56r 2  42 4D 49       .byte "BMI"              ; 9
-000E59r 2  42 4E 45       .byte "BNE"              ; 10
-000E5Cr 2  42 50 4C       .byte "BPL"              ; 11
-000E5Fr 2  42 52 41       .byte "BRA"              ; 12
-000E62r 2  42 52 4B       .byte "BRK"              ; 13
-000E65r 2  42 56 43       .byte "BVC"              ; 14
-000E68r 2  42 56 53       .byte "BVS"              ; 15
-000E6Br 2  43 4C 43       .byte "CLC"              ; 16
-000E6Er 2  43 4C 44       .byte "CLD"              ; 17
-000E71r 2  43 4C 49       .byte "CLI"              ; 18
-000E74r 2  43 4C 56       .byte "CLV"              ; 19
-000E77r 2  43 4D 50       .byte "CMP"              ; 20
-000E7Ar 2  43 50 58       .byte "CPX"              ; 21
-000E7Dr 2  43 50 59       .byte "CPY"              ; 22
-000E80r 2  44 45 43       .byte "DEC"              ; 23
-000E83r 2  44 45 58       .byte "DEX"              ; 24
-000E86r 2  44 45 59       .byte "DEY"              ; 25
-000E89r 2  45 4F 52       .byte "EOR"              ; 26
-000E8Cr 2  49 4E 43       .byte "INC"              ; 27
-000E8Fr 2  49 4E 58       .byte "INX"              ; 28
-000E92r 2  49 4E 59       .byte "INY"              ; 29
-000E95r 2  4A 4D 50       .byte "JMP"              ; 30
-000E98r 2  4A 53 52       .byte "JSR"              ; 31
-000E9Br 2  4C 44 41       .byte "LDA"              ; 32
-000E9Er 2  4C 44 58       .byte "LDX"              ; 33
-000EA1r 2  4C 44 59       .byte "LDY"              ; 34
-000EA4r 2  4C 53 52       .byte "LSR"              ; 35
-000EA7r 2  4E 4F 50       .byte "NOP"              ; 36
-000EAAr 2  4F 52 41       .byte "ORA"              ; 37
-000EADr 2  50 48 41       .byte "PHA"              ; 38
-000EB0r 2  50 48 50       .byte "PHP"              ; 39
-000EB3r 2  50 48 58       .byte "PHX"              ; 40
-000EB6r 2  50 48 59       .byte "PHY"              ; 41
-000EB9r 2  50 4C 41       .byte "PLA"              ; 42
-000EBCr 2  50 4C 50       .byte "PLP"              ; 43
-000EBFr 2  50 4C 58       .byte "PLX"              ; 44
-000EC2r 2  50 4C 59       .byte "PLY"              ; 45
-000EC5r 2  52 4D 42       .byte "RMB"              ; 46
-000EC8r 2  52 4F 4C       .byte "ROL"              ; 47
-000ECBr 2  52 4F 52       .byte "ROR"              ; 48
-000ECEr 2  52 54 49       .byte "RTI"              ; 49
-000ED1r 2  52 54 53       .byte "RTS"              ; 50
-000ED4r 2  53 42 43       .byte "SBC"              ; 51
-000ED7r 2  53 45 43       .byte "SEC"              ; 52
-000EDAr 2  53 45 44       .byte "SED"              ; 53
-000EDDr 2  53 45 49       .byte "SEI"              ; 54
-000EE0r 2  53 4D 42       .byte "SMB"              ; 55
-000EE3r 2  53 54 41       .byte "STA"              ; 56
-000EE6r 2  53 54 50       .byte "STP"              ; 57
-000EE9r 2  53 54 58       .byte "STX"              ; 58
-000EECr 2  53 54 59       .byte "STY"              ; 59
-000EEFr 2  53 54 5A       .byte "STZ"              ; 60
-000EF2r 2  54 41 58       .byte "TAX"              ; 61
-000EF5r 2  54 41 59       .byte "TAY"              ; 62
-000EF8r 2  54 52 42       .byte "TRB"              ; 63
-000EFBr 2  54 53 42       .byte "TSB"              ; 64
-000EFEr 2  54 53 58       .byte "TSX"              ; 65
-000F01r 2  54 58 41       .byte "TXA"              ; 66
-000F04r 2  54 58 53       .byte "TXS"              ; 67
-000F07r 2  54 59 41       .byte "TYA"              ; 68
-000F0Ar 2  57 41 49       .byte "WAI"              ; 69
-000F0Dr 2  3F 3F 3F       .byte "???"              ; 70 (undefined)
-000F10r 2               
-000F10r 2               ; Addressing mode operand size table (bytes beyond opcode)
-000F10r 2               DisModeSizes:
-000F10r 2  00             .byte 0                  ; AM_IMP  = 0
-000F11r 2  00             .byte 0                  ; AM_ACC  = 1
-000F12r 2  01             .byte 1                  ; AM_IMM  = 2
-000F13r 2  01             .byte 1                  ; AM_ZP   = 3
-000F14r 2  01             .byte 1                  ; AM_ZPX  = 4
-000F15r 2  01             .byte 1                  ; AM_ZPY  = 5
-000F16r 2  02             .byte 2                  ; AM_ABS  = 6
-000F17r 2  02             .byte 2                  ; AM_ABX  = 7
-000F18r 2  02             .byte 2                  ; AM_ABY  = 8
-000F19r 2  02             .byte 2                  ; AM_IND  = 9
-000F1Ar 2  01             .byte 1                  ; AM_IZX  = 10
-000F1Br 2  01             .byte 1                  ; AM_IZY  = 11
-000F1Cr 2  01             .byte 1                  ; AM_ZPI  = 12
-000F1Dr 2  01             .byte 1                  ; AM_REL  = 13
-000F1Er 2  02             .byte 2                  ; AM_ZPR  = 14
-000F1Fr 2  02             .byte 2                  ; AM_AIX  = 15
-000F20r 2               
-000F20r 2               ; Operand print dispatch table (16 addressing modes)
-000F20r 2               DisOperandJmpTable:
-000F20r 2  rr rr          .word DisOpImp             ; AM_IMP  = 0
-000F22r 2  rr rr          .word DisOpAcc             ; AM_ACC  = 1
-000F24r 2  rr rr          .word DisOpImm             ; AM_IMM  = 2
-000F26r 2  rr rr          .word DisOpZp              ; AM_ZP   = 3
-000F28r 2  rr rr          .word DisOpZpx             ; AM_ZPX  = 4
-000F2Ar 2  rr rr          .word DisOpZpy             ; AM_ZPY  = 5
-000F2Cr 2  rr rr          .word DisOpAbs             ; AM_ABS  = 6
-000F2Er 2  rr rr          .word DisOpAbx             ; AM_ABX  = 7
-000F30r 2  rr rr          .word DisOpAby             ; AM_ABY  = 8
-000F32r 2  rr rr          .word DisOpInd             ; AM_IND  = 9
-000F34r 2  rr rr          .word DisOpIzx             ; AM_IZX  = 10
-000F36r 2  rr rr          .word DisOpIzy             ; AM_IZY  = 11
-000F38r 2  rr rr          .word DisOpZpi             ; AM_ZPI  = 12
-000F3Ar 2  rr rr          .word DisOpRel             ; AM_REL  = 13
-000F3Cr 2  rr rr          .word DisOpZpr             ; AM_ZPR  = 14
-000F3Er 2  rr rr          .word DisOpAix             ; AM_AIX  = 15
-000F40r 2               
-000F40r 2               ; 65C02 Opcode Table — 256 entries x 2 bytes (mnemonic index, addressing mode)
-000F40r 2               DisOpcodeTable:
-000F40r 2                 ; --- $0x ---
-000F40r 2  0D 00 25 0A    .byte MN_BRK,AM_IMP, MN_ORA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $00-$03
-000F44r 2  46 00 46 00  
-000F48r 2  40 03 25 03    .byte MN_TSB,AM_ZP,  MN_ORA,AM_ZP,  MN_ASL,AM_ZP,  MN_RMB,AM_ZP   ; $04-$07
-000F4Cr 2  02 03 2E 03  
-000F50r 2  27 00 25 02    .byte MN_PHP,AM_IMP, MN_ORA,AM_IMM, MN_ASL,AM_ACC, MN_UND,AM_IMP  ; $08-$0B
-000F54r 2  02 01 46 00  
-000F58r 2  40 06 25 06    .byte MN_TSB,AM_ABS, MN_ORA,AM_ABS, MN_ASL,AM_ABS, MN_BBR,AM_ZPR  ; $0C-$0F
-000F5Cr 2  02 06 03 0E  
-000F60r 2                 ; --- $1x ---
-000F60r 2  0B 0D 25 0B    .byte MN_BPL,AM_REL, MN_ORA,AM_IZY, MN_ORA,AM_ZPI, MN_UND,AM_IMP  ; $10-$13
-000F64r 2  25 0C 46 00  
-000F68r 2  3F 03 25 04    .byte MN_TRB,AM_ZP,  MN_ORA,AM_ZPX, MN_ASL,AM_ZPX, MN_RMB,AM_ZP   ; $14-$17
-000F6Cr 2  02 04 2E 03  
-000F70r 2  10 00 25 08    .byte MN_CLC,AM_IMP, MN_ORA,AM_ABY, MN_INC,AM_ACC, MN_UND,AM_IMP  ; $18-$1B
-000F74r 2  1B 01 46 00  
-000F78r 2  3F 06 25 07    .byte MN_TRB,AM_ABS, MN_ORA,AM_ABX, MN_ASL,AM_ABX, MN_BBR,AM_ZPR  ; $1C-$1F
-000F7Cr 2  02 07 03 0E  
-000F80r 2                 ; --- $2x ---
-000F80r 2  1F 06 01 0A    .byte MN_JSR,AM_ABS, MN_AND,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $20-$23
-000F84r 2  46 00 46 00  
-000F88r 2  08 03 01 03    .byte MN_BIT,AM_ZP,  MN_AND,AM_ZP,  MN_ROL,AM_ZP,  MN_RMB,AM_ZP   ; $24-$27
-000F8Cr 2  2F 03 2E 03  
-000F90r 2  2B 00 01 02    .byte MN_PLP,AM_IMP, MN_AND,AM_IMM, MN_ROL,AM_ACC, MN_UND,AM_IMP  ; $28-$2B
-000F94r 2  2F 01 46 00  
-000F98r 2  08 06 01 06    .byte MN_BIT,AM_ABS, MN_AND,AM_ABS, MN_ROL,AM_ABS, MN_BBR,AM_ZPR  ; $2C-$2F
-000F9Cr 2  2F 06 03 0E  
-000FA0r 2                 ; --- $3x ---
-000FA0r 2  09 0D 01 0B    .byte MN_BMI,AM_REL, MN_AND,AM_IZY, MN_AND,AM_ZPI, MN_UND,AM_IMP  ; $30-$33
-000FA4r 2  01 0C 46 00  
-000FA8r 2  08 04 01 04    .byte MN_BIT,AM_ZPX, MN_AND,AM_ZPX, MN_ROL,AM_ZPX, MN_RMB,AM_ZP   ; $34-$37
-000FACr 2  2F 04 2E 03  
-000FB0r 2  34 00 01 08    .byte MN_SEC,AM_IMP, MN_AND,AM_ABY, MN_DEC,AM_ACC, MN_UND,AM_IMP  ; $38-$3B
-000FB4r 2  17 01 46 00  
-000FB8r 2  08 07 01 07    .byte MN_BIT,AM_ABX, MN_AND,AM_ABX, MN_ROL,AM_ABX, MN_BBR,AM_ZPR  ; $3C-$3F
-000FBCr 2  2F 07 03 0E  
-000FC0r 2                 ; --- $4x ---
-000FC0r 2  31 00 1A 0A    .byte MN_RTI,AM_IMP, MN_EOR,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $40-$43
-000FC4r 2  46 00 46 00  
-000FC8r 2  46 00 1A 03    .byte MN_UND,AM_IMP, MN_EOR,AM_ZP,  MN_LSR,AM_ZP,  MN_RMB,AM_ZP   ; $44-$47
-000FCCr 2  23 03 2E 03  
-000FD0r 2  26 00 1A 02    .byte MN_PHA,AM_IMP, MN_EOR,AM_IMM, MN_LSR,AM_ACC, MN_UND,AM_IMP  ; $48-$4B
-000FD4r 2  23 01 46 00  
-000FD8r 2  1E 06 1A 06    .byte MN_JMP,AM_ABS, MN_EOR,AM_ABS, MN_LSR,AM_ABS, MN_BBR,AM_ZPR  ; $4C-$4F
-000FDCr 2  23 06 03 0E  
-000FE0r 2                 ; --- $5x ---
-000FE0r 2  0E 0D 1A 0B    .byte MN_BVC,AM_REL, MN_EOR,AM_IZY, MN_EOR,AM_ZPI, MN_UND,AM_IMP  ; $50-$53
-000FE4r 2  1A 0C 46 00  
-000FE8r 2  46 00 1A 04    .byte MN_UND,AM_IMP, MN_EOR,AM_ZPX, MN_LSR,AM_ZPX, MN_RMB,AM_ZP   ; $54-$57
-000FECr 2  23 04 2E 03  
-000FF0r 2  12 00 1A 08    .byte MN_CLI,AM_IMP, MN_EOR,AM_ABY, MN_PHY,AM_IMP, MN_UND,AM_IMP  ; $58-$5B
-000FF4r 2  29 00 46 00  
-000FF8r 2  46 00 1A 07    .byte MN_UND,AM_IMP, MN_EOR,AM_ABX, MN_LSR,AM_ABX, MN_BBR,AM_ZPR  ; $5C-$5F
-000FFCr 2  23 07 03 0E  
-001000r 2                 ; --- $6x ---
-001000r 2  32 00 00 0A    .byte MN_RTS,AM_IMP, MN_ADC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $60-$63
-001004r 2  46 00 46 00  
-001008r 2  3C 03 00 03    .byte MN_STZ,AM_ZP,  MN_ADC,AM_ZP,  MN_ROR,AM_ZP,  MN_RMB,AM_ZP   ; $64-$67
-00100Cr 2  30 03 2E 03  
-001010r 2  2A 00 00 02    .byte MN_PLA,AM_IMP, MN_ADC,AM_IMM, MN_ROR,AM_ACC, MN_UND,AM_IMP  ; $68-$6B
-001014r 2  30 01 46 00  
-001018r 2  1E 09 00 06    .byte MN_JMP,AM_IND, MN_ADC,AM_ABS, MN_ROR,AM_ABS, MN_BBR,AM_ZPR  ; $6C-$6F
-00101Cr 2  30 06 03 0E  
-001020r 2                 ; --- $7x ---
-001020r 2  0F 0D 00 0B    .byte MN_BVS,AM_REL, MN_ADC,AM_IZY, MN_ADC,AM_ZPI, MN_UND,AM_IMP  ; $70-$73
-001024r 2  00 0C 46 00  
-001028r 2  3C 04 00 04    .byte MN_STZ,AM_ZPX, MN_ADC,AM_ZPX, MN_ROR,AM_ZPX, MN_RMB,AM_ZP   ; $74-$77
-00102Cr 2  30 04 2E 03  
-001030r 2  36 00 00 08    .byte MN_SEI,AM_IMP, MN_ADC,AM_ABY, MN_PLY,AM_IMP, MN_UND,AM_IMP  ; $78-$7B
-001034r 2  2D 00 46 00  
-001038r 2  1E 0F 00 07    .byte MN_JMP,AM_AIX, MN_ADC,AM_ABX, MN_ROR,AM_ABX, MN_BBR,AM_ZPR  ; $7C-$7F
-00103Cr 2  30 07 03 0E  
-001040r 2                 ; --- $8x ---
-001040r 2  0C 0D 38 0A    .byte MN_BRA,AM_REL, MN_STA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $80-$83
-001044r 2  46 00 46 00  
-001048r 2  3B 03 38 03    .byte MN_STY,AM_ZP,  MN_STA,AM_ZP,  MN_STX,AM_ZP,  MN_SMB,AM_ZP   ; $84-$87
-00104Cr 2  3A 03 37 03  
-001050r 2  19 00 08 02    .byte MN_DEY,AM_IMP, MN_BIT,AM_IMM, MN_TXA,AM_IMP, MN_UND,AM_IMP  ; $88-$8B
-001054r 2  42 00 46 00  
-001058r 2  3B 06 38 06    .byte MN_STY,AM_ABS, MN_STA,AM_ABS, MN_STX,AM_ABS, MN_BBS,AM_ZPR  ; $8C-$8F
-00105Cr 2  3A 06 04 0E  
-001060r 2                 ; --- $9x ---
-001060r 2  05 0D 38 0B    .byte MN_BCC,AM_REL, MN_STA,AM_IZY, MN_STA,AM_ZPI, MN_UND,AM_IMP  ; $90-$93
-001064r 2  38 0C 46 00  
-001068r 2  3B 04 38 04    .byte MN_STY,AM_ZPX, MN_STA,AM_ZPX, MN_STX,AM_ZPY, MN_SMB,AM_ZP   ; $94-$97
-00106Cr 2  3A 05 37 03  
-001070r 2  44 00 38 08    .byte MN_TYA,AM_IMP, MN_STA,AM_ABY, MN_TXS,AM_IMP, MN_UND,AM_IMP  ; $98-$9B
-001074r 2  43 00 46 00  
-001078r 2  3C 06 38 07    .byte MN_STZ,AM_ABS, MN_STA,AM_ABX, MN_STZ,AM_ABX, MN_BBS,AM_ZPR  ; $9C-$9F
-00107Cr 2  3C 07 04 0E  
-001080r 2                 ; --- $Ax ---
-001080r 2  22 02 20 0A    .byte MN_LDY,AM_IMM, MN_LDA,AM_IZX, MN_LDX,AM_IMM, MN_UND,AM_IMP  ; $A0-$A3
-001084r 2  21 02 46 00  
-001088r 2  22 03 20 03    .byte MN_LDY,AM_ZP,  MN_LDA,AM_ZP,  MN_LDX,AM_ZP,  MN_SMB,AM_ZP   ; $A4-$A7
-00108Cr 2  21 03 37 03  
-001090r 2  3E 00 20 02    .byte MN_TAY,AM_IMP, MN_LDA,AM_IMM, MN_TAX,AM_IMP, MN_UND,AM_IMP  ; $A8-$AB
-001094r 2  3D 00 46 00  
-001098r 2  22 06 20 06    .byte MN_LDY,AM_ABS, MN_LDA,AM_ABS, MN_LDX,AM_ABS, MN_BBS,AM_ZPR  ; $AC-$AF
-00109Cr 2  21 06 04 0E  
-0010A0r 2                 ; --- $Bx ---
-0010A0r 2  06 0D 20 0B    .byte MN_BCS,AM_REL, MN_LDA,AM_IZY, MN_LDA,AM_ZPI, MN_UND,AM_IMP  ; $B0-$B3
-0010A4r 2  20 0C 46 00  
-0010A8r 2  22 04 20 04    .byte MN_LDY,AM_ZPX, MN_LDA,AM_ZPX, MN_LDX,AM_ZPY, MN_SMB,AM_ZP   ; $B4-$B7
-0010ACr 2  21 05 37 03  
-0010B0r 2  13 00 20 08    .byte MN_CLV,AM_IMP, MN_LDA,AM_ABY, MN_TSX,AM_IMP, MN_UND,AM_IMP  ; $B8-$BB
-0010B4r 2  41 00 46 00  
-0010B8r 2  22 07 20 07    .byte MN_LDY,AM_ABX, MN_LDA,AM_ABX, MN_LDX,AM_ABY, MN_BBS,AM_ZPR  ; $BC-$BF
-0010BCr 2  21 08 04 0E  
-0010C0r 2                 ; --- $Cx ---
-0010C0r 2  16 02 14 0A    .byte MN_CPY,AM_IMM, MN_CMP,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $C0-$C3
-0010C4r 2  46 00 46 00  
-0010C8r 2  16 03 14 03    .byte MN_CPY,AM_ZP,  MN_CMP,AM_ZP,  MN_DEC,AM_ZP,  MN_SMB,AM_ZP   ; $C4-$C7
-0010CCr 2  17 03 37 03  
-0010D0r 2  1D 00 14 02    .byte MN_INY,AM_IMP, MN_CMP,AM_IMM, MN_DEX,AM_IMP, MN_WAI,AM_IMP  ; $C8-$CB
-0010D4r 2  18 00 45 00  
-0010D8r 2  16 06 14 06    .byte MN_CPY,AM_ABS, MN_CMP,AM_ABS, MN_DEC,AM_ABS, MN_BBS,AM_ZPR  ; $CC-$CF
-0010DCr 2  17 06 04 0E  
-0010E0r 2                 ; --- $Dx ---
-0010E0r 2  0A 0D 14 0B    .byte MN_BNE,AM_REL, MN_CMP,AM_IZY, MN_CMP,AM_ZPI, MN_UND,AM_IMP  ; $D0-$D3
-0010E4r 2  14 0C 46 00  
-0010E8r 2  46 00 14 04    .byte MN_UND,AM_IMP, MN_CMP,AM_ZPX, MN_DEC,AM_ZPX, MN_SMB,AM_ZP   ; $D4-$D7
-0010ECr 2  17 04 37 03  
-0010F0r 2  11 00 14 08    .byte MN_CLD,AM_IMP, MN_CMP,AM_ABY, MN_PHX,AM_IMP, MN_STP,AM_IMP  ; $D8-$DB
-0010F4r 2  28 00 39 00  
-0010F8r 2  46 00 14 07    .byte MN_UND,AM_IMP, MN_CMP,AM_ABX, MN_DEC,AM_ABX, MN_BBS,AM_ZPR  ; $DC-$DF
-0010FCr 2  17 07 04 0E  
-001100r 2                 ; --- $Ex ---
-001100r 2  15 02 33 0A    .byte MN_CPX,AM_IMM, MN_SBC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $E0-$E3
-001104r 2  46 00 46 00  
-001108r 2  15 03 33 03    .byte MN_CPX,AM_ZP,  MN_SBC,AM_ZP,  MN_INC,AM_ZP,  MN_SMB,AM_ZP   ; $E4-$E7
-00110Cr 2  1B 03 37 03  
-001110r 2  1C 00 33 02    .byte MN_INX,AM_IMP, MN_SBC,AM_IMM, MN_NOP,AM_IMP, MN_UND,AM_IMP  ; $E8-$EB
-001114r 2  24 00 46 00  
-001118r 2  15 06 33 06    .byte MN_CPX,AM_ABS, MN_SBC,AM_ABS, MN_INC,AM_ABS, MN_BBS,AM_ZPR  ; $EC-$EF
-00111Cr 2  1B 06 04 0E  
-001120r 2                 ; --- $Fx ---
-001120r 2  07 0D 33 0B    .byte MN_BEQ,AM_REL, MN_SBC,AM_IZY, MN_SBC,AM_ZPI, MN_UND,AM_IMP  ; $F0-$F3
-001124r 2  33 0C 46 00  
-001128r 2  46 00 33 04    .byte MN_UND,AM_IMP, MN_SBC,AM_ZPX, MN_INC,AM_ZPX, MN_SMB,AM_ZP   ; $F4-$F7
-00112Cr 2  1B 04 37 03  
-001130r 2  35 00 33 08    .byte MN_SED,AM_IMP, MN_SBC,AM_ABY, MN_PLX,AM_IMP, MN_UND,AM_IMP  ; $F8-$FB
-001134r 2  2C 00 46 00  
-001138r 2  46 00 33 07    .byte MN_UND,AM_IMP, MN_SBC,AM_ABX, MN_INC,AM_ABX, MN_BBS,AM_ZPR  ; $FC-$FF
-00113Cr 2  1B 07 04 0E  
-001140r 2               
-001140r 1               .segment "BASIC"
+000DC0r 2  36 35 30 32    .byte "6502 MONITOR v1.0", $0D, $0A, 0
+000DC4r 2  20 4D 4F 4E  
+000DC8r 2  49 54 4F 52  
+000DD4r 2               MonStrBrk:
+000DD4r 2  42 52 4B 20    .byte "BRK AT $", 0
+000DD8r 2  41 54 20 24  
+000DDCr 2  00           
+000DDDr 2               MonStrReady:
+000DDDr 2  0D 0A 52 45    .byte $0D, $0A, "READY TO RECEIVE", $0D, $0A, 0
+000DE1r 2  41 44 59 20  
+000DE5r 2  54 4F 20 52  
+000DF2r 2               MonStrNotFound:
+000DF2r 2  46 49 4C 45    .byte "FILE NOT FOUND", 0
+000DF6r 2  20 4E 4F 54  
+000DFAr 2  20 46 4F 55  
+000E01r 2               MonStrDirFull:
+000E01r 2  44 49 52 45    .byte "DIRECTORY FULL", 0
+000E05r 2  43 54 4F 52  
+000E09r 2  59 20 46 55  
+000E10r 2               MonStrLoadPfx:
+000E10r 2  4C 4F 41 44    .byte "LOADED ", 0
+000E14r 2  45 44 20 00  
+000E18r 2               MonStrSavePfx:
+000E18r 2  53 41 56 45    .byte "SAVED ", 0
+000E1Cr 2  44 20 00     
+000E1Fr 2               MonStrBytesAt:
+000E1Fr 2  20 42 59 54    .byte " BYTES AT $", 0
+000E23r 2  45 53 20 41  
+000E27r 2  54 20 24 00  
+000E2Br 2               MonStrBytes:
+000E2Br 2  20 42 59 54    .byte " BYTES", 0
+000E2Fr 2  45 53 00     
+000E32r 2               MonStrIOErr:
+000E32r 2  49 2F 4F 20    .byte "I/O ERROR", 0
+000E36r 2  45 52 52 4F  
+000E3Ar 2  52 00        
+000E3Cr 2               
+000E3Cr 2               ; ============================================================================
+000E3Cr 2               ; Disassembler Data Tables
+000E3Cr 2               ; ============================================================================
+000E3Cr 2               
+000E3Cr 2               ; Mnemonic string table — 71 entries x 3 chars = 213 bytes
+000E3Cr 2               DisMnemonics:
+000E3Cr 2  41 44 43       .byte "ADC"              ; 0
+000E3Fr 2  41 4E 44       .byte "AND"              ; 1
+000E42r 2  41 53 4C       .byte "ASL"              ; 2
+000E45r 2  42 42 52       .byte "BBR"              ; 3
+000E48r 2  42 42 53       .byte "BBS"              ; 4
+000E4Br 2  42 43 43       .byte "BCC"              ; 5
+000E4Er 2  42 43 53       .byte "BCS"              ; 6
+000E51r 2  42 45 51       .byte "BEQ"              ; 7
+000E54r 2  42 49 54       .byte "BIT"              ; 8
+000E57r 2  42 4D 49       .byte "BMI"              ; 9
+000E5Ar 2  42 4E 45       .byte "BNE"              ; 10
+000E5Dr 2  42 50 4C       .byte "BPL"              ; 11
+000E60r 2  42 52 41       .byte "BRA"              ; 12
+000E63r 2  42 52 4B       .byte "BRK"              ; 13
+000E66r 2  42 56 43       .byte "BVC"              ; 14
+000E69r 2  42 56 53       .byte "BVS"              ; 15
+000E6Cr 2  43 4C 43       .byte "CLC"              ; 16
+000E6Fr 2  43 4C 44       .byte "CLD"              ; 17
+000E72r 2  43 4C 49       .byte "CLI"              ; 18
+000E75r 2  43 4C 56       .byte "CLV"              ; 19
+000E78r 2  43 4D 50       .byte "CMP"              ; 20
+000E7Br 2  43 50 58       .byte "CPX"              ; 21
+000E7Er 2  43 50 59       .byte "CPY"              ; 22
+000E81r 2  44 45 43       .byte "DEC"              ; 23
+000E84r 2  44 45 58       .byte "DEX"              ; 24
+000E87r 2  44 45 59       .byte "DEY"              ; 25
+000E8Ar 2  45 4F 52       .byte "EOR"              ; 26
+000E8Dr 2  49 4E 43       .byte "INC"              ; 27
+000E90r 2  49 4E 58       .byte "INX"              ; 28
+000E93r 2  49 4E 59       .byte "INY"              ; 29
+000E96r 2  4A 4D 50       .byte "JMP"              ; 30
+000E99r 2  4A 53 52       .byte "JSR"              ; 31
+000E9Cr 2  4C 44 41       .byte "LDA"              ; 32
+000E9Fr 2  4C 44 58       .byte "LDX"              ; 33
+000EA2r 2  4C 44 59       .byte "LDY"              ; 34
+000EA5r 2  4C 53 52       .byte "LSR"              ; 35
+000EA8r 2  4E 4F 50       .byte "NOP"              ; 36
+000EABr 2  4F 52 41       .byte "ORA"              ; 37
+000EAEr 2  50 48 41       .byte "PHA"              ; 38
+000EB1r 2  50 48 50       .byte "PHP"              ; 39
+000EB4r 2  50 48 58       .byte "PHX"              ; 40
+000EB7r 2  50 48 59       .byte "PHY"              ; 41
+000EBAr 2  50 4C 41       .byte "PLA"              ; 42
+000EBDr 2  50 4C 50       .byte "PLP"              ; 43
+000EC0r 2  50 4C 58       .byte "PLX"              ; 44
+000EC3r 2  50 4C 59       .byte "PLY"              ; 45
+000EC6r 2  52 4D 42       .byte "RMB"              ; 46
+000EC9r 2  52 4F 4C       .byte "ROL"              ; 47
+000ECCr 2  52 4F 52       .byte "ROR"              ; 48
+000ECFr 2  52 54 49       .byte "RTI"              ; 49
+000ED2r 2  52 54 53       .byte "RTS"              ; 50
+000ED5r 2  53 42 43       .byte "SBC"              ; 51
+000ED8r 2  53 45 43       .byte "SEC"              ; 52
+000EDBr 2  53 45 44       .byte "SED"              ; 53
+000EDEr 2  53 45 49       .byte "SEI"              ; 54
+000EE1r 2  53 4D 42       .byte "SMB"              ; 55
+000EE4r 2  53 54 41       .byte "STA"              ; 56
+000EE7r 2  53 54 50       .byte "STP"              ; 57
+000EEAr 2  53 54 58       .byte "STX"              ; 58
+000EEDr 2  53 54 59       .byte "STY"              ; 59
+000EF0r 2  53 54 5A       .byte "STZ"              ; 60
+000EF3r 2  54 41 58       .byte "TAX"              ; 61
+000EF6r 2  54 41 59       .byte "TAY"              ; 62
+000EF9r 2  54 52 42       .byte "TRB"              ; 63
+000EFCr 2  54 53 42       .byte "TSB"              ; 64
+000EFFr 2  54 53 58       .byte "TSX"              ; 65
+000F02r 2  54 58 41       .byte "TXA"              ; 66
+000F05r 2  54 58 53       .byte "TXS"              ; 67
+000F08r 2  54 59 41       .byte "TYA"              ; 68
+000F0Br 2  57 41 49       .byte "WAI"              ; 69
+000F0Er 2  3F 3F 3F       .byte "???"              ; 70 (undefined)
+000F11r 2               
+000F11r 2               ; Addressing mode operand size table (bytes beyond opcode)
+000F11r 2               DisModeSizes:
+000F11r 2  00             .byte 0                  ; AM_IMP  = 0
+000F12r 2  00             .byte 0                  ; AM_ACC  = 1
+000F13r 2  01             .byte 1                  ; AM_IMM  = 2
+000F14r 2  01             .byte 1                  ; AM_ZP   = 3
+000F15r 2  01             .byte 1                  ; AM_ZPX  = 4
+000F16r 2  01             .byte 1                  ; AM_ZPY  = 5
+000F17r 2  02             .byte 2                  ; AM_ABS  = 6
+000F18r 2  02             .byte 2                  ; AM_ABX  = 7
+000F19r 2  02             .byte 2                  ; AM_ABY  = 8
+000F1Ar 2  02             .byte 2                  ; AM_IND  = 9
+000F1Br 2  01             .byte 1                  ; AM_IZX  = 10
+000F1Cr 2  01             .byte 1                  ; AM_IZY  = 11
+000F1Dr 2  01             .byte 1                  ; AM_ZPI  = 12
+000F1Er 2  01             .byte 1                  ; AM_REL  = 13
+000F1Fr 2  02             .byte 2                  ; AM_ZPR  = 14
+000F20r 2  02             .byte 2                  ; AM_AIX  = 15
+000F21r 2               
+000F21r 2               ; Operand print dispatch table (16 addressing modes)
+000F21r 2               DisOperandJmpTable:
+000F21r 2  rr rr          .word DisOpImp             ; AM_IMP  = 0
+000F23r 2  rr rr          .word DisOpAcc             ; AM_ACC  = 1
+000F25r 2  rr rr          .word DisOpImm             ; AM_IMM  = 2
+000F27r 2  rr rr          .word DisOpZp              ; AM_ZP   = 3
+000F29r 2  rr rr          .word DisOpZpx             ; AM_ZPX  = 4
+000F2Br 2  rr rr          .word DisOpZpy             ; AM_ZPY  = 5
+000F2Dr 2  rr rr          .word DisOpAbs             ; AM_ABS  = 6
+000F2Fr 2  rr rr          .word DisOpAbx             ; AM_ABX  = 7
+000F31r 2  rr rr          .word DisOpAby             ; AM_ABY  = 8
+000F33r 2  rr rr          .word DisOpInd             ; AM_IND  = 9
+000F35r 2  rr rr          .word DisOpIzx             ; AM_IZX  = 10
+000F37r 2  rr rr          .word DisOpIzy             ; AM_IZY  = 11
+000F39r 2  rr rr          .word DisOpZpi             ; AM_ZPI  = 12
+000F3Br 2  rr rr          .word DisOpRel             ; AM_REL  = 13
+000F3Dr 2  rr rr          .word DisOpZpr             ; AM_ZPR  = 14
+000F3Fr 2  rr rr          .word DisOpAix             ; AM_AIX  = 15
+000F41r 2               
+000F41r 2               ; 65C02 Opcode Table — 256 entries x 2 bytes (mnemonic index, addressing mode)
+000F41r 2               DisOpcodeTable:
+000F41r 2                 ; --- $0x ---
+000F41r 2  0D 00 25 0A    .byte MN_BRK,AM_IMP, MN_ORA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $00-$03
+000F45r 2  46 00 46 00  
+000F49r 2  40 03 25 03    .byte MN_TSB,AM_ZP,  MN_ORA,AM_ZP,  MN_ASL,AM_ZP,  MN_RMB,AM_ZP   ; $04-$07
+000F4Dr 2  02 03 2E 03  
+000F51r 2  27 00 25 02    .byte MN_PHP,AM_IMP, MN_ORA,AM_IMM, MN_ASL,AM_ACC, MN_UND,AM_IMP  ; $08-$0B
+000F55r 2  02 01 46 00  
+000F59r 2  40 06 25 06    .byte MN_TSB,AM_ABS, MN_ORA,AM_ABS, MN_ASL,AM_ABS, MN_BBR,AM_ZPR  ; $0C-$0F
+000F5Dr 2  02 06 03 0E  
+000F61r 2                 ; --- $1x ---
+000F61r 2  0B 0D 25 0B    .byte MN_BPL,AM_REL, MN_ORA,AM_IZY, MN_ORA,AM_ZPI, MN_UND,AM_IMP  ; $10-$13
+000F65r 2  25 0C 46 00  
+000F69r 2  3F 03 25 04    .byte MN_TRB,AM_ZP,  MN_ORA,AM_ZPX, MN_ASL,AM_ZPX, MN_RMB,AM_ZP   ; $14-$17
+000F6Dr 2  02 04 2E 03  
+000F71r 2  10 00 25 08    .byte MN_CLC,AM_IMP, MN_ORA,AM_ABY, MN_INC,AM_ACC, MN_UND,AM_IMP  ; $18-$1B
+000F75r 2  1B 01 46 00  
+000F79r 2  3F 06 25 07    .byte MN_TRB,AM_ABS, MN_ORA,AM_ABX, MN_ASL,AM_ABX, MN_BBR,AM_ZPR  ; $1C-$1F
+000F7Dr 2  02 07 03 0E  
+000F81r 2                 ; --- $2x ---
+000F81r 2  1F 06 01 0A    .byte MN_JSR,AM_ABS, MN_AND,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $20-$23
+000F85r 2  46 00 46 00  
+000F89r 2  08 03 01 03    .byte MN_BIT,AM_ZP,  MN_AND,AM_ZP,  MN_ROL,AM_ZP,  MN_RMB,AM_ZP   ; $24-$27
+000F8Dr 2  2F 03 2E 03  
+000F91r 2  2B 00 01 02    .byte MN_PLP,AM_IMP, MN_AND,AM_IMM, MN_ROL,AM_ACC, MN_UND,AM_IMP  ; $28-$2B
+000F95r 2  2F 01 46 00  
+000F99r 2  08 06 01 06    .byte MN_BIT,AM_ABS, MN_AND,AM_ABS, MN_ROL,AM_ABS, MN_BBR,AM_ZPR  ; $2C-$2F
+000F9Dr 2  2F 06 03 0E  
+000FA1r 2                 ; --- $3x ---
+000FA1r 2  09 0D 01 0B    .byte MN_BMI,AM_REL, MN_AND,AM_IZY, MN_AND,AM_ZPI, MN_UND,AM_IMP  ; $30-$33
+000FA5r 2  01 0C 46 00  
+000FA9r 2  08 04 01 04    .byte MN_BIT,AM_ZPX, MN_AND,AM_ZPX, MN_ROL,AM_ZPX, MN_RMB,AM_ZP   ; $34-$37
+000FADr 2  2F 04 2E 03  
+000FB1r 2  34 00 01 08    .byte MN_SEC,AM_IMP, MN_AND,AM_ABY, MN_DEC,AM_ACC, MN_UND,AM_IMP  ; $38-$3B
+000FB5r 2  17 01 46 00  
+000FB9r 2  08 07 01 07    .byte MN_BIT,AM_ABX, MN_AND,AM_ABX, MN_ROL,AM_ABX, MN_BBR,AM_ZPR  ; $3C-$3F
+000FBDr 2  2F 07 03 0E  
+000FC1r 2                 ; --- $4x ---
+000FC1r 2  31 00 1A 0A    .byte MN_RTI,AM_IMP, MN_EOR,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $40-$43
+000FC5r 2  46 00 46 00  
+000FC9r 2  46 00 1A 03    .byte MN_UND,AM_IMP, MN_EOR,AM_ZP,  MN_LSR,AM_ZP,  MN_RMB,AM_ZP   ; $44-$47
+000FCDr 2  23 03 2E 03  
+000FD1r 2  26 00 1A 02    .byte MN_PHA,AM_IMP, MN_EOR,AM_IMM, MN_LSR,AM_ACC, MN_UND,AM_IMP  ; $48-$4B
+000FD5r 2  23 01 46 00  
+000FD9r 2  1E 06 1A 06    .byte MN_JMP,AM_ABS, MN_EOR,AM_ABS, MN_LSR,AM_ABS, MN_BBR,AM_ZPR  ; $4C-$4F
+000FDDr 2  23 06 03 0E  
+000FE1r 2                 ; --- $5x ---
+000FE1r 2  0E 0D 1A 0B    .byte MN_BVC,AM_REL, MN_EOR,AM_IZY, MN_EOR,AM_ZPI, MN_UND,AM_IMP  ; $50-$53
+000FE5r 2  1A 0C 46 00  
+000FE9r 2  46 00 1A 04    .byte MN_UND,AM_IMP, MN_EOR,AM_ZPX, MN_LSR,AM_ZPX, MN_RMB,AM_ZP   ; $54-$57
+000FEDr 2  23 04 2E 03  
+000FF1r 2  12 00 1A 08    .byte MN_CLI,AM_IMP, MN_EOR,AM_ABY, MN_PHY,AM_IMP, MN_UND,AM_IMP  ; $58-$5B
+000FF5r 2  29 00 46 00  
+000FF9r 2  46 00 1A 07    .byte MN_UND,AM_IMP, MN_EOR,AM_ABX, MN_LSR,AM_ABX, MN_BBR,AM_ZPR  ; $5C-$5F
+000FFDr 2  23 07 03 0E  
+001001r 2                 ; --- $6x ---
+001001r 2  32 00 00 0A    .byte MN_RTS,AM_IMP, MN_ADC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $60-$63
+001005r 2  46 00 46 00  
+001009r 2  3C 03 00 03    .byte MN_STZ,AM_ZP,  MN_ADC,AM_ZP,  MN_ROR,AM_ZP,  MN_RMB,AM_ZP   ; $64-$67
+00100Dr 2  30 03 2E 03  
+001011r 2  2A 00 00 02    .byte MN_PLA,AM_IMP, MN_ADC,AM_IMM, MN_ROR,AM_ACC, MN_UND,AM_IMP  ; $68-$6B
+001015r 2  30 01 46 00  
+001019r 2  1E 09 00 06    .byte MN_JMP,AM_IND, MN_ADC,AM_ABS, MN_ROR,AM_ABS, MN_BBR,AM_ZPR  ; $6C-$6F
+00101Dr 2  30 06 03 0E  
+001021r 2                 ; --- $7x ---
+001021r 2  0F 0D 00 0B    .byte MN_BVS,AM_REL, MN_ADC,AM_IZY, MN_ADC,AM_ZPI, MN_UND,AM_IMP  ; $70-$73
+001025r 2  00 0C 46 00  
+001029r 2  3C 04 00 04    .byte MN_STZ,AM_ZPX, MN_ADC,AM_ZPX, MN_ROR,AM_ZPX, MN_RMB,AM_ZP   ; $74-$77
+00102Dr 2  30 04 2E 03  
+001031r 2  36 00 00 08    .byte MN_SEI,AM_IMP, MN_ADC,AM_ABY, MN_PLY,AM_IMP, MN_UND,AM_IMP  ; $78-$7B
+001035r 2  2D 00 46 00  
+001039r 2  1E 0F 00 07    .byte MN_JMP,AM_AIX, MN_ADC,AM_ABX, MN_ROR,AM_ABX, MN_BBR,AM_ZPR  ; $7C-$7F
+00103Dr 2  30 07 03 0E  
+001041r 2                 ; --- $8x ---
+001041r 2  0C 0D 38 0A    .byte MN_BRA,AM_REL, MN_STA,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $80-$83
+001045r 2  46 00 46 00  
+001049r 2  3B 03 38 03    .byte MN_STY,AM_ZP,  MN_STA,AM_ZP,  MN_STX,AM_ZP,  MN_SMB,AM_ZP   ; $84-$87
+00104Dr 2  3A 03 37 03  
+001051r 2  19 00 08 02    .byte MN_DEY,AM_IMP, MN_BIT,AM_IMM, MN_TXA,AM_IMP, MN_UND,AM_IMP  ; $88-$8B
+001055r 2  42 00 46 00  
+001059r 2  3B 06 38 06    .byte MN_STY,AM_ABS, MN_STA,AM_ABS, MN_STX,AM_ABS, MN_BBS,AM_ZPR  ; $8C-$8F
+00105Dr 2  3A 06 04 0E  
+001061r 2                 ; --- $9x ---
+001061r 2  05 0D 38 0B    .byte MN_BCC,AM_REL, MN_STA,AM_IZY, MN_STA,AM_ZPI, MN_UND,AM_IMP  ; $90-$93
+001065r 2  38 0C 46 00  
+001069r 2  3B 04 38 04    .byte MN_STY,AM_ZPX, MN_STA,AM_ZPX, MN_STX,AM_ZPY, MN_SMB,AM_ZP   ; $94-$97
+00106Dr 2  3A 05 37 03  
+001071r 2  44 00 38 08    .byte MN_TYA,AM_IMP, MN_STA,AM_ABY, MN_TXS,AM_IMP, MN_UND,AM_IMP  ; $98-$9B
+001075r 2  43 00 46 00  
+001079r 2  3C 06 38 07    .byte MN_STZ,AM_ABS, MN_STA,AM_ABX, MN_STZ,AM_ABX, MN_BBS,AM_ZPR  ; $9C-$9F
+00107Dr 2  3C 07 04 0E  
+001081r 2                 ; --- $Ax ---
+001081r 2  22 02 20 0A    .byte MN_LDY,AM_IMM, MN_LDA,AM_IZX, MN_LDX,AM_IMM, MN_UND,AM_IMP  ; $A0-$A3
+001085r 2  21 02 46 00  
+001089r 2  22 03 20 03    .byte MN_LDY,AM_ZP,  MN_LDA,AM_ZP,  MN_LDX,AM_ZP,  MN_SMB,AM_ZP   ; $A4-$A7
+00108Dr 2  21 03 37 03  
+001091r 2  3E 00 20 02    .byte MN_TAY,AM_IMP, MN_LDA,AM_IMM, MN_TAX,AM_IMP, MN_UND,AM_IMP  ; $A8-$AB
+001095r 2  3D 00 46 00  
+001099r 2  22 06 20 06    .byte MN_LDY,AM_ABS, MN_LDA,AM_ABS, MN_LDX,AM_ABS, MN_BBS,AM_ZPR  ; $AC-$AF
+00109Dr 2  21 06 04 0E  
+0010A1r 2                 ; --- $Bx ---
+0010A1r 2  06 0D 20 0B    .byte MN_BCS,AM_REL, MN_LDA,AM_IZY, MN_LDA,AM_ZPI, MN_UND,AM_IMP  ; $B0-$B3
+0010A5r 2  20 0C 46 00  
+0010A9r 2  22 04 20 04    .byte MN_LDY,AM_ZPX, MN_LDA,AM_ZPX, MN_LDX,AM_ZPY, MN_SMB,AM_ZP   ; $B4-$B7
+0010ADr 2  21 05 37 03  
+0010B1r 2  13 00 20 08    .byte MN_CLV,AM_IMP, MN_LDA,AM_ABY, MN_TSX,AM_IMP, MN_UND,AM_IMP  ; $B8-$BB
+0010B5r 2  41 00 46 00  
+0010B9r 2  22 07 20 07    .byte MN_LDY,AM_ABX, MN_LDA,AM_ABX, MN_LDX,AM_ABY, MN_BBS,AM_ZPR  ; $BC-$BF
+0010BDr 2  21 08 04 0E  
+0010C1r 2                 ; --- $Cx ---
+0010C1r 2  16 02 14 0A    .byte MN_CPY,AM_IMM, MN_CMP,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $C0-$C3
+0010C5r 2  46 00 46 00  
+0010C9r 2  16 03 14 03    .byte MN_CPY,AM_ZP,  MN_CMP,AM_ZP,  MN_DEC,AM_ZP,  MN_SMB,AM_ZP   ; $C4-$C7
+0010CDr 2  17 03 37 03  
+0010D1r 2  1D 00 14 02    .byte MN_INY,AM_IMP, MN_CMP,AM_IMM, MN_DEX,AM_IMP, MN_WAI,AM_IMP  ; $C8-$CB
+0010D5r 2  18 00 45 00  
+0010D9r 2  16 06 14 06    .byte MN_CPY,AM_ABS, MN_CMP,AM_ABS, MN_DEC,AM_ABS, MN_BBS,AM_ZPR  ; $CC-$CF
+0010DDr 2  17 06 04 0E  
+0010E1r 2                 ; --- $Dx ---
+0010E1r 2  0A 0D 14 0B    .byte MN_BNE,AM_REL, MN_CMP,AM_IZY, MN_CMP,AM_ZPI, MN_UND,AM_IMP  ; $D0-$D3
+0010E5r 2  14 0C 46 00  
+0010E9r 2  46 00 14 04    .byte MN_UND,AM_IMP, MN_CMP,AM_ZPX, MN_DEC,AM_ZPX, MN_SMB,AM_ZP   ; $D4-$D7
+0010EDr 2  17 04 37 03  
+0010F1r 2  11 00 14 08    .byte MN_CLD,AM_IMP, MN_CMP,AM_ABY, MN_PHX,AM_IMP, MN_STP,AM_IMP  ; $D8-$DB
+0010F5r 2  28 00 39 00  
+0010F9r 2  46 00 14 07    .byte MN_UND,AM_IMP, MN_CMP,AM_ABX, MN_DEC,AM_ABX, MN_BBS,AM_ZPR  ; $DC-$DF
+0010FDr 2  17 07 04 0E  
+001101r 2                 ; --- $Ex ---
+001101r 2  15 02 33 0A    .byte MN_CPX,AM_IMM, MN_SBC,AM_IZX, MN_UND,AM_IMP, MN_UND,AM_IMP  ; $E0-$E3
+001105r 2  46 00 46 00  
+001109r 2  15 03 33 03    .byte MN_CPX,AM_ZP,  MN_SBC,AM_ZP,  MN_INC,AM_ZP,  MN_SMB,AM_ZP   ; $E4-$E7
+00110Dr 2  1B 03 37 03  
+001111r 2  1C 00 33 02    .byte MN_INX,AM_IMP, MN_SBC,AM_IMM, MN_NOP,AM_IMP, MN_UND,AM_IMP  ; $E8-$EB
+001115r 2  24 00 46 00  
+001119r 2  15 06 33 06    .byte MN_CPX,AM_ABS, MN_SBC,AM_ABS, MN_INC,AM_ABS, MN_BBS,AM_ZPR  ; $EC-$EF
+00111Dr 2  1B 06 04 0E  
+001121r 2                 ; --- $Fx ---
+001121r 2  07 0D 33 0B    .byte MN_BEQ,AM_REL, MN_SBC,AM_IZY, MN_SBC,AM_ZPI, MN_UND,AM_IMP  ; $F0-$F3
+001125r 2  33 0C 46 00  
+001129r 2  46 00 33 04    .byte MN_UND,AM_IMP, MN_SBC,AM_ZPX, MN_INC,AM_ZPX, MN_SMB,AM_ZP   ; $F4-$F7
+00112Dr 2  1B 04 37 03  
+001131r 2  35 00 33 08    .byte MN_SED,AM_IMP, MN_SBC,AM_ABY, MN_PLX,AM_IMP, MN_UND,AM_IMP  ; $F8-$FB
+001135r 2  2C 00 46 00  
+001139r 2  46 00 33 07    .byte MN_UND,AM_IMP, MN_SBC,AM_ABX, MN_INC,AM_ABX, MN_BBS,AM_ZPR  ; $FC-$FF
+00113Dr 2  1B 07 04 0E  
+001141r 2               
+001141r 1               .segment "BASIC"
 000000r 1               .include "BASIC.asm"
 000000r 2               ; ***                         ***
 000000r 2               ; ***   Integer BASIC v1.0    ***
-000000r 2               ; ***   for 6502-COBBIOS      ***
+000000r 2               ; ***     for 6502-BIOS       ***
 000000r 2               ; ***   $E000-$FEFF (7936B)   ***
 000000r 2               ; ***                         ***
 000000r 2               
@@ -10130,36 +10130,36 @@ Current file: BIOS.asm
 0014ECr 2               ; String Data
 0014ECr 2               ; ============================================================================
 0014ECr 2               
-0014ECr 2  0D 0A 43 4F  BasStrWelcome:  .byte CH_CR, CH_LF, "COB BASIC v1.0", CH_CR, CH_LF, $00
-0014F0r 2  42 20 42 41  
-0014F4r 2  53 49 43 20  
-0014FFr 2  0D 0A 4F 4B  BasStrOK:       .byte CH_CR, CH_LF, "OK", CH_CR, CH_LF, $00
-001503r 2  0D 0A 00     
-001506r 2  20 42 59 54  BasStrFree:     .byte " BYTES FREE", $00
-00150Ar 2  45 53 20 46  
-00150Er 2  52 45 45 00  
-001512r 2  20 45 52 52  BasStrError:    .byte " ERROR", $00
-001516r 2  4F 52 00     
-001519r 2  20 49 4E 20  BasStrIn:       .byte " IN ", $00
-00151Dr 2  00           
-00151Er 2  3F 52 45 44  BasStrRedo:     .byte "?REDO", CH_CR, CH_LF, $00
-001522r 2  4F 0D 0A 00  
-001526r 2  3F 20 00     BasStrPrompt:   .byte "? ", $00
-001529r 2  0D 0A 3F 4C  BasStrLoadErr:  .byte CH_CR, CH_LF, "?LOAD ERROR", CH_CR, CH_LF, $00
-00152Dr 2  4F 41 44 20  
-001531r 2  45 52 52 4F  
-001539r 2  0D 0A 3F 53  BasStrSaveErr:  .byte CH_CR, CH_LF, "?SAVE ERROR", CH_CR, CH_LF, $00
-00153Dr 2  41 56 45 20  
-001541r 2  45 52 52 4F  
-001549r 2  0D 0A 3F 44  BasStrDelErr:   .byte CH_CR, CH_LF, "?DEL ERROR", CH_CR, CH_LF, $00
-00154Dr 2  45 4C 20 45  
-001551r 2  52 52 4F 52  
-001558r 2  0D 0A 3F 4E  BasStrNoDevice: .byte CH_CR, CH_LF, "?NO DEVICE", CH_CR, CH_LF, $00
-00155Cr 2  4F 20 44 45  
-001560r 2  56 49 43 45  
-001567r 2               
-001567r 2               
-001567r 1               .segment "WOZMON"
+0014ECr 2  0D 0A 36 35  BasStrWelcome:  .byte CH_CR, CH_LF, "6502 BASIC v1.0", CH_CR, CH_LF, $00
+0014F0r 2  30 32 20 42  
+0014F4r 2  41 53 49 43  
+001500r 2  0D 0A 4F 4B  BasStrOK:       .byte CH_CR, CH_LF, "OK", CH_CR, CH_LF, $00
+001504r 2  0D 0A 00     
+001507r 2  20 42 59 54  BasStrFree:     .byte " BYTES FREE", $00
+00150Br 2  45 53 20 46  
+00150Fr 2  52 45 45 00  
+001513r 2  20 45 52 52  BasStrError:    .byte " ERROR", $00
+001517r 2  4F 52 00     
+00151Ar 2  20 49 4E 20  BasStrIn:       .byte " IN ", $00
+00151Er 2  00           
+00151Fr 2  3F 52 45 44  BasStrRedo:     .byte "?REDO", CH_CR, CH_LF, $00
+001523r 2  4F 0D 0A 00  
+001527r 2  3F 20 00     BasStrPrompt:   .byte "? ", $00
+00152Ar 2  0D 0A 3F 4C  BasStrLoadErr:  .byte CH_CR, CH_LF, "?LOAD ERROR", CH_CR, CH_LF, $00
+00152Er 2  4F 41 44 20  
+001532r 2  45 52 52 4F  
+00153Ar 2  0D 0A 3F 53  BasStrSaveErr:  .byte CH_CR, CH_LF, "?SAVE ERROR", CH_CR, CH_LF, $00
+00153Er 2  41 56 45 20  
+001542r 2  45 52 52 4F  
+00154Ar 2  0D 0A 3F 44  BasStrDelErr:   .byte CH_CR, CH_LF, "?DEL ERROR", CH_CR, CH_LF, $00
+00154Er 2  45 4C 20 45  
+001552r 2  52 52 4F 52  
+001559r 2  0D 0A 3F 4E  BasStrNoDevice: .byte CH_CR, CH_LF, "?NO DEVICE", CH_CR, CH_LF, $00
+00155Dr 2  4F 20 44 45  
+001561r 2  56 49 43 45  
+001568r 2               
+001568r 2               
+001568r 1               .segment "WOZMON"
 000000r 1               .include "Wozmon.asm"
 000000r 2               ; ***             ***
 000000r 2               ; ***   WOZMON    ***

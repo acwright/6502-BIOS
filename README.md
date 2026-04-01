@@ -1,15 +1,15 @@
-6502-COBBIOS
-============
+6502-BIOS
+=========
 
-BIOS ROM for the "COB" computer in the [A.C. Wright 6502 project](https://github.com/acwright/6502).
+BIOS ROM for the [A.C. Wright 6502 project](https://github.com/acwright/6502).
 
 ## Overview
 
-COBBIOS is the firmware ROM for the COB, a homebrew 6502 single-board computer. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
+BIOS is the firmware ROM for a homebrew 6502 computer project. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
 
 ### Boot Sequence
 
-The COB is a computer-on-a-backplane design where every I/O card is optional. On reset, the Kernal probes each I/O slot to discover which hardware is installed and records the results in a single bitmask byte at `HW_PRESENT` (`$030D`). Only detected hardware is initialised — missing cards are silently skipped and never cause a hang.
+The [A.C. Wright 6502 project](https://github.com/acwright/6502) is a computer-on-a-backplane design where every I/O card is optional. On reset, the Kernal probes each I/O slot to discover which hardware is installed and records the results in a single bitmask byte at `HW_PRESENT` (`$030D`). Only detected hardware is initialised — missing cards are silently skipped and never cause a hang.
 
 The probe-and-boot sequence is:
 
@@ -21,7 +21,7 @@ The probe-and-boot sequence is:
 6. **Splash screen** — displayed on the active console:
 
 ```
-  -- The 'COB' v1.0 --
+  -- 6502 BIOS v1.0 --
 ENTER=BASIC  ESC=MONITOR
 ```
 

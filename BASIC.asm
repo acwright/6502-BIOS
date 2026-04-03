@@ -3401,13 +3401,32 @@ BasCmdLoad:
   ; Call filesystem load
   jsr FsLoadFile
   bcs @LoadErr
-  ; Update BAS_PRGEND: PROGRAM_START + FS_FILE_SIZE
-  lda #<PROGRAM_START
-  clc
-  adc FS_FILE_SIZE
+  ; Walk next-line pointer chain to find true BAS_PRGEND
+  ; (file may contain machine code after the BASIC program end sentinel)
+  lda #<BAS_PRG_START
+  sta BAS_TMP1
+  lda #>BAS_PRG_START
+  sta BAS_TMP1 + 1
+@LoadWalkChain:
+  ldy #LINE_NEXT
+  lda (BAS_TMP1),y               ; lo byte of next-line pointer
+  sta BAS_TMP2
+  iny
+  lda (BAS_TMP1),y               ; hi byte of next-line pointer
+  sta BAS_TMP2 + 1
+  ora BAS_TMP2                   ; lo | hi — zero means end sentinel
+  beq @LoadChainEnd
+  ; Advance to next line
+  lda BAS_TMP2
+  sta BAS_TMP1
+  lda BAS_TMP2 + 1
+  sta BAS_TMP1 + 1
+  bra @LoadWalkChain
+@LoadChainEnd:
+  ; BAS_TMP1 points to the $0000 end sentinel
+  lda BAS_TMP1
   sta BAS_PRGEND
-  lda #>PROGRAM_START
-  adc FS_FILE_SIZE + 1
+  lda BAS_TMP1 + 1
   sta BAS_PRGEND + 1
   rts
 

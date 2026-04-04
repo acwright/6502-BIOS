@@ -602,7 +602,7 @@ InitVideoImpl:
   .byte $01                     ; R4: Pattern table at $0800 (0x01 * 0x800)
   .byte $00                     ; R5: Sprite attribute table (not used in text mode)
   .byte $00                     ; R6: Sprite pattern table (not used in text mode)
-  .byte $F0                     ; R7: White text on black background
+  .byte $1F                     ; R7: Black text on white background
 
 ; Initialize the character set
 ; Modifies: Flags, A, X, Y

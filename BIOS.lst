@@ -859,7 +859,7 @@ Current file: BIOS.asm
 00040Cr 2  01             .byte $01                     ; R4: Pattern table at $0800 (0x01 * 0x800)
 00040Dr 2  00             .byte $00                     ; R5: Sprite attribute table (not used in text mode)
 00040Er 2  00             .byte $00                     ; R6: Sprite pattern table (not used in text mode)
-00040Fr 2  F0             .byte $F0                     ; R7: White text on black background
+00040Fr 2  1F             .byte $1F                     ; R7: Black text on white background
 000410r 2               
 000410r 2               ; Initialize the character set
 000410r 2               ; Modifies: Flags, A, X, Y

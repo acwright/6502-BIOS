@@ -46,7 +46,8 @@ HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
 HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
 HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
 HW_VID              = %10000000          ; Bit 7: Video card (IO 8, TMS9918/pico9918)
-                                         ; $030E-$030F Reserved
+BAS_PENDKEY         := $030E             ; Pending key from BasCheckBreak (1 byte)
+                                         ; $030F Reserved
 BRK_P               := $0310             ; Saved P at time of BRK
 BRK_PCL             := $0311             ; Saved PCL at time of BRK (points to BRK+2)
 BRK_PCH             := $0312             ; Saved PCH at time of BRK
@@ -56,7 +57,9 @@ BRK_Y               := $0315             ; Saved Y at time of BRK
 BRK_SP              := $0316             ; Saved SP at time of BRK
 XFER_REMAIN         := $0317             ; $0317-$0318 - Remaining bytes to transfer (2 bytes)
 XFER_IO_SAVE        := $0319             ; Saved IO_MODE before switching to serial
-                                         ; $031A-$031F Reserved
+BAS_DATAPTR         := $031A             ; $031A-$031B - DATA read position (2 bytes)
+BAS_STOPLINE        := $031C             ; $031C-$031D - Saved BAS_CURLINE for CONT (2 bytes)
+BAS_STOPTXT         := $031E             ; $031E-$031F - Saved BAS_TXTPTR for CONT (2 bytes)
 SCROLL_BUF          := $0320             ; $0320-$0347 - 40-byte scroll temp buffer
 ; Filesystem temp vars ($0348+)
 FS_START_SEC        := $0348             ; $0348-$0349 - File start sector (2 bytes)

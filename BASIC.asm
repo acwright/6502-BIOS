@@ -32,6 +32,8 @@ BAS_NUMTMP          := $22               ; $22-$23 - Number parsing accumulator
 ; BAS_FLAGS bit definitions
 BAS_FLAG_RUN        = %00000001          ; Bit 0: program is running
 BAS_FLAG_NOSEP      = %00000010          ; Bit 1: suppress CRLF after PRINT
+BAS_FLAG_TXTSET     = %00000100          ; Bit 2: TXTPTR already set (NEXT loop-back)
+BAS_FLAG_GOTO       = %00001000          ; Bit 3: GOTO/GOSUB executed (force re-enter run loop)
 
 ; ============================================================================
 ; RAM Layout — USER_VARS ($0400-$07FF)
@@ -124,6 +126,22 @@ TOK_BANK            = $AD
 TOK_SGN             = $AE
 TOK_CHR             = $AF
 
+; New command/function tokens (Phase 1)
+TOK_STOP            = $B0
+TOK_CONT            = $B1
+TOK_ON              = $B2
+TOK_DATA            = $B3
+TOK_READ            = $B4
+TOK_RESTORE         = $B5
+TOK_SQR             = $B6
+TOK_MIN             = $B7
+TOK_MAX             = $B8
+TOK_POW             = $B9
+TOK_INKEY           = $BA
+TOK_TAB             = $BB
+TOK_HEX             = $BC
+TOK_ASC             = $BD
+
 ; Multi-char operator tokens
 TOK_GE              = $9A               ; >=
 TOK_LE              = $9B               ; <=
@@ -161,6 +179,8 @@ ERR_DIV_ZERO        = 6
 ERR_OVERFLOW        = 7
 ERR_ILLEGAL_QTY     = 8
 ERR_BREAK           = 9
+ERR_OUT_OF_DATA     = 10
+ERR_CANT_CONT       = 11
 
 ; ============================================================================
 ; Entry Point
@@ -318,6 +338,15 @@ BasCmdClr:
   ; Reset GOSUB and FOR stack pointers
   stz BAS_GOSUBSP
   stz BAS_FORSP
+
+  ; Clear DATA/STOP/CONT state
+  stz BAS_DATAPTR
+  stz BAS_DATAPTR + 1
+  stz BAS_STOPLINE
+  stz BAS_STOPLINE + 1
+  stz BAS_STOPTXT
+  stz BAS_STOPTXT + 1
+  stz BAS_PENDKEY
   rts
 
 ; ============================================================================
@@ -732,23 +761,21 @@ BasMatchKeyword:
   lda #>BasKeywordTable
   sta BAS_TMP1 + 1
 
-  ldy #$00                       ; Index into keyword table
-
 @KwOuter:
   ; Load first byte of keyword entry — $00 = end of table
+  ldy #$00
   lda (BAS_TMP1),y
   beq @KwNoMatch                 ; End of table — no match
 
-  ; Save Y (table position) and try matching chars
-  plx                            ; Restore original X (source position)
+  ; Restore original X (source position)
+  plx
   phx                            ; Re-save it for next attempt
-  sty BAS_TMP2                   ; Save table offset
 
 @KwCompare:
   lda (BAS_TMP1),y
   beq @KwMatched                 ; Null terminator in keyword = full match
   cmp BAS_LINBUF,x
-  bne @KwSkip                   ; Mismatch — skip to next keyword
+  bne @KwSkip                    ; Mismatch — skip to next keyword
   iny
   inx
   bra @KwCompare
@@ -768,7 +795,6 @@ BasMatchKeyword:
   bcs @KwConfirmed               ; Not a letter — confirmed
   ; Next char is a letter — this is a partial match, skip it
   pla
-  ldy BAS_TMP2
   bra @KwSkip
 
 @KwConfirmed:
@@ -779,14 +805,21 @@ BasMatchKeyword:
   rts
 
 @KwSkip:
-  ; Advance Y past current keyword string + null + token byte
-  ldy BAS_TMP2                   ; Back to start of this keyword
+  ; Advance BAS_TMP1 past current keyword string + null + token byte
+  ldy #$00
 @KwSkipStr:
   lda (BAS_TMP1),y
   iny
   cmp #$00                       ; Found null terminator?
   bne @KwSkipStr
   iny                            ; Skip token byte too
+  ; Advance BAS_TMP1 by Y to point to next keyword entry
+  tya
+  clc
+  adc BAS_TMP1
+  sta BAS_TMP1
+  bcc @KwOuter
+  inc BAS_TMP1 + 1
   bra @KwOuter                   ; Try next keyword
 
 @KwNoMatch:
@@ -829,13 +862,10 @@ BasDetokenize:
   lda #>BasKeywordTable
   sta BAS_TMP2 + 1
 
-  ldy #$00                       ; Table index
-
 @DetokSearch:
+  ldy #$00
   lda (BAS_TMP2),y
   beq @DetokNotFound             ; End of table — token not found
-  ; Save start of this keyword string
-  sty BAS_TOKIDX                 ; Remember keyword start
 @DetokScanStr:
   lda (BAS_TMP2),y
   iny
@@ -848,12 +878,18 @@ BasDetokenize:
   ; Compare to our target token
   cmp BAS_TEMP
   beq @DetokFound
-  ; Not this one — continue searching
+  ; Not this one — advance BAS_TMP2 to next entry
+  tya
+  clc
+  adc BAS_TMP2
+  sta BAS_TMP2
+  bcc @DetokSearch
+  inc BAS_TMP2 + 1
   bra @DetokSearch
 
 @DetokFound:
-  ; Print the keyword string starting at BAS_TOKIDX
-  ldy BAS_TOKIDX
+  ; Print the keyword string from start of BAS_TMP2
+  ldy #$00
 @DetokPrintKw:
   lda (BAS_TMP2),y
   beq @DetokKwDone               ; Null = end of keyword string
@@ -1499,15 +1535,26 @@ BasCheckBreak:
   lda BAS_FLAGS
   and #BAS_FLAG_RUN
   beq @NoBrk                    ; Not running — skip check
-  jsr Chrin                      ; Non-blocking read
-  bcc @NoBrk                    ; No character available
+  jsr BufferSize                 ; Non-echoing buffer check
+  beq @NoBrk                    ; No character available
+  jsr ReadBuffer                 ; Read without echo
   cmp #CH_CTRLC
   beq @Break
   cmp #CH_ESC
   beq @Break
+  sta BAS_PENDKEY               ; Save non-break char for INKEY
 @NoBrk:
   rts
 @Break:
+  ; Save continuation state so CONT works after Ctrl+C
+  lda BAS_CURLINE
+  sta BAS_STOPLINE
+  lda BAS_CURLINE + 1
+  sta BAS_STOPLINE + 1
+  lda BAS_TXTPTR
+  sta BAS_STOPTXT
+  lda BAS_TXTPTR + 1
+  sta BAS_STOPTXT + 1
   lda #ERR_BREAK
   jmp BasError
 
@@ -1593,6 +1640,8 @@ BasErrTable:
   .word BasErrOverflow           ; 7 - OVERFLOW
   .word BasErrIllegal            ; 8 - ILLEGAL QUANTITY
   .word BasErrBreak              ; 9 - BREAK
+  .word BasErrOutOfData           ; 10 - OUT OF DATA
+  .word BasErrCantCont            ; 11 - CAN'T CONTINUE
 
 ; Error message strings
 BasErrSyntax:    .byte "SYNTAX", $00
@@ -1605,6 +1654,8 @@ BasErrDivZero:   .byte "DIVISION BY ZERO", $00
 BasErrOverflow:  .byte "OVERFLOW", $00
 BasErrIllegal:   .byte "ILLEGAL QUANTITY", $00
 BasErrBreak:     .byte "BREAK", $00
+BasErrOutOfData: .byte "OUT OF DATA", $00
+BasErrCantCont:  .byte "CAN'T CONTINUE", $00
 
 ; ============================================================================
 ; 16-Bit Math Routines
@@ -2341,6 +2392,149 @@ BasExprPrimary:
   rts                            ; BAS_ACC already holds n
 @NotChr:
 
+  ; SQR(n) — Integer square root
+  cmp #TOK_SQR
+  bne @NotSqr
+  jsr BasAdvTxtPtr
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  jmp BasFuncSqr
+@NotSqr:
+
+  ; MIN(a,b) — Return smaller of two values
+  cmp #TOK_MIN
+  bne @NotMin
+  jsr BasAdvTxtPtr
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; a -> BAS_ACC
+  lda BAS_ACC
+  pha
+  lda BAS_ACC + 1
+  pha
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; b -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  ; Pop a into AUX
+  pla
+  sta BAS_AUX + 1
+  pla
+  sta BAS_AUX
+  jsr BasCmpAuxAcc               ; compare AUX(a) vs ACC(b)
+  bmi @MinDone                   ; AUX < ACC, use AUX
+  rts                            ; ACC is smaller or equal
+@MinDone:
+  lda BAS_AUX
+  sta BAS_ACC
+  lda BAS_AUX + 1
+  sta BAS_ACC + 1
+  rts
+@NotMin:
+
+  ; MAX(a,b) — Return larger of two values
+  cmp #TOK_MAX
+  bne @NotMax
+  jsr BasAdvTxtPtr
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; a -> BAS_ACC
+  lda BAS_ACC
+  pha
+  lda BAS_ACC + 1
+  pha
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; b -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  ; Pop a into AUX
+  pla
+  sta BAS_AUX + 1
+  pla
+  sta BAS_AUX
+  jsr BasCmpAuxAcc               ; compare AUX(a) vs ACC(b)
+  beq @MaxKeepAcc                ; equal, either is fine
+  bpl @MaxUseAux                 ; AUX > ACC, use AUX
+@MaxKeepAcc:
+  rts                            ; ACC is larger or equal
+@MaxUseAux:
+  lda BAS_AUX
+  sta BAS_ACC
+  lda BAS_AUX + 1
+  sta BAS_ACC + 1
+  rts
+@NotMax:
+
+  ; POW(b,e) — Integer exponentiation
+  cmp #TOK_POW
+  bne @NotPow
+  jsr BasAdvTxtPtr
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; base -> BAS_ACC
+  lda BAS_ACC
+  pha
+  lda BAS_ACC + 1
+  pha
+  lda #CH_COMMA
+  jsr BasExpectChar
+  jsr BasExpr                    ; exponent -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  ; ACC = exponent, stack has base
+  ; Move exponent to AUX, pop base to ACC
+  lda BAS_ACC
+  sta BAS_AUX
+  lda BAS_ACC + 1
+  sta BAS_AUX + 1
+  pla
+  sta BAS_ACC + 1
+  pla
+  sta BAS_ACC
+  jmp BasFuncPow                 ; ACC=base, AUX=exponent
+@NotPow:
+
+  ; INKEY — non-blocking keyboard read (no parentheses)
+  cmp #TOK_INKEY
+  bne @NotInkey
+  jsr BasAdvTxtPtr               ; Skip INKEY token
+  ; Check pending key buffer (saved by BasCheckBreak)
+  lda BAS_PENDKEY
+  beq @InkeyChrin                ; No pending key — try Chrin
+  stz BAS_PENDKEY               ; Consume pending key
+  sta BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@InkeyChrin:
+  jsr BufferSize                 ; Non-echoing buffer check
+  beq @InkeyNone                 ; No char available
+  jsr ReadBuffer                 ; Read without echo
+  sta BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@InkeyNone:
+  stz BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@NotInkey:
+
+  ; ASC(n) — identity function (returns value unchanged)
+  cmp #TOK_ASC
+  bne @NotAsc
+  jsr BasAdvTxtPtr               ; Skip TOK_ASC
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; n -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  rts                            ; BAS_ACC already holds n
+@NotAsc:
+
   ; Hex literal $xxxx
   cmp #'$'
   bne @NotHex
@@ -2497,6 +2691,25 @@ BasExecLine:
 : cmp #TOK_BANK
   bne :+
   jmp @JmpBank
+: cmp #TOK_STOP
+  bne :+
+  jmp @JmpStop
+: cmp #TOK_CONT
+  bne :+
+  jmp @JmpCont
+: cmp #TOK_ON
+  bne :+
+  jmp @JmpOn
+: cmp #TOK_DATA
+  bne @NotData
+  rts                            ; DATA — skip rest of line (like REM)
+@NotData:
+  cmp #TOK_READ
+  bne :+
+  jmp @JmpRead
+: cmp #TOK_RESTORE
+  bne :+
+  jmp @JmpRestore
 :
   ; Check for implicit LET: A-Z followed by =
   cmp #'A'
@@ -2504,7 +2717,8 @@ BasExecLine:
   cmp #'Z' + 1
   bcs @ExecSyntaxErr
   ; Don't consume the variable letter — BasCmdLet will read it
-  jmp BasCmdLet
+  jsr BasCmdLet
+  jmp @ExecCheckMore
 
 @ExecSyntaxErr:
   lda #ERR_SYNTAX
@@ -2532,7 +2746,8 @@ BasExecLine:
   jmp BasCmdIf
 @JmpFor:
   jsr BasAdvTxtPtr
-  jmp BasCmdFor
+  jsr BasCmdFor
+  jmp @ExecCheckMore
 @JmpNext:
   jsr BasAdvTxtPtr
   jmp BasCmdNext
@@ -2620,6 +2835,23 @@ BasExecLine:
   jsr BasAdvTxtPtr
   jsr BasCmdBank
   bra @ExecCheckMore
+@JmpStop:
+  jsr BasAdvTxtPtr
+  jmp BasCmdStop
+@JmpCont:
+  jsr BasAdvTxtPtr
+  jmp BasCmdCont
+@JmpOn:
+  jsr BasAdvTxtPtr
+  jmp BasCmdOn
+@JmpRead:
+  jsr BasAdvTxtPtr
+  jsr BasCmdRead
+  bra @ExecCheckMore
+@JmpRestore:
+  jsr BasAdvTxtPtr
+  jsr BasCmdRestore
+  bra @ExecCheckMore
 
 @ExecCheckMore:
   ; Check for ':' statement separator
@@ -2674,7 +2906,10 @@ BasRunLoop:
   lda BAS_CURLINE + 1
   sta BAS_VARPTR + 1
 
-  ; Set TXTPTR to payload
+  ; Set TXTPTR to payload (unless NEXT already set it)
+  lda BAS_FLAGS
+  and #BAS_FLAG_TXTSET
+  bne @SkipTxtSet
   clc
   lda BAS_CURLINE
   adc #LINE_PAYLOAD
@@ -2682,8 +2917,13 @@ BasRunLoop:
   lda BAS_CURLINE + 1
   adc #$00
   sta BAS_TXTPTR + 1
+@SkipTxtSet:
+  lda BAS_FLAGS
+  and #<~BAS_FLAG_TXTSET          ; Clear the flag
+  sta BAS_FLAGS
 
-  ; Execute the line
+BasRunExec:
+  ; Execute the line (CONT re-enters here with TXTPTR already set)
   jsr BasExecLine
 
   ; Check if END was executed (flags cleared)
@@ -2691,7 +2931,10 @@ BasRunLoop:
   and #BAS_FLAG_RUN
   beq BasRunDone
 
-  ; Check if GOTO/GOSUB changed CURLINE
+  ; Check if GOTO/GOSUB changed CURLINE (or GOTO flag set for same-line GOTO)
+  lda BAS_FLAGS
+  and #BAS_FLAG_GOTO
+  bne @GotoDone
   lda BAS_CURLINE
   cmp BAS_VARPTR
   bne BasRunLoop                 ; Changed — re-execute from new CURLINE
@@ -2717,6 +2960,12 @@ BasRunLoop:
   sta BAS_CURLINE + 1
   jmp BasRunLoop
 
+@GotoDone:
+  lda BAS_FLAGS
+  and #<~BAS_FLAG_GOTO
+  sta BAS_FLAGS
+  jmp BasRunLoop
+
 BasRunDone:
   stz BAS_FLAGS
   rts
@@ -2729,43 +2978,66 @@ BasRunDone:
 BasCmdPrint:
   jsr BasSkipSpaces
   jsr BasGetTokChar
-  beq @PrintNewline              ; Empty PRINT — just newline
-  cmp #CH_COLON
-  beq @PrintNewline              ; PRINT: — newline then next statement
+  bne :+
+  jmp @PrintNewline              ; Empty PRINT — just newline
+: cmp #CH_COLON
+  bne :+
+  jmp @PrintNewline              ; PRINT: — newline then next statement
+:
 
 @PrintLoop:
   jsr BasSkipSpaces
   jsr BasGetTokChar
-  beq @PrintEnd                  ; End of line
-  cmp #CH_COLON
-  beq @PrintEnd
+  bne :+
+  jmp @PrintEnd                  ; End of line
+: cmp #CH_COLON
+  bne :+
+  jmp @PrintEnd
+:
 
   ; String literal?
   cmp #CH_QUOTE
-  beq @PrintString
+  bne :+
+  jmp @PrintString
+:
 
   ; CHR(n) — output character directly
   cmp #TOK_CHR
-  beq @PrintChr
+  bne :+
+  jmp @PrintChr
+:
+
+  ; TAB(n) — tab to column n
+  cmp #TOK_TAB
+  bne :+
+  jmp @PrintTab
+:
+
+  ; HEX(n) — print value as $xxxx hex
+  cmp #TOK_HEX
+  bne :+
+  jmp @PrintHex
+:
 
   ; Otherwise evaluate expression and print number
   jsr BasExpr
   jsr BasPrintInt
-  bra @PrintSep
+  jmp @PrintSep
 
 @PrintString:
   jsr BasAdvTxtPtr               ; Skip opening quote
 @PrintStrCh:
   jsr BasGetTokChar
-  beq @PrintEnd                  ; Unterminated string
-  cmp #CH_QUOTE
+  bne :+
+  jmp @PrintEnd                  ; Unterminated string
+: cmp #CH_QUOTE
   beq @PrintStrEnd
   jsr Chrout
   jsr BasAdvTxtPtr
   bra @PrintStrCh
 @PrintStrEnd:
   jsr BasAdvTxtPtr               ; Skip closing quote
-  bra @PrintSep
+  jmp @PrintSep
 
 @PrintChr:
   jsr BasAdvTxtPtr               ; Skip TOK_CHR
@@ -2776,6 +3048,57 @@ BasCmdPrint:
   jsr BasExpectChar
   lda BAS_ACC                    ; Output low byte as character
   jsr VideoChroutRaw             ; Raw output — no control-code interception
+  jmp @PrintSep
+
+@PrintTab:
+  jsr BasAdvTxtPtr               ; Skip TOK_TAB
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; n -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+@TabLoop:
+  lda VID_CURSOR_X               ; Current column
+  cmp BAS_ACC                    ; Already at or past target?
+  bcs @PrintSep                  ; Yes — done
+  lda #CH_SPACE
+  jsr Chrout
+  bra @TabLoop
+
+@PrintHex:
+  jsr BasAdvTxtPtr               ; Skip TOK_HEX
+  lda #CH_LPAREN
+  jsr BasExpectChar
+  jsr BasExpr                    ; n -> BAS_ACC
+  lda #CH_RPAREN
+  jsr BasExpectChar
+  lda #'$'
+  jsr Chrout                     ; Output '$' prefix
+  lda BAS_ACC + 1                ; High byte first
+  jsr @HexOutByte
+  lda BAS_ACC                    ; Low byte
+  jsr @HexOutByte
+  bra @PrintSep
+
+@HexOutByte:
+  ; Output byte in A as two hex digits
+  pha
+  lsr
+  lsr
+  lsr
+  lsr                            ; High nibble
+  jsr @HexOutNibble
+  pla
+  and #$0F                       ; Low nibble
+@HexOutNibble:
+  cmp #$0A
+  bcc @HexDigit
+  adc #('A' - $0A - 1)          ; Carry is set from cmp
+  bra @HexPrint
+@HexDigit:
+  ora #'0'
+@HexPrint:
+  jmp Chrout                     ; Output and return
 
 @PrintSep:
   jsr BasSkipSpaces
@@ -2795,7 +3118,7 @@ BasCmdPrint:
   beq @PrintDone                 ; End of line — suppress newline
   cmp #CH_COLON
   beq @PrintDone                 ; Colon — suppress newline
-  bra @PrintLoop
+  jmp @PrintLoop
 
 @PrintComma:
   jsr BasAdvTxtPtr               ; Skip ','
@@ -2803,7 +3126,7 @@ BasCmdPrint:
   lda #CH_SPACE
   jsr Chrout
   jsr Chrout
-  bra @PrintLoop
+  jmp @PrintLoop
 
 @PrintNewline:
   jsr BasPrintCRLF
@@ -2992,6 +3315,9 @@ BasCmdGoto:
   sta BAS_CURLINE
   lda BAS_TMP1 + 1
   sta BAS_CURLINE + 1
+  lda BAS_FLAGS
+  ora #BAS_FLAG_GOTO
+  sta BAS_FLAGS
   rts
 
 @GotoErr:
@@ -3193,24 +3519,16 @@ BasCmdFor:
   sta BAS_FORSTK + 3,x           ; +3: step lo
   lda BAS_SCRATCH2 + 1
   sta BAS_FORSTK + 4,x           ; +4: step hi
-  ; body_start = next line after the FOR line (scan for null)
-  ldy #LINE_PAYLOAD
-@ForScanBody:
-  lda (BAS_CURLINE),y
-  beq @ForScanDone
-  iny
-  bra @ForScanBody
-@ForScanDone:
-  iny                            ; Past null terminator
-  tya
-  clc
-  adc BAS_CURLINE
-  pha
-  lda #$00
-  adc BAS_CURLINE + 1
-  sta BAS_FORSTK + 6,x           ; +6: body_start hi
-  pla
-  sta BAS_FORSTK + 5,x           ; +5: body_start lo
+  ; Save loop body start: current line and TXTPTR
+  ; (TXTPTR points right after the FOR statement — at ':' or end of line)
+  lda BAS_CURLINE
+  sta BAS_FORSTK + 5,x           ; +5: body_line lo
+  lda BAS_CURLINE + 1
+  sta BAS_FORSTK + 6,x           ; +6: body_line hi
+  lda BAS_TXTPTR
+  sta BAS_FORSTK + 7,x           ; +7: body_txtptr lo
+  lda BAS_TXTPTR + 1
+  sta BAS_FORSTK + 8,x           ; +8: body_txtptr hi
 
   txa
   clc
@@ -3249,7 +3567,9 @@ BasCmdNext:
 
   ; Search FOR stack from top for matching variable
   ldx BAS_FORSP
-  beq @NextNoFor
+  bne :+
+  jmp @NextNoFor
+:
 
 @NextSearch:
   dex                            ; Back up past padding and entries
@@ -3308,14 +3628,27 @@ BasCmdNext:
   bpl @NextDone                  ; AUX > ACC means var < limit
 
 @NextLoop:
-  ; Continue loop — set CURLINE to body start
+  ; Continue loop — restore to saved body start
   ; Keep the FOR entry on the stack (FORSP stays where it is)
-  lda BAS_FORSTK + 5,x           ; body_start lo
+  lda BAS_FORSTK + 5,x           ; body_line lo
   sta BAS_CURLINE
-  lda BAS_FORSTK + 6,x           ; body_start hi
+  lda BAS_FORSTK + 6,x           ; body_line hi
   sta BAS_CURLINE + 1
-  ; Invalidate saved CURLINE so run loop always detects the change,
-  ; even when body_start == current line (empty loop body / NEXT on next line)
+  lda BAS_FORSTK + 7,x           ; body_txtptr lo
+  sta BAS_TXTPTR
+  lda BAS_FORSTK + 8,x           ; body_txtptr hi
+  sta BAS_TXTPTR + 1
+  ; Skip past ':' separator if present
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #CH_COLON
+  bne :+
+  jsr BasAdvTxtPtr               ; Skip ':'
+: ; Set flag so run loop preserves TXTPTR
+  lda BAS_FLAGS
+  ora #BAS_FLAG_TXTSET
+  sta BAS_FLAGS
+  ; Invalidate saved CURLINE so run loop always detects the change
   lda #$FF
   sta BAS_VARPTR
   sta BAS_VARPTR + 1
@@ -3910,6 +4243,510 @@ BasCmdPoke:
   jmp BasError
 
 ; ============================================================================
+; STOP — Break into REPL with continuation state saved
+; ============================================================================
+
+BasCmdStop:
+  ; Save continuation state for CONT
+  lda BAS_CURLINE
+  sta BAS_STOPLINE
+  lda BAS_CURLINE + 1
+  sta BAS_STOPLINE + 1
+  lda BAS_TXTPTR
+  sta BAS_STOPTXT
+  lda BAS_TXTPTR + 1
+  sta BAS_STOPTXT + 1
+
+  ; Print CRLF + "BREAK IN {linenum}" + CRLF
+  jsr BasPrintCRLF
+  lda #<BasErrBreak
+  sta BAS_TMP1
+  lda #>BasErrBreak
+  sta BAS_TMP1 + 1
+  jsr BasPrintStr
+  lda #<BasStrIn
+  sta BAS_TMP1
+  lda #>BasStrIn
+  sta BAS_TMP1 + 1
+  jsr BasPrintStr
+  lda BAS_LINENUM
+  sta BAS_ACC
+  lda BAS_LINENUM + 1
+  sta BAS_ACC + 1
+  jsr BasPrintInt
+  jsr BasPrintCRLF
+
+  ; Clear run flag — BasRunLoop will exit to REPL
+  stz BAS_FLAGS
+  rts
+
+; ============================================================================
+; CONT — Continue execution after STOP or Ctrl+C
+; ============================================================================
+
+BasCmdCont:
+  ; Check if there is a saved stop point
+  lda BAS_STOPLINE
+  ora BAS_STOPLINE + 1
+  bne @ContOK
+  lda #ERR_CANT_CONT
+  jmp BasError
+
+@ContOK:
+  ; Restore execution state
+  lda BAS_STOPLINE
+  sta BAS_CURLINE
+  lda BAS_STOPLINE + 1
+  sta BAS_CURLINE + 1
+  lda BAS_STOPTXT
+  sta BAS_TXTPTR
+  lda BAS_STOPTXT + 1
+  sta BAS_TXTPTR + 1
+
+  ; Restore line number from the saved line
+  ldy #LINE_NUM
+  lda (BAS_CURLINE),y
+  sta BAS_LINENUM
+  iny
+  lda (BAS_CURLINE),y
+  sta BAS_LINENUM + 1
+
+  ; Save CURLINE for GOTO/GOSUB detection in run loop
+  lda BAS_CURLINE
+  sta BAS_VARPTR
+  lda BAS_CURLINE + 1
+  sta BAS_VARPTR + 1
+
+  ; Set run flag and resume execution
+  lda #BAS_FLAG_RUN
+  sta BAS_FLAGS
+  jmp BasRunExec
+
+; ============================================================================
+; ON n GOTO/GOSUB line1,line2,...
+; ============================================================================
+
+BasCmdOn:
+  jsr BasExpr                    ; Evaluate index → BAS_ACC
+  jsr BasSkipSpaces
+
+  ; Expect GOTO or GOSUB keyword
+  jsr BasGetTokChar
+  cmp #TOK_GOTO
+  beq @OnHaveKW
+  cmp #TOK_GOSUB
+  beq @OnHaveKW
+  lda #ERR_SYNTAX
+  jmp BasError
+
+@OnHaveKW:
+  pha                            ; Save keyword token (TOK_GOTO or TOK_GOSUB)
+  jsr BasAdvTxtPtr               ; Skip GOTO/GOSUB token
+
+  ; Validate index: must be 1-255 (low byte nonzero, high byte zero)
+  lda BAS_ACC + 1
+  bne @OnFallthrough             ; Index > 255 — out of range
+  ldx BAS_ACC
+  beq @OnFallthrough             ; Index = 0 — out of range
+
+  ; X = 1-based index; skip (index-1) comma-separated line numbers
+  dex                            ; X = items to skip
+  beq @OnFound
+
+@OnSkip:
+  phx
+  jsr BasExpr                    ; Parse and discard line number
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  plx
+  cmp #CH_COMMA
+  bne @OnFallthrough             ; Not enough items — fall through
+  jsr BasAdvTxtPtr               ; Skip comma
+  dex
+  bne @OnSkip
+
+@OnFound:
+  pla                            ; Restore keyword token
+  cmp #TOK_GOSUB
+  beq @OnDoGosub
+  jmp BasCmdGoto                 ; Evaluate target line and GOTO
+
+@OnDoGosub:
+  jmp BasCmdGosub                ; Evaluate target line and GOSUB
+
+@OnFallthrough:
+  ; Index out of range — clean stack and silently continue
+  pla
+  rts
+
+; ============================================================================
+; READ var[,var,...] — Read values from DATA statements
+; ============================================================================
+
+BasCmdRead:
+@ReadLoop:
+  ; Ensure DATA pointer is initialized
+  lda BAS_DATAPTR
+  ora BAS_DATAPTR + 1
+  bne @ReadHaveData
+  jsr BasDataFindFirst           ; Find first DATA line (errors if none)
+  bra @ReadDataOk
+
+@ReadHaveData:
+  ; Check for exhausted DATA sentinel ($FFFF)
+  lda BAS_DATAPTR + 1
+  cmp #$FF
+  bne @ReadDataOk
+  lda #ERR_OUT_OF_DATA
+  jmp BasError
+
+@ReadDataOk:
+  ; Parse variable name (A-Z)
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #'A'
+  bcc @ReadSyntax
+  cmp #'Z' + 1
+  bcs @ReadSyntax
+
+  ; Compute variable offset and advance past variable letter
+  sec
+  sbc #'A'
+  asl                            ; ×2 for 16-bit vars
+  pha                            ; Save var offset on stack
+  jsr BasAdvTxtPtr
+
+  ; Save current TXTPTR on stack
+  lda BAS_TXTPTR + 1
+  pha
+  lda BAS_TXTPTR
+  pha
+
+  ; Switch TXTPTR to DATA read position
+  lda BAS_DATAPTR
+  sta BAS_TXTPTR
+  lda BAS_DATAPTR + 1
+  sta BAS_TXTPTR + 1
+
+  ; Parse the next data value
+  jsr BasSkipSpaces
+  jsr BasExpr                    ; → BAS_ACC
+
+  ; Check what follows: comma (more data), null/colon (end of DATA)
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #CH_COMMA
+  bne @ReadEndOfData
+  jsr BasAdvTxtPtr               ; Skip comma — DATA pointer past it
+
+@ReadSavePtr:
+  ; Update DATA pointer to current TXTPTR position
+  lda BAS_TXTPTR
+  sta BAS_DATAPTR
+  lda BAS_TXTPTR + 1
+  sta BAS_DATAPTR + 1
+  bra @ReadRestore
+
+@ReadEndOfData:
+  ; At end of this DATA line — find next DATA for future READs
+  jsr BasDataFindNext            ; Updates BAS_DATAPTR (or carry set)
+  bcc @ReadRestore               ; Found next DATA line — continue
+  ; No more DATA lines — set exhausted sentinel ($FFFF)
+  lda #$FF
+  sta BAS_DATAPTR
+  sta BAS_DATAPTR + 1
+
+@ReadRestore:
+  ; Restore original TXTPTR
+  pla
+  sta BAS_TXTPTR
+  pla
+  sta BAS_TXTPTR + 1
+
+  ; Store value into variable
+  plx                            ; Variable offset
+  lda BAS_ACC
+  sta BAS_VARS,x
+  lda BAS_ACC + 1
+  sta BAS_VARS + 1,x
+
+  ; Check for comma → READ A,B,C support
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #CH_COMMA
+  bne @ReadDone
+  jsr BasAdvTxtPtr               ; Skip comma
+  jmp @ReadLoop
+
+@ReadDone:
+  rts
+
+@ReadSyntax:
+  lda #ERR_SYNTAX
+  jmp BasError
+
+; ============================================================================
+; RESTORE — Reset DATA read pointer to beginning
+; ============================================================================
+
+BasCmdRestore:
+  stz BAS_DATAPTR
+  stz BAS_DATAPTR + 1
+  rts
+
+; ============================================================================
+; DATA Scanning Helpers
+; ============================================================================
+
+; BasDataFindFirst — Find first DATA line from program start
+; Sets BAS_DATAPTR to first value in the first DATA statement
+; Errors ERR_OUT_OF_DATA if no DATA found.
+
+BasDataFindFirst:
+  lda #<BAS_PRG_START
+  sta BAS_TMP1
+  lda #>BAS_PRG_START
+  sta BAS_TMP1 + 1
+  jsr BasDataScan
+  bcc @FindFirstOk
+  lda #ERR_OUT_OF_DATA
+  jmp BasError
+@FindFirstOk:
+  rts
+
+; BasDataFindNext — Find next DATA line after current position
+; BAS_DATAPTR points into current DATA line; scans forward to null,
+; then searches subsequent lines for TOK_DATA.
+; Sets BAS_DATAPTR to first value in the next DATA statement.
+; Errors ERR_OUT_OF_DATA if no more DATA found.
+
+BasDataFindNext:
+  lda BAS_DATAPTR
+  sta BAS_TMP1
+  lda BAS_DATAPTR + 1
+  sta BAS_TMP1 + 1
+  ; Scan to end of current line (null terminator)
+  ldy #$00
+@ScanToNull:
+  lda (BAS_TMP1),y
+  beq @GotNull
+  iny
+  bne @ScanToNull
+  inc BAS_TMP1 + 1
+  bra @ScanToNull
+@GotNull:
+  ; Advance past null to start of next line
+  iny
+  tya
+  clc
+  adc BAS_TMP1
+  sta BAS_TMP1
+  lda #$00
+  adc BAS_TMP1 + 1
+  sta BAS_TMP1 + 1
+  ; Fall through to scan
+
+; BasDataScan — Scan program lines starting at BAS_TMP1 for TOK_DATA
+; Sets BAS_DATAPTR to point past the DATA token (first value byte)
+; Errors ERR_OUT_OF_DATA if no DATA found before end of program.
+
+BasDataScan:
+@ScanLoop:
+  ; At end of program?
+  lda BAS_TMP1
+  cmp BAS_PRGEND
+  bne @ScanNotEnd
+  lda BAS_TMP1 + 1
+  cmp BAS_PRGEND + 1
+  beq @ScanNotFound
+@ScanNotEnd:
+  ; Check first token of this line
+  ldy #LINE_PAYLOAD
+  lda (BAS_TMP1),y
+  cmp #TOK_DATA
+  beq @ScanFound
+  ; Skip to next line by scanning for null terminator
+@ScanSkipLine:
+  lda (BAS_TMP1),y
+  beq @ScanSkipDone
+  iny
+  bra @ScanSkipLine
+@ScanSkipDone:
+  iny                            ; Past null
+  tya
+  clc
+  adc BAS_TMP1
+  sta BAS_TMP1
+  lda #$00
+  adc BAS_TMP1 + 1
+  sta BAS_TMP1 + 1
+  bra @ScanLoop
+
+@ScanFound:
+  ; Point DATAPTR past the DATA token
+  clc
+  lda BAS_TMP1
+  adc #(LINE_PAYLOAD + 1)
+  sta BAS_DATAPTR
+  lda BAS_TMP1 + 1
+  adc #$00
+  sta BAS_DATAPTR + 1
+  rts
+
+@ScanNotFound:
+  sec                            ; Carry set = not found
+  rts
+
+; ============================================================================
+; SQR(n) — Integer square root (16-bit unsigned)
+; ============================================================================
+; Input: BAS_ACC = n (signed; negative → ILLEGAL QTY error)
+; Output: BAS_ACC = floor(sqrt(n))
+; Algorithm: Newton's method — guess = n/2, iterate guess = (guess + n/guess)/2
+; Uses BAS_AUX as "n" copy, BAS_NUMTMP to save current guess across division
+
+BasFuncSqr:
+  ; Negative → error
+  lda BAS_ACC + 1
+  bmi @SqrErr
+  ; n = 0 or 1 → result is n
+  lda BAS_ACC + 1
+  bne @SqrBig
+  lda BAS_ACC
+  cmp #2
+  bcc @SqrDone                   ; 0 or 1 → return as-is
+@SqrBig:
+  ; Copy n to AUX
+  lda BAS_ACC
+  sta BAS_AUX
+  lda BAS_ACC + 1
+  sta BAS_AUX + 1
+  ; Initial guess = n / 2 (unsigned shift right)
+  lsr BAS_ACC + 1
+  ror BAS_ACC
+  ; If guess becomes 0 (n was 1, already handled), set to 1
+  lda BAS_ACC
+  ora BAS_ACC + 1
+  bne @SqrLoop
+  lda #$01
+  sta BAS_ACC
+@SqrLoop:
+  ; Save current guess in NUMTMP (survives BasMathDiv)
+  lda BAS_ACC
+  sta BAS_NUMTMP
+  lda BAS_ACC + 1
+  sta BAS_NUMTMP + 1
+  ; Compute n / guess: AUX / ACC → ACC
+  ; BasMathDiv clobbers AUX — save n on stack
+  lda BAS_AUX
+  pha
+  lda BAS_AUX + 1
+  pha
+  jsr BasMathDiv                 ; ACC = AUX / ACC
+  ; new_guess = (guess + n/guess) / 2
+  clc
+  lda BAS_ACC
+  adc BAS_NUMTMP
+  sta BAS_ACC
+  lda BAS_ACC + 1
+  adc BAS_NUMTMP + 1
+  sta BAS_ACC + 1
+  ; Unsigned divide by 2
+  lsr BAS_ACC + 1
+  ror BAS_ACC
+  ; Restore n to AUX
+  pla
+  sta BAS_AUX + 1
+  pla
+  sta BAS_AUX
+  ; Converged? Compare new_guess with old guess (NUMTMP)
+  lda BAS_ACC
+  cmp BAS_NUMTMP
+  bne @SqrNotSame
+  lda BAS_ACC + 1
+  cmp BAS_NUMTMP + 1
+  beq @SqrDone                   ; Converged
+@SqrNotSame:
+  ; Check if new_guess = old_guess - 1 (oscillation)
+  sec
+  lda BAS_NUMTMP
+  sbc BAS_ACC
+  cmp #$01
+  bne @SqrLoop
+  lda BAS_NUMTMP + 1
+  sbc BAS_ACC + 1
+  bne @SqrLoop
+  ; Oscillating between guess and guess-1; take the smaller (ACC)
+@SqrDone:
+  stz BAS_ACC + 1                ; Result fits in low byte for values ≤255
+  rts                            ; For larger roots, high byte already correct from loop
+
+@SqrErr:
+  lda #ERR_ILLEGAL_QTY
+  jmp BasError
+
+; ============================================================================
+; POW(b,e) — Integer exponentiation
+; ============================================================================
+; Input: BAS_ACC = base, BAS_AUX = exponent
+; Output: BAS_ACC = base^exponent
+; Negative exponent → return 0 (integer truncation)
+; Uses BAS_SCRATCH2 for base (safe across BasMathMul),
+;      BAS_NUMTMP for exponent counter (safe across BasMathMul)
+
+BasFuncPow:
+  ; If exponent is negative → result is 0
+  lda BAS_AUX + 1
+  bmi @PowZero
+  ; If exponent = 0 → return 1
+  lda BAS_AUX
+  ora BAS_AUX + 1
+  bne @PowStart
+  lda #$01
+  sta BAS_ACC
+  stz BAS_ACC + 1
+  rts
+@PowStart:
+  ; Save base in SCRATCH2 (survives BasMathMul which only uses SCRATCH)
+  lda BAS_ACC
+  sta BAS_SCRATCH2
+  lda BAS_ACC + 1
+  sta BAS_SCRATCH2 + 1
+  ; Save exponent counter in NUMTMP (survives BasMathMul)
+  lda BAS_AUX
+  sta BAS_NUMTMP
+  lda BAS_AUX + 1
+  sta BAS_NUMTMP + 1
+  ; Decrement counter: ACC already holds base^1
+  lda BAS_NUMTMP
+  bne :+
+  dec BAS_NUMTMP + 1
+: dec BAS_NUMTMP
+@PowMulLoop:
+  ; Counter = 0? done
+  lda BAS_NUMTMP
+  ora BAS_NUMTMP + 1
+  beq @PowDone
+  ; Set AUX = base for multiplication
+  lda BAS_SCRATCH2
+  sta BAS_AUX
+  lda BAS_SCRATCH2 + 1
+  sta BAS_AUX + 1
+  jsr BasMathMul                 ; ACC = ACC * base
+  ; Decrement counter
+  lda BAS_NUMTMP
+  bne :+
+  dec BAS_NUMTMP + 1
+: dec BAS_NUMTMP
+  bra @PowMulLoop
+@PowDone:
+  rts
+@PowZero:
+  stz BAS_ACC
+  stz BAS_ACC + 1
+  rts
+
+; ============================================================================
 ; Keyword Table
 ; ============================================================================
 ; Format: null-terminated keyword string, then token byte.
@@ -3917,14 +4754,20 @@ BasCmdPoke:
 ; Table terminated by a lone $00.
 
 BasKeywordTable:
+  .byte "RESTORE", $00, TOK_RESTORE
   .byte "RETURN", $00, TOK_RETURN
   .byte "LOCATE", $00, TOK_LOCATE
+  .byte "INKEY",  $00, TOK_INKEY
   .byte "PRINT",  $00, TOK_PRINT
   .byte "INPUT",  $00, TOK_INPUT
   .byte "GOSUB",  $00, TOK_GOSUB
   .byte "SOUND",  $00, TOK_SOUND
   .byte "PAUSE",  $00, TOK_PAUSE
   .byte "COLOR",  $00, TOK_COLOR
+  .byte "STOP",   $00, TOK_STOP
+  .byte "CONT",   $00, TOK_CONT
+  .byte "DATA",   $00, TOK_DATA
+  .byte "READ",   $00, TOK_READ
   .byte "GOTO",   $00, TOK_GOTO
   .byte "THEN",   $00, TOK_THEN
   .byte "STEP",   $00, TOK_STEP
@@ -3959,6 +4802,14 @@ BasKeywordTable:
   .byte "JOY",    $00, TOK_JOY
   .byte "SGN",    $00, TOK_SGN
   .byte "CHR",    $00, TOK_CHR
+  .byte "SQR",    $00, TOK_SQR
+  .byte "MIN",    $00, TOK_MIN
+  .byte "MAX",    $00, TOK_MAX
+  .byte "POW",    $00, TOK_POW
+  .byte "TAB",    $00, TOK_TAB
+  .byte "HEX",    $00, TOK_HEX
+  .byte "ASC",    $00, TOK_ASC
+  .byte "ON",     $00, TOK_ON
   .byte "IF",     $00, TOK_IF
   .byte "TO",     $00, TOK_TO
   .byte "OR",     $00, TOK_OR

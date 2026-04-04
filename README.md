@@ -75,6 +75,12 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 | `NEXT` | `NEXT var` | Increment loop variable and branch back to matching `FOR` if condition holds |
 | `REM` | `REM [text]` | Comment — rest of line is ignored |
 | `END` | `END` | Stop execution and return to the `OK` prompt. Variables are preserved |
+| `STOP` | `STOP` | Stop execution and print `BREAK IN {linenum}`. Variables are preserved; resume with `CONT` |
+| `CONT` | `CONT` | Continue execution after a `STOP` or Ctrl+C break (immediate mode only). Error if nothing to continue |
+| `ON` | `ON expr GOTO l1,l2,...` | Evaluate `expr`, jump to the nth line number in the list. `ON expr GOSUB ...` also supported. Out-of-range index silently continues |
+| `DATA` | `DATA v1,v2,...` | Store inline numeric data for `READ`. Skipped during normal execution |
+| `READ` | `READ var [,var ...]` | Read the next value(s) from `DATA` statements into variables. `OUT OF DATA` error if exhausted |
+| `RESTORE` | `RESTORE` | Reset the `DATA` pointer so the next `READ` starts from the first `DATA` statement |
 | `LIST` | `LIST` | Print the entire program in detokenized form. Ctrl+C interrupts |
 | `RUN` | `RUN` | Clear all variables and run the program from the first line |
 | `NEW` | `NEW` | Erase the program and clear variables. No `OK` is printed afterward |
@@ -137,6 +143,14 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 | `expr OR expr` | Logical OR: `1` if either operand is non-zero, `0` otherwise |
 | `expr MOD expr` | Integer remainder after division; sign follows the dividend. `DIVISION BY ZERO` if right side is zero |
 | `CHR(n)` | In `PRINT`, draws the CP437 glyph for code `n` directly (bypasses control-code handling). In expressions, returns `n` unchanged |
+| `SQR(n)` | Integer square root of `n`. Error if `n` is negative |
+| `MIN(a,b)` | Returns the smaller of `a` and `b` |
+| `MAX(a,b)` | Returns the larger of `a` and `b` |
+| `POW(b,e)` | Integer exponentiation: `b` raised to the power `e`. Negative exponent returns `0` |
+| `INKEY` | Non-blocking key read: returns the ASCII code of a pressed key, or `0` if no key is waiting. No parentheses |
+| `ASC(n)` | Identity function — returns `n` unchanged. Convenience for readability (e.g. `A = ASC(INKEY)`) |
+| `TAB(n)` | In `PRINT`, advances cursor to column `n` by emitting spaces. Does nothing if already at or past column `n`. In expressions, returns `n` unchanged |
+| `HEX(n)` | In `PRINT`, outputs `n` as a 4-digit hexadecimal value with `$` prefix (e.g. `$00FF`). In expressions, returns `n` unchanged |
 | `JOY(1)` / `JOY(2)` | Joystick bitmask for port 1 or 2 (bit order: R-L-D-U-Y-X-B-A) |
 | `$xxxx` | Hexadecimal integer literal (e.g. `$FF` = 255, `$1000` = 4096) |
 

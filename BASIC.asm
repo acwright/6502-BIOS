@@ -256,10 +256,21 @@ BasColdStart:
   bra @WalkChain
 
 @ChainEnd:
-  ; BAS_TMP1 points to the $0000 end sentinel — use it as BAS_PRGEND
-  lda BAS_TMP1
+  ; BAS_TMP1 points to the last line — scan past its payload null terminator
+  ldy #LINE_PAYLOAD
+@ChainScanEnd:
+  lda (BAS_TMP1),y
+  beq @ChainFoundEnd
+  iny
+  bra @ChainScanEnd
+@ChainFoundEnd:
+  iny                            ; Past the null terminator
+  tya
+  clc
+  adc BAS_TMP1
   sta BAS_PRGEND
-  lda BAS_TMP1 + 1
+  lda #$00
+  adc BAS_TMP1 + 1
   sta BAS_PRGEND + 1
   bra @PrgDone
 
@@ -3608,23 +3619,6 @@ BasCmdFor:
   lda BAS_ACC + 1
   sta BAS_SCRATCH + 1
 
-  ; Check for optional STEP — default is 1
-  lda #$01
-  sta BAS_SCRATCH2
-  stz BAS_SCRATCH2 + 1
-
-  jsr BasSkipSpaces
-  jsr BasGetTokChar
-  cmp #TOK_STEP
-  bne @ForNoStep
-  jsr BasAdvTxtPtr
-  jsr BasExpr
-  lda BAS_ACC
-  sta BAS_SCRATCH2
-  lda BAS_ACC + 1
-  sta BAS_SCRATCH2 + 1
-@ForNoStep:
-
   ; Check room on FOR stack
   ldx BAS_FORSP
   txa
@@ -3643,16 +3637,33 @@ BasCmdFor:
   ;  +6: body_start_hi (1)
   ; +7..+15: unused padding
 
+  ; Save var offset and limit to stack entry NOW, before evaluating STEP,
+  ; because BasExpr clobbers BAS_SCRATCH during number parsing.
   lda BAS_TEMP
   sta BAS_FORSTK,x               ; +0: var offset
   lda BAS_SCRATCH
   sta BAS_FORSTK + 1,x           ; +1: limit lo
   lda BAS_SCRATCH + 1
   sta BAS_FORSTK + 2,x           ; +2: limit hi
-  lda BAS_SCRATCH2
+
+  ; Check for optional STEP — default is 1
+  lda #$01
+  sta BAS_FORSTK + 3,x           ; +3: step lo (default 1)
+  stz BAS_FORSTK + 4,x           ; +4: step hi (default 0)
+
+  jsr BasSkipSpaces
+  jsr BasGetTokChar
+  cmp #TOK_STEP
+  bne @ForNoStep
+  jsr BasAdvTxtPtr
+  phx                            ; Preserve FOR stack index
+  jsr BasExpr
+  plx                            ; Restore FOR stack index
+  lda BAS_ACC
   sta BAS_FORSTK + 3,x           ; +3: step lo
-  lda BAS_SCRATCH2 + 1
+  lda BAS_ACC + 1
   sta BAS_FORSTK + 4,x           ; +4: step hi
+@ForNoStep:
   ; Save loop body start: current line and TXTPTR
   ; (TXTPTR points right after the FOR statement — at ':' or end of line)
   lda BAS_CURLINE
@@ -3890,10 +3901,21 @@ BasCmdLoad:
   sta BAS_TMP1 + 1
   bra @LoadWalkChain
 @LoadChainEnd:
-  ; BAS_TMP1 points to the $0000 end sentinel
-  lda BAS_TMP1
+  ; BAS_TMP1 points to the last line — scan past its payload null terminator
+  ldy #LINE_PAYLOAD
+@LoadScanEnd:
+  lda (BAS_TMP1),y
+  beq @LoadFoundEnd
+  iny
+  bra @LoadScanEnd
+@LoadFoundEnd:
+  iny                            ; Past the null terminator
+  tya
+  clc
+  adc BAS_TMP1
   sta BAS_PRGEND
-  lda BAS_TMP1 + 1
+  lda #$00
+  adc BAS_TMP1 + 1
   sta BAS_PRGEND + 1
   rts
 

@@ -1908,8 +1908,18 @@ FsSaveFile:
   pha
   lda CF_BUF_PTR + 1
   pha
-  ; Calculate next free sector (clobbers CF_BUF_PTR)
+  ; Save FS_FILE_SIZE (FsCalcNextSec clobbers it while scanning entries)
+  lda FS_FILE_SIZE
+  pha
+  lda FS_FILE_SIZE + 1
+  pha
+  ; Calculate next free sector (clobbers CF_BUF_PTR and FS_FILE_SIZE)
   jsr FsCalcNextSec
+  ; Restore FS_FILE_SIZE
+  pla
+  sta FS_FILE_SIZE + 1
+  pla
+  sta FS_FILE_SIZE
   ; Restore CF_BUF_PTR to the free directory entry
   pla
   sta CF_BUF_PTR + 1

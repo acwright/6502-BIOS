@@ -1194,15 +1194,17 @@ ProbeGPIO:
   stz GPIO_DDRB                 ; Restore to inputs (InitKBImpl will configure properly)
   rts
 
-; ProbeSerial — R65C51 TDRE-after-reset test
-; Issues programmatic reset, checks for TDRE (bit 4) set in status
+; ProbeSerial — R65C51 CMD register write/read-back test
+; Issues programmatic reset, writes test value to CMD, reads back
+; Open bus will not match — prevents false detection
 ; Sets HW_SC in HW_PRESENT on success
 ; Modifies: Flags, A
 ProbeSerial:
   stz SC_RESET                  ; Programmatic reset (write any value)
-  lda SC_STATUS
-  and #SC_STATUS_TDRE           ; TDRE should be set after reset
-  beq @ProbeSerialDone
+  lda #$0A                      ; Test value (bits within CMD writable range)
+  sta SC_CMD                    ; Write to Command Register
+  cmp SC_CMD                    ; Read back — should match if real hardware
+  bne @ProbeSerialDone          ; Mismatch = open bus, no card present
   lda HW_PRESENT
   ora #HW_SC
   sta HW_PRESENT
@@ -2272,10 +2274,10 @@ Irq:
   jsr WriteBuffer               ; Store to the input buffer
   jsr BufferSize
   cmp #$F0                      ; Is the buffer almost full?
-  bcc @IrqExit                  ; If not, exit
+  bcc @IrqCheckKB               ; If not, also check keyboard
   lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
   sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-  bra @IrqExit
+                                ; Fall through to check keyboard — always clear VIA flags
 @IrqCheckKB:
   lda HW_PRESENT
   and #HW_GPIO

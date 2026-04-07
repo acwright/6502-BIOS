@@ -3891,21 +3891,10 @@ BasCmdLoad:
   sta BAS_TMP1 + 1
   bra @LoadWalkChain
 @LoadChainEnd:
-  ; BAS_TMP1 points to the last line — scan past its payload null terminator
-  ldy #LINE_PAYLOAD
-@LoadScanEnd:
-  lda (BAS_TMP1),y
-  beq @LoadFoundEnd
-  iny
-  bra @LoadScanEnd
-@LoadFoundEnd:
-  iny                            ; Past the null terminator
-  tya
-  clc
-  adc BAS_TMP1
+  ; BAS_TMP1 points to the end sentinel — PRGEND = sentinel address
+  lda BAS_TMP1
   sta BAS_PRGEND
-  lda #$00
-  adc BAS_TMP1 + 1
+  lda BAS_TMP1 + 1
   sta BAS_PRGEND + 1
   rts
 

@@ -46,8 +46,11 @@ SidSetVolume:   jmp SidSetVolumeImpl    ; $A069 - Set SID master volume (A=0-15)
 VideoSetColor:  jmp VideoSetColorImpl   ; $A06C - Set TMS9918 text color (A=reg7 byte: hi=fg, lo=bg)
 VideoChroutRaw: jmp VideoChroutRawImpl  ; $A06F - Output char to video (raw, no control-code handling)
 
-; Reserved entries ($A072-$A0FE)
-.repeat 47
+KernalInit:     jmp KernalInitImpl      ; $A072 - Initialize all hardware (caller must reset SP; no cli, no splash); rts when done
+KernalVersion:  jmp KernalVersionImpl   ; $A075 - Get BIOS version (A=major, X=minor)
+
+; Reserved entries ($A078-$A0FE)
+.repeat 45
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -416,13 +419,15 @@ VideoPrintStrImpl:
 @VideoPrintStrDone:
   rts
 
-; Main entry point
-Reset:
+; KernalInit — Initialize RAM variables, probe & init all hardware
+; Sets HW_PRESENT, IO_MODE, IRQ/BRK/NMI pointers, BOOT_VECTOR=0
+; Does NOT enable interrupts (caller must cli)
+; Does NOT reset the stack pointer (caller should do this before JSR)
+; Does NOT display splash or enter boot menu
+; Modifies: All registers, flags
+KernalInitImpl:
   cld                           ; Clear decimal mode
   sei                           ; Disable interrupts
-
-  ldx #$ff                      
-  txs                           ; Reset the stack pointer
 
   lda #<Irq                     ; Initialize the IRQ pointer
   sta IRQ_PTR
@@ -440,6 +445,8 @@ Reset:
   sta NMI_PTR + 1
 
   stz HW_PRESENT                ; Clear all hardware flags
+  stz BOOT_VECTOR               ; Clear boot redirect vector
+  stz BOOT_VECTOR + 1
 
   jsr InitBuffer                ; Initialize the input buffer (RAM-only, no hardware)
 
@@ -485,9 +492,8 @@ Reset:
   lda HW_PRESENT
   and #HW_SC
   bne @ConsoleSerial            ; Serial present — use it
-  ; Neither video nor serial — halt (no console available)
-@Halt:
-  bra @Halt
+  ; Neither video nor serial — IO_MODE left as-is (no console)
+  bra @ConsoleDone
 
 @ConsoleVideo:
   lda #$00                      ; IO_MODE = video
@@ -503,7 +509,40 @@ Reset:
   sta IO_MODE
 
 @ConsoleDone:
+  rts
+
+; KernalVersion — Return BIOS version in registers
+; Output: A = major version, X = minor version
+; Modifies: A, X
+KernalVersionImpl:
+  lda #BIOS_VERSION_MAJOR
+  ldx #BIOS_VERSION_MINOR
+  rts
+
+; Reset — Full system startup: init hardware, beep, check boot vector, splash, boot menu
+Reset:
+  ldx #$ff
+  txs                           ; Reset the stack pointer
+  jsr KernalInitImpl            ; Initialize all hardware (leaves interrupts disabled)
+
   jsr Beep                      ; Play the startup beep (guarded — skips if no SID)
+
+  ; Check boot redirect vector — cartridges set this before jumping to Reset
+  lda BOOT_VECTOR
+  ora BOOT_VECTOR + 1
+  beq @NormalBoot               ; Zero — continue normal boot
+  jmp (BOOT_VECTOR)             ; Non-zero — jump to cartridge/external program
+
+@NormalBoot:
+  ; Verify console is available for interactive boot
+  lda HW_PRESENT
+  and #(HW_VID | HW_SC)
+  bne @HasConsole
+  ; Neither video nor serial — halt (no console for interactive boot)
+@Halt:
+  bra @Halt
+
+@HasConsole:
   jsr Splash                    ; Draw the splash screen (guarded — skips if no video)
 
   cli                           ; Enable interrupts

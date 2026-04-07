@@ -16,16 +16,18 @@ The probe-and-boot sequence is:
 1. **Clear `HW_PRESENT`** — all bits start at zero
 2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY with timeout), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (active oscillator), Video (VRAM read-back)
 3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded
-4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, the CPU halts
-5. **Beep** — a short tone on the SID (skipped silently if SID absent)
-6. **Splash screen** — displayed on the active console:
+4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot)
+5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)
+6. **Boot vector check** — if `BOOT_VECTOR` (`$035B`) is non-zero, jump to the address stored there (cartridge or external program takes over). Otherwise continue to normal boot
+7. **Console check** — verify that at least video or serial is present. If neither is found and no boot vector was set, the CPU halts (interactive boot requires a console)
+8. **Splash screen** — displayed on the active console:
 
 ```
   -- 6502 BIOS v1.0 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
-7. **Boot menu with timeout** — waits ~5 seconds for a keypress, then auto-boots BASIC
+9. **Boot menu with timeout** — waits ~5 seconds for a keypress, then auto-boots BASIC
 
 - **ENTER** (or timeout) — launches the Integer BASIC interpreter
 - **ESC** — drops into the machine-code monitor
@@ -283,7 +285,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, HW\_PRESENT, RTC, FS state, array descriptors) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, HW\_PRESENT, BOOT\_VECTOR, RTC, FS state, array descriptors) |
 | `$0400–$07FF` | 1KB | User / BASIC variables |
 | `$0800–$7FFF` | ~31KB | Program space (programs grow up from `$0800`; arrays grow down from `$7FFF`) |
 
@@ -333,6 +335,64 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A069` | `SidSetVolume` | Set SID master volume: `A`=0–15 |
 | `$A06C` | `VideoSetColor` | Set TMS9918 text colour register: `A`=`(fg<<4)\|bg` |
 | `$A06F` | `VideoChroutRaw` | Output character glyph at cursor (raw, no control-code handling): `A`=char code |
+| `$A072` | `KernalInit` | Initialise all hardware (caller must reset stack pointer first; no cli, no splash). Returns via `RTS` |
+| `$A075` | `KernalVersion` | Get BIOS version → `A`=major, `X`=minor |
+
+### Cartridge Support
+
+Cartridges for this system overlay the ROM area from `$C000–$FFFF`. When inserted, the cartridge replaces the Monitor, BASIC, Wozmon, and CPU vectors (NMI/RESET/IRQ) with its own code. The Kernal (`$A000–$B7FF`) and character set (`$B800–$BFFF`) remain accessible.
+
+Two Kernal facilities support cartridge development:
+
+**`KernalInit` ($A072)** — A callable subroutine that performs the complete hardware initialisation sequence (IRQ/BRK/NMI pointers, hardware probing, peripheral init, console auto-detection) and returns via `RTS`. It clears decimal mode and disables interrupts, but does **not** reset the stack pointer (the caller must do `ldx #$ff / txs` before the `JSR`), enable interrupts (`cli`), play the beep, display the splash screen, or enter the boot menu. This gives the cartridge full control over what happens after hardware init.
+
+**`BOOT_VECTOR` ($035B–$035C)** — A 2-byte RAM address that, if non-zero after `KernalInit`, causes the normal `Reset` flow to jump to the specified address instead of continuing to the splash screen and boot menu. `KernalInit` zeroes this variable, so a cartridge must write to it *after* calling `KernalInit` but *before* `Reset` checks it — or use Pattern B below.
+
+#### Cart Usage Patterns
+
+**Pattern A — Direct KernalInit call** (cart handles everything after init):
+
+```asm
+; Cart reset vector points here
+CartReset:
+    ldx #$ff
+    txs                 ; Reset stack pointer
+    jsr $A072           ; KernalInit — all hardware ready, interrupts off
+    ; Override IRQ_PTR ($0300) / NMI_PTR ($0304) if needed
+    cli
+    jmp CartMain         ; Cart's own program entry
+```
+
+This is the simplest approach. The cartridge gets fully initialised hardware and takes complete control. No beep, no splash — the cart decides what the user sees and hears.
+
+**Pattern B — KernalInit + Beep** (get the audible startup feedback, then take control):
+
+```asm
+; Cart reset vector points here
+CartReset:
+    ldx #$ff
+    txs                 ; Reset stack pointer
+    jsr $A072           ; KernalInit — all hardware ready, interrupts off
+    jsr $A01B           ; Beep — audible "system alive" feedback
+    ; Override IRQ_PTR ($0300) / NMI_PTR ($0304) if needed
+    cli
+    jmp CartMain         ; Cart's own program entry
+```
+
+This is Pattern A with the addition of the startup beep. The beep provides audible confirmation that hardware initialised successfully, which is useful when the cartridge has its own display that may take time to set up.
+
+> **Note on `BOOT_VECTOR`:** `KernalInit` zeroes `BOOT_VECTOR` during init. A cartridge can write to `BOOT_VECTOR` after calling `KernalInit` if it needs to redirect a later soft-reset back to the cart. However, for the initial boot, Patterns A and B above are the recommended approaches.
+
+In practice, **Pattern A is recommended** for most cartridges.
+
+#### What Cartridges Can Rely On
+
+- **Kernal jump table** (`$A000–$A0FF`) — all entries remain stable across BIOS versions
+- **`HW_PRESENT`** (`$030D`) — read after `KernalInit` to discover installed hardware
+- **`KernalVersion`** (`$A075`) — check BIOS compatibility (`A`=major, `X`=minor)
+- **RAM vectors** — `IRQ_PTR` (`$0300`), `BRK_PTR` (`$0302`), `NMI_PTR` (`$0304`) can be overwritten to install custom interrupt handlers
+- **`IO_MODE`** (`$0306`) — set via `SetIOMode` (`$A051`) to route console output
+- **No-console safe** — `KernalInit` does not halt if neither video nor serial is detected, allowing cartridges with their own display hardware to boot normally
 
 ---
 

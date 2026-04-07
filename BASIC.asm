@@ -256,21 +256,11 @@ BasColdStart:
   bra @WalkChain
 
 @ChainEnd:
-  ; BAS_TMP1 points to the last line — scan past its payload null terminator
-  ldy #LINE_PAYLOAD
-@ChainScanEnd:
-  lda (BAS_TMP1),y
-  beq @ChainFoundEnd
-  iny
-  bra @ChainScanEnd
-@ChainFoundEnd:
-  iny                            ; Past the null terminator
-  tya
-  clc
-  adc BAS_TMP1
+  ; BAS_TMP1 points to the end sentinel ($00 $00).
+  ; PRGEND = sentinel address (matches @NoPrg convention).
+  lda BAS_TMP1
   sta BAS_PRGEND
-  lda #$00
-  adc BAS_TMP1 + 1
+  lda BAS_TMP1 + 1
   sta BAS_PRGEND + 1
   bra @PrgDone
 

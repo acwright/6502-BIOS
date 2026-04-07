@@ -68,7 +68,12 @@ FS_SEC_COUNT        := $034C             ; Number of sectors to read/write
 FS_DIR_IDX          := $034D             ; Directory entry index (0-15)
 FS_NEXT_SEC         := $034E             ; $034E-$034F - Next free sector for allocation (2 bytes)
 FS_FNAME_BUF        := $0350             ; $0350-$035A - 11-byte filename buffer (8 name + 3 ext)
+BOOT_VECTOR         := $035B             ; $035B-$035C - Cart/boot redirect vector (2 bytes, 0=normal boot)
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
+
+; BIOS Version
+BIOS_VERSION_MAJOR  = 1
+BIOS_VERSION_MINOR  = 0
 
 ; User Vars
 USER_VARS           := $0400             ; $0400-$07FF

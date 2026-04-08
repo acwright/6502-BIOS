@@ -183,7 +183,7 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 
 ### Machine Code Monitor
 
-A full-featured Supermon-style machine-code monitor occupies the `$C000–$DFFF` segment. It supports memory inspection, 65C02 disassembly, register manipulation, code execution, CompactFlash and serial file I/O, and number base conversion. The monitor prompt is `.`.
+A full-featured Supermon-style machine-code monitor occupies the `$E800–$FEFF` segment. It supports memory inspection, 65C02 disassembly, register manipulation, code execution, CompactFlash and serial file I/O, and number base conversion. The monitor prompt is `.`.
 
 The monitor is entered in three ways:
 - **ESC at boot** — cold entry, prints `MONITOR` banner
@@ -273,8 +273,8 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$A000–$A0FF` | 256B | **Kernal jump table** (public API) |
 | `$A100–$B7FF` | ~6KB | Kernal routines |
 | `$B800–$BFFF` | 2KB | IBM CP437 character set (VRAM init data) |
-| `$C000–$DFFF` | 8KB | Machine-code monitor |
-| `$E000–$FEFF` | ~8KB | Integer BASIC interpreter |
+| `$C000–$E7FF` | 10KB | Integer BASIC interpreter |
+| `$E800–$FEFF` | ~6KB | Machine-code monitor |
 | `$FF00–$FFF9` | 250B | Wozmon (Apple II machine-code monitor) |
 | `$FFFA–$FFFF` | 6B | CPU vectors (NMI / RESET / IRQ) |
 

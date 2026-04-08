@@ -3,11 +3,11 @@
 ; ***             ***
 
 ; Machine Code Monitor — Supermon-style command set
-; Segment: $C000-$DFFF (8KB)
+; Segment: $E800-$FEFF (~6KB)
 ;
 ; Entry points:
-;   MonitorEntry    ($C000) — Cold entry from boot menu or X return
-;   MonitorBrkEntry ($C003) — BRK entry with register display
+;   MonitorEntry    ($E800) — Cold entry from boot menu or X return
+;   MonitorBrkEntry ($E803) — BRK entry with register display
 
 ; ============================================================================
 ; Monitor Constants
@@ -113,7 +113,7 @@ AM_AIX = 15
 ; ============================================================================
 
 MonitorEntry:
-  jmp MonColdEntry              ; $C000 - Cold entry (boot menu / return)
+  jmp MonColdEntry              ; $E800 - Cold entry (boot menu / return)
 
 MonitorBrkEntry:
   jmp MonBrkEntry               ; $C003 - BRK entry (register display)

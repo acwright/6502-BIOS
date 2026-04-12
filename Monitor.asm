@@ -945,10 +945,10 @@ MonCmdNum:
   rts
 
 ; ============================================================================
-; MonCmdLoad — Load from CF (with quoted filename) or serial (without)
+; MonCmdLoad — Load from CF (with quoted filename) or XModem (without)
 ; Syntax: L ["FILE"] [ADDR]
 ; CF path:     L "FILENAME" [ADDR] — load file to addr (default $0800)
-; Serial path: L [ADDR]            — receive binary to addr (default $0800)
+; Serial path: L [ADDR]            — receive via XModem to addr (default $0800)
 ; ============================================================================
 
 MonCmdLoad:
@@ -959,7 +959,7 @@ MonCmdLoad:
   bne @LoadSerial
   jmp @LoadCF
 
-  ; --- Serial path ---
+  ; --- Serial path (XModem) ---
 @LoadSerial:
   jsr MonParseHex4              ; Optional address
   bcc @LoadSerDefault
@@ -980,64 +980,18 @@ MonCmdLoad:
   sta MON_END
   lda XFER_PTR+1
   sta MON_END+1
-  ; Switch to serial I/O
-  lda IO_MODE
-  sta XFER_IO_SAVE
-  lda #$01
-  sta IO_MODE
-  ; Print "READY TO RECEIVE" via serial
-  lda #<MonStrReady
-  sta STR_PTR
-  lda #>MonStrReady
-  sta STR_PTR+1
-  jsr MonSerialPrintStr
-  ; Read 2-byte size (lo/hi)
-@SerWaitSzLo:
-  jsr BufferSize
-  beq @SerWaitSzLo
-  jsr ReadBuffer
-  sta XFER_REMAIN
-@SerWaitSzHi:
-  jsr BufferSize
-  beq @SerWaitSzHi
-  jsr ReadBuffer
-  sta XFER_REMAIN+1
-  ; Check for zero-length
+  ; Receive via XModem
+  jsr XModemLoad
+  bcs @LoadSerErr
+  ; XFER_REMAIN = total bytes received
   lda XFER_REMAIN
-  ora XFER_REMAIN+1
-  beq @LoadSerOk
-  ; Receive data bytes
-  ldy #0
-@LoadSerByte:
-  jsr BufferSize
-  beq @LoadSerByte
-  jsr ReadBuffer
-  sta (XFER_PTR),y
-  inc XFER_PTR
-  bne @LoadSerNoPage
-  inc XFER_PTR+1
-@LoadSerNoPage:
-  lda XFER_REMAIN
-  bne @LoadSerDecLo
-  dec XFER_REMAIN+1
-@LoadSerDecLo:
-  dec XFER_REMAIN
-  lda XFER_REMAIN
-  ora XFER_REMAIN+1
-  bne @LoadSerByte
-@LoadSerOk:
-  ; Restore IO_MODE
-  lda XFER_IO_SAVE
-  sta IO_MODE
-  ; Calculate bytes loaded = XFER_PTR - MON_END
-  sec
-  lda XFER_PTR
-  sbc MON_END
   sta MON_ADDR
-  lda XFER_PTR+1
-  sbc MON_END+1
+  lda XFER_REMAIN+1
   sta MON_ADDR+1
   jsr MonPrintLoaded            ; Print "LOADED nnnn BYTES AT $xxxx"
+  rts
+@LoadSerErr:
+  jsr MonPrintIOErr
   rts
 
   ; --- CF path ---
@@ -1171,10 +1125,10 @@ MonCmdLoad:
   rts
 
 ; ============================================================================
-; MonCmdSave — Save to CF (with quoted filename) or serial (without)
+; MonCmdSave — Save to CF (with quoted filename) or XModem (without)
 ; Syntax: S ["FILE"] ADDR1 ADDR2
 ; CF path:     S "FILENAME" ADDR1 ADDR2 — save [addr1,addr2) to file
-; Serial path: S ADDR1 ADDR2            — send [addr1,addr2) via serial
+; Serial path: S ADDR1 ADDR2            — send [addr1,addr2) via XModem
 ; ============================================================================
 
 MonCmdSave:
@@ -1186,6 +1140,7 @@ MonCmdSave:
   jmp @SaveCF
 
   ; --- Serial path ---
+  ; --- Serial path (XModem) ---
 @SaveSerial:
   jsr MonParseHex4              ; Parse start address
   bcs @SaveSerGotStart
@@ -1213,47 +1168,18 @@ MonCmdSave:
   sta MON_END
   lda XFER_REMAIN+1
   sta MON_END+1
-  ; Switch to serial I/O
-  lda IO_MODE
-  sta XFER_IO_SAVE
-  lda #$01
-  sta IO_MODE
-  ; Send 2-byte size (lo/hi)
-  lda XFER_REMAIN
-  jsr SerialChrout
-  lda XFER_REMAIN+1
-  jsr SerialChrout
-  ; Check for zero-length
-  lda XFER_REMAIN
-  ora XFER_REMAIN+1
-  beq @SaveSerDone
-  ; Send data bytes
-  ldy #0
-@SaveSerByte:
-  lda (XFER_PTR),y
-  jsr SerialChrout
-  inc XFER_PTR
-  bne @SaveSerNoPage
-  inc XFER_PTR+1
-@SaveSerNoPage:
-  lda XFER_REMAIN
-  bne @SaveSerDecLo
-  dec XFER_REMAIN+1
-@SaveSerDecLo:
-  dec XFER_REMAIN
-  lda XFER_REMAIN
-  ora XFER_REMAIN+1
-  bne @SaveSerByte
-@SaveSerDone:
-  ; Restore IO_MODE
-  lda XFER_IO_SAVE
-  sta IO_MODE
+  ; Send via XModem
+  jsr XModemSave
+  bcs @SaveSerErr
   ; Print "SAVED nnnn BYTES"
   lda MON_END
   sta MON_ADDR
   lda MON_END+1
   sta MON_ADDR+1
   jsr MonPrintSaved
+  rts
+@SaveSerErr:
+  jsr MonPrintIOErr
   rts
 
   ; --- CF path ---
@@ -2423,21 +2349,6 @@ MonPrintIOErr:
 @EDone:
   jmp MonPrintCRLF
 
-; MonSerialPrintStr — Print null-terminated string at STR_PTR via serial
-; Input: STR_PTR points to string
-; Modifies: A, Y
-
-MonSerialPrintStr:
-  ldy #0
-@SrLoop:
-  lda (STR_PTR),y
-  beq @SrDone
-  jsr SerialChrout
-  iny
-  bne @SrLoop
-@SrDone:
-  rts
-
 ; ============================================================================
 ; Hex Output Utilities
 ; ============================================================================
@@ -2518,8 +2429,6 @@ MonStrBanner:
   .byte "6502 MONITOR v1.0", $0D, $0A, 0
 MonStrBrk:
   .byte "BRK AT $", 0
-MonStrReady:
-  .byte $0D, $0A, "READY TO RECEIVE", $0D, $0A, 0
 MonStrNotFound:
   .byte "FILE NOT FOUND", 0
 MonStrDirFull:

@@ -41,8 +41,8 @@ ReadJoystick2:  jmp ReadJoystick2Impl   ; $A04B - Read joystick 2
 ; --- Serial (6551) ---
 InitSC:         jmp InitSCImpl          ; $A04E - Initialize serial 6551
 SerialChrout:   jmp SerialChroutImpl    ; $A051 - Direct serial output (bypass IO_MODE)
-AsciiLoad:      jmp AsciiLoadImpl       ; $A054 - Load raw binary via serial
-AsciiSave:      jmp AsciiSaveImpl       ; $A057 - Save raw binary via serial
+XModemLoad:     jmp XModemLoadImpl      ; $A054 - Receive binary via XModem
+XModemSave:     jmp XModemSaveImpl      ; $A057 - Send binary via XModem
 ; --- RTC (DS1511Y) ---
 RtcReadTime:    jmp RtcReadTimeImpl     ; $A05A - Read RTC time
 RtcReadDate:    jmp RtcReadDateImpl     ; $A05D - Read RTC date
@@ -2097,166 +2097,376 @@ FsDeleteFileImpl:
   sec
   rts
 
-; === Serial ASCII LOAD/SAVE ===
-; Plain binary transfer protocol over serial
-; Load: receives 2-byte size (lo/hi) then raw data bytes into PROGRAM_START
-; Save: sends 2-byte size (lo/hi) then raw data bytes from PROGRAM_START
+; === XModem Serial LOAD/SAVE ===
+; Standard XModem protocol over serial (128-byte blocks, checksum)
+; Load: receives blocks into memory at caller-supplied XFER_PTR
+; Save: sends blocks from memory at caller-supplied XFER_PTR / XFER_REMAIN
 
-; --- ASCII Load ---
+; --- Shared XModem Utilities ---
 
-; AsciiLoadImpl — Receive raw binary data via serial into program memory
-; Switches IO_MODE to serial, receives 2-byte size then raw data bytes
-; Data is written starting at PROGRAM_START ($0800)
-; Output: Carry clear = success, XFER_PTR points past last byte written
-; Modifies: Flags, A, X, Y
-AsciiLoadImpl:
-  ; Save and switch IO_MODE to serial
-  lda IO_MODE
-  sta XFER_IO_SAVE
-  lda #$01                      ; Serial mode
-  sta IO_MODE
-  ; Print prompt
-  lda #$0D
-  jsr SerialChrout
-  lda #$0A
-  jsr SerialChrout
-  lda #<@AsciiLoadMsg
-  sta STR_PTR
-  lda #>@AsciiLoadMsg
-  sta STR_PTR + 1
-  jsr @SerialPrintStr
-  ; Read 2-byte size (low byte first)
-@AsciiWaitSzLo:
-  jsr BufferSize
-  beq @AsciiWaitSzLo
-  jsr ReadBuffer
-  sta XFER_REMAIN
-@AsciiWaitSzHi:
-  jsr BufferSize
-  beq @AsciiWaitSzHi
-  jsr ReadBuffer
-  sta XFER_REMAIN + 1
-  ; Initialize write pointer to PROGRAM_START
-  lda #<PROGRAM_START
-  sta XFER_PTR
-  lda #>PROGRAM_START
-  sta XFER_PTR + 1
-  ; Check for zero-length transfer
-  lda XFER_REMAIN
-  ora XFER_REMAIN + 1
-  beq @AsciiLoadOk
-  ; Receive data bytes (Y stays 0, pointer is advanced each byte)
-  ldy #$00
-@AsciiLoadByte:
-  jsr BufferSize
-  beq @AsciiLoadByte
-  jsr ReadBuffer
-  sta (XFER_PTR),y              ; Write byte to target address
-  ; Advance write pointer
-  inc XFER_PTR
-  bne @AsciiLoadNoPage
-  inc XFER_PTR + 1
-@AsciiLoadNoPage:
-  ; Decrement remaining count
-  lda XFER_REMAIN
-  bne @AsciiLoadDecLo
-  dec XFER_REMAIN + 1
-@AsciiLoadDecLo:
-  dec XFER_REMAIN
-  ; Check if done
-  lda XFER_REMAIN
-  ora XFER_REMAIN + 1
-  bne @AsciiLoadByte
-@AsciiLoadOk:
-  ; XFER_PTR now points past last byte written
-  ; Print success message
-  lda #$0D
-  jsr SerialChrout
-  lda #$0A
-  jsr SerialChrout
-  lda #<@AsciiOkMsg
-  sta STR_PTR
-  lda #>@AsciiOkMsg
-  sta STR_PTR + 1
-  jsr @SerialPrintStr
-  ; Restore IO_MODE
-  lda XFER_IO_SAVE
-  sta IO_MODE
-  clc                           ; Success
+; XModemGetByte — Read one byte from serial with timeout
+; Polls SC_STATUS for RDRF directly (bypasses IRQ-driven buffer).
+; Caller must disable serial RX IRQ before calling.
+; Output: A = byte received, Carry clear = got byte
+;         Carry set = timeout
+; Preserves: X, Y
+XModemGetByte:
+  phx
+  phy
+  ldx #$00                      ; Outer loop: 256 passes
+@Outer:
+  ldy #$00                      ; Inner loop: 256 polls
+@Inner:
+  lda SC_STATUS
+  and #SC_STATUS_RDRF           ; Received byte waiting?
+  bne @Got
+  dey
+  bne @Inner
+  dex
+  bne @Outer
+  ; Timeout
+  ply
+  plx
+  sec
+  rts
+@Got:
+  lda SC_DATA                   ; Read received byte (clears RDRF)
+  ply
+  plx
+  clc
   rts
 
-; Internal: print null-terminated string via serial
-; Input: STR_PTR points to string
-@SerialPrintStr:
-  ldy #$00
-@SerialPrintLoop:
-  lda (STR_PTR),y
-  beq @SerialPrintDone
-  jsr SerialChrout
-  iny
-  bne @SerialPrintLoop
-@SerialPrintDone:
+; XModemPurge — Drain all pending bytes from input buffer and hardware
+; Modifies: A, X
+XModemPurge:
+  ; Drain software input buffer (bytes captured before IRQ was disabled)
+@DrainBuf:
+  jsr BufferSize
+  beq @DrainHw
+  jsr ReadBuffer
+  bra @DrainBuf
+@DrainHw:
+  ; Drain hardware RDRF
+  lda SC_STATUS
+  and #SC_STATUS_RDRF
+  beq @Done
+  lda SC_DATA                   ; Read and discard
+  bra @DrainHw
+@Done:
   rts
 
-@AsciiLoadMsg: .asciiz "READY TO RECEIVE"
-@AsciiOkMsg:   .asciiz "OK"
+; --- XModem Load (Receive) ---
 
-; --- ASCII Save ---
-
-; AsciiSaveImpl — Transmit program memory as raw binary via serial
-; Sends 2-byte size (lo/hi) then raw data bytes from PROGRAM_START to BAS_PRGEND
-; Output: Carry clear = success
+; XModemLoadImpl — Receive data via standard XModem protocol
+; Input: XFER_PTR = destination address (set by caller)
+; Output: Carry clear = success, XFER_PTR past last byte written
+;         XFER_REMAIN = total bytes received
+;         Carry set = transfer failed
 ; Modifies: Flags, A, X, Y
-AsciiSaveImpl:
+XModemLoadImpl:
   ; Save and switch IO_MODE to serial
   lda IO_MODE
   sta XFER_IO_SAVE
   lda #$01
   sta IO_MODE
-  ; Initialize save pointer
-  lda #<PROGRAM_START
-  sta XFER_PTR
-  lda #>PROGRAM_START
-  sta XFER_PTR + 1
-  ; Calculate remaining bytes = BAS_PRGEND - PROGRAM_START
-  lda z:BAS_PRGEND
-  sec
-  sbc #<PROGRAM_START
-  sta XFER_REMAIN
-  lda z:BAS_PRGEND + 1
-  sbc #>PROGRAM_START
-  sta XFER_REMAIN + 1
-  ; Send 2-byte size (low byte first)
-  lda XFER_REMAIN
+  ; Disable serial RX IRQ — XModem polls SC_STATUS directly
+  lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+  sta SC_CMD
+  ; Initialize
+  lda #$01
+  sta XMODEM_BLK                ; First expected block number
+  stz XFER_REMAIN
+  stz XFER_REMAIN + 1
+  lda #XMODEM_MAXRETRY
+  sta XMODEM_RETRY
+  jsr XModemPurge               ; Drain stale bytes
+  ; Send initial NAK to start transfer
+  lda #XMODEM_NAK
   jsr SerialChrout
-  lda XFER_REMAIN + 1
+@RecvWait:
+  jsr XModemGetByte
+  bcs @RecvTimeout
+  cmp #XMODEM_SOH
+  beq @RecvBlock
+  cmp #XMODEM_EOT
+  beq @RecvEOT
+  cmp #XMODEM_CAN
+  beq @RecvFail
+  bra @RecvWait                 ; Ignore unknown bytes
+
+@RecvTimeout:
+  dec XMODEM_RETRY
+  beq @RecvFail
+  lda #XMODEM_NAK
   jsr SerialChrout
-  ; Check for zero-length program
-  lda XFER_REMAIN
-  ora XFER_REMAIN + 1
-  beq @AsciiSaveDone
-  ; Send data bytes (Y stays 0, pointer is advanced each byte)
+  bra @RecvWait
+
+@RecvEOT:
+  lda #XMODEM_ACK
+  jsr SerialChrout
+  ; Re-enable serial RX IRQ
+  lda #$09
+  sta SC_CMD
+  lda XFER_IO_SAVE
+  sta IO_MODE
+  clc                           ; Success
+  rts
+
+@RecvFail:
+  lda #XMODEM_CAN
+  jsr SerialChrout
+  lda #XMODEM_CAN
+  jsr SerialChrout
+  ; Re-enable serial RX IRQ
+  lda #$09
+  sta SC_CMD
+  lda XFER_IO_SAVE
+  sta IO_MODE
+  sec                           ; Failure
+  rts
+
+@RecvBlock:
+  ; Reset retry counter on SOH received
+  lda #XMODEM_MAXRETRY
+  sta XMODEM_RETRY
+  ; Read block number
+  jsr XModemGetByte
+  bcs @RecvNAK
+  sta XMODEM_RCVBLK
+  ; Read complement
+  jsr XModemGetByte
+  bcs @RecvNAK
+  ; Verify block# + complement = $FF
+  clc
+  adc XMODEM_RCVBLK
+  cmp #$FF
+  bne @RecvNAK
+  ; Receive 128 data bytes into (XFER_PTR), accumulate checksum
+  stz XMODEM_CHK
   ldy #$00
-@AsciiSaveByte:
-  lda (XFER_PTR),y
-  jsr SerialChrout
-  ; Advance read pointer
-  inc XFER_PTR
-  bne @AsciiSaveNoPage
-  inc XFER_PTR + 1
-@AsciiSaveNoPage:
-  ; Decrement remaining count
+@RecvData:
+  jsr XModemGetByte             ; A = byte (X/Y preserved)
+  bcs @RecvNAK
+  sta (XFER_PTR),y              ; Write to destination at offset Y
+  clc
+  adc XMODEM_CHK
+  sta XMODEM_CHK
+  iny
+  cpy #XMODEM_BLKSZ
+  bne @RecvData
+  ; Read and verify checksum
+  jsr XModemGetByte
+  bcs @RecvNAK
+  cmp XMODEM_CHK
+  bne @RecvNAK
+  ; Verify block number matches expected
+  lda XMODEM_RCVBLK
+  cmp XMODEM_BLK
+  bne @RecvDupChk
+  ; Good block — advance pointer by 128
+  clc
+  lda XFER_PTR
+  adc #XMODEM_BLKSZ
+  sta XFER_PTR
+  lda XFER_PTR + 1
+  adc #$00
+  sta XFER_PTR + 1
+  ; Update total bytes received
+  clc
   lda XFER_REMAIN
-  bne @AsciiSaveDecLo
-  dec XFER_REMAIN + 1
-@AsciiSaveDecLo:
-  dec XFER_REMAIN
-  ; Check if done
+  adc #XMODEM_BLKSZ
+  sta XFER_REMAIN
+  lda XFER_REMAIN + 1
+  adc #$00
+  sta XFER_REMAIN + 1
+  ; Increment expected block number (wraps 255→0)
+  inc XMODEM_BLK
+  ; ACK the block
+  lda #XMODEM_ACK
+  jsr SerialChrout
+  jmp @RecvWait
+
+@RecvDupChk:
+  ; Check if this is a retransmit of the previous block (lost ACK)
+  lda XMODEM_BLK
+  sec
+  sbc #$01
+  cmp XMODEM_RCVBLK
+  bne @RecvNAK                  ; Not a dup — NAK
+  ; Duplicate — re-ACK without advancing
+  lda #XMODEM_ACK
+  jsr SerialChrout
+  jmp @RecvWait
+
+@RecvNAK:
+  jsr XModemPurge               ; Drain any remaining bytes
+  lda #XMODEM_NAK
+  jsr SerialChrout
+  jmp @RecvWait
+
+; --- XModem Save (Send) ---
+
+; XModemSaveImpl — Send data via standard XModem protocol
+; Input: XFER_PTR = source address, XFER_REMAIN = byte count (set by caller)
+; Output: Carry clear = success, Carry set = transfer failed
+; Modifies: Flags, A, X, Y
+XModemSaveImpl:
+  ; Save and switch IO_MODE to serial
+  lda IO_MODE
+  sta XFER_IO_SAVE
+  lda #$01
+  sta IO_MODE
+  ; Disable serial RX IRQ — XModem polls SC_STATUS directly
+  lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+  sta SC_CMD
+  ; Initialize
+  lda #$01
+  sta XMODEM_BLK                ; First block number
+  lda #XMODEM_MAXRETRY
+  sta XMODEM_RETRY
+  jsr XModemPurge               ; Drain stale bytes
+  ; Wait for initial NAK (or 'C' for CRC mode) from receiver
+@SendWaitNAK:
+  jsr XModemGetByte
+  bcs @SendInitTO
+  cmp #XMODEM_NAK
+  beq @SendLoop
+  cmp #'C'                      ; CRC mode request — treat as NAK (send checksum packets)
+  beq @SendLoop
+  cmp #XMODEM_CAN
+  bne :+
+  jmp @SendFail
+: bra @SendWaitNAK
+
+@SendInitTO:
+  dec XMODEM_RETRY
+  bne :+
+  jmp @SendFail
+: bra @SendWaitNAK
+
+@SendLoop:
+  ; Check if any data remains to send
   lda XFER_REMAIN
   ora XFER_REMAIN + 1
-  bne @AsciiSaveByte
-@AsciiSaveDone:
-  ; Restore IO_MODE
+  bne :+
+  jmp @SendEOT                  ; All data sent
+:
+  ; Reset retry counter for this block
+  lda #XMODEM_MAXRETRY
+  sta XMODEM_RETRY
+@SendBlock:
+  ; Save XFER_PTR and XFER_REMAIN on stack for retry
+  lda XFER_PTR + 1
+  pha
+  lda XFER_PTR
+  pha
+  lda XFER_REMAIN + 1
+  pha
+  lda XFER_REMAIN
+  pha
+  ; Send header: SOH, block#, ~block#
+  lda #XMODEM_SOH
+  jsr SerialChrout
+  lda XMODEM_BLK
+  jsr SerialChrout
+  eor #$FF
+  jsr SerialChrout
+  ; Send 128 data bytes, computing checksum
+  stz XMODEM_CHK
+  ldy #$00                      ; Y=0 for (XFER_PTR),y indirect addressing
+  ldx #XMODEM_BLKSZ             ; X = byte counter (128 down to 0)
+@SendData:
+  lda XFER_REMAIN
+  ora XFER_REMAIN + 1
+  beq @SendPad                  ; No more real data — pad remainder
+  lda (XFER_PTR),y              ; Read source byte
+  jsr SerialChrout              ; Send it (A preserved by SerialChrout)
+  clc
+  adc XMODEM_CHK
+  sta XMODEM_CHK
+  ; Advance source pointer
+  inc XFER_PTR
+  bne @SendNoPg
+  inc XFER_PTR + 1
+@SendNoPg:
+  ; Decrement remaining byte count
+  lda XFER_REMAIN
+  bne @SendDecLo
+  dec XFER_REMAIN + 1
+@SendDecLo:
+  dec XFER_REMAIN
+  dex
+  bne @SendData
+  bra @SendChk
+@SendPad:
+  ; Pad remaining block bytes with SUB ($1A)
+  lda #XMODEM_SUB
+  jsr SerialChrout
+  clc
+  adc XMODEM_CHK
+  sta XMODEM_CHK
+  dex
+  bne @SendPad
+@SendChk:
+  ; Send checksum byte
+  lda XMODEM_CHK
+  jsr SerialChrout
+  ; Wait for ACK/NAK response
+  jsr XModemGetByte
+  bcs @SendRetry                ; Timeout — retry
+  cmp #XMODEM_ACK
+  beq @SendBlockOK
+  cmp #XMODEM_CAN
+  beq @SendCancel
+  ; NAK or unknown — retry
+@SendRetry:
+  ; Restore XFER_PTR and XFER_REMAIN from stack
+  pla
+  sta XFER_REMAIN
+  pla
+  sta XFER_REMAIN + 1
+  pla
+  sta XFER_PTR
+  pla
+  sta XFER_PTR + 1
+  dec XMODEM_RETRY
+  beq @SendFail
+  jmp @SendBlock
+
+@SendBlockOK:
+  ; Discard saved state from stack (4 bytes)
+  pla
+  pla
+  pla
+  pla
+  ; Advance to next block
+  inc XMODEM_BLK
+  jmp @SendLoop
+
+@SendCancel:
+  ; Discard saved state from stack
+  pla
+  pla
+  pla
+  pla
+@SendFail:
+  ; Re-enable serial RX IRQ
+  lda #$09
+  sta SC_CMD
+  lda XFER_IO_SAVE
+  sta IO_MODE
+  sec                           ; Failure
+  rts
+
+@SendEOT:
+  ; All data sent — send EOT
+  lda #XMODEM_EOT
+  jsr SerialChrout
+  ; Wait for ACK (best-effort; don't fail if timeout)
+  jsr XModemGetByte
+  ; Re-enable serial RX IRQ
+  lda #$09
+  sta SC_CMD
   lda XFER_IO_SAVE
   sta IO_MODE
   clc                           ; Success

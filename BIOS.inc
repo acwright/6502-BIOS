@@ -14,6 +14,12 @@ XFER_PTR            := $2A               ; $2A-$2B - Serial transfer data pointe
 DELAY_CNT           := $2C               ; $2C-$2D - SysDelay 16-bit centisecond counter
 ; Monitor ZP variables ($2E-$35)
 MON_ADDR            := $2E               ; $2E-$2F - Monitor current address (2 bytes)
+
+; XModem ZP variables ($36-$39)
+XMODEM_BLK          := $36               ; $36     - XModem expected/current block number
+XMODEM_CHK          := $37               ; $37     - XModem running checksum
+XMODEM_RETRY        := $38               ; $38     - XModem retry counter
+XMODEM_RCVBLK       := $39               ; $39     - XModem received block number
 MON_END             := $30               ; $30-$31 - Monitor end address (2 bytes)
 MON_TMP             := $32               ; $32-$33 - Monitor temp pointer (2 bytes)
 MON_BYTE            := $34               ; $34     - Monitor parsed byte scratch
@@ -70,6 +76,16 @@ FS_NEXT_SEC         := $034E             ; $034E-$034F - Next free sector for al
 FS_FNAME_BUF        := $0350             ; $0350-$035A - 11-byte filename buffer (8 name + 3 ext)
 BOOT_VECTOR         := $035B             ; $035B-$035C - Cart/boot redirect vector (2 bytes, 0=normal boot)
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
+
+; XModem Protocol Constants
+XMODEM_SOH          = $01                ; Start of Header
+XMODEM_EOT          = $04                ; End of Transmission
+XMODEM_ACK          = $06                ; Acknowledge
+XMODEM_NAK          = $15                ; Negative Acknowledge
+XMODEM_CAN          = $18                ; Cancel
+XMODEM_SUB          = $1A                ; Padding byte (end of last block)
+XMODEM_BLKSZ        = 128               ; Data bytes per block
+XMODEM_MAXRETRY     = 10                ; Max retries before abort
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 1

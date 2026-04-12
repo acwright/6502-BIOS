@@ -8,6 +8,10 @@
 *.dll
 *.exe
 
+# Node
+node_modules/
+package-lock.json
+
 # Assembly output
 # *.list
 # *.lst

@@ -52,7 +52,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code or inspected in the 
 All hardware-dependent operations are guarded at every level — Kernal, BASIC, and Monitor:
 
 - **CompactFlash absent** — `LOAD`, `SAVE`, `DIR` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` times out instead of hanging
-- **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; serial `LOAD`/`SAVE` return an error
+- **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns 0; keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence` silently return
 - **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); console auto-switches to serial
@@ -98,8 +98,8 @@ A full interactive BASIC interpreter is included. Programs are typed line-number
 | `SYS <addr>` | Call a machine-code routine at the given address; `RTS` returns to BASIC |
 | `LOAD "name"` | Load a named file from CompactFlash into program space (`$0800`) |
 | `SAVE "name"` | Save the current BASIC program to CompactFlash |
-| `LOAD` (no arg) | Receive a program over the serial port (raw binary) |
-| `SAVE` (no arg) | Transmit the current program over the serial port (raw binary) |
+| `LOAD` (no arg) | Receive a program via XModem over the serial port |
+| `SAVE` (no arg) | Transmit the current program via XModem over the serial port |
 | `DIR` | List all files stored on CompactFlash |
 | `DEL "name"` | Delete a named file from CompactFlash and reclaim its directory entry |
 | `BANK <n>` | Select 1KB RAM bank `n` at `$8000–$83FE` via the bank latch |
@@ -220,8 +220,8 @@ The monitor is entered in three ways:
 
 | Command | Syntax | Description |
 |---------|--------|-------------|
-| `L` | `L "file" [addr]` | Load from CompactFlash (with filename) or serial (without) to address (default `$0800`) |
-| `S` | `S "file" addr addr` | Save to CompactFlash (with filename) or serial (without) |
+| `L` | `L "file" [addr]` | Load from CompactFlash (with filename) or XModem (without) to address (default `$0800`) |
+| `S` | `S "file" addr addr` | Save to CompactFlash (with filename) or XModem (without) |
 | `@` | `@` | List CompactFlash directory |
 | `N` | `N value` | Number conversion — hex (`$xx`), decimal (`+ddd`), or binary (`%bbbb`) input shown in all three bases |
 | `X` | `X` | Exit to BASIC |
@@ -249,9 +249,9 @@ Bit:  7   6   5   4   3   2   1   0
 
 A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The directory lives at LBA 0 and holds up to 16 entries (8.3 filenames). Data sectors follow contiguously per file. `LOAD`, `SAVE`, and `DIR` in BASIC all use this filesystem.
 
-### Serial I/O & ASCII Transfer
+### Serial I/O & XModem Transfer
 
-A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE` without a filename switch to serial mode and exchange programs as raw binary data: a 2-byte size header (low byte first) followed by the program bytes.
+A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE` without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
 
 ### Real-Time Clock
 
@@ -325,8 +325,8 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A04B` | `ReadJoystick2` | Read joystick 2 → bitmask in `A` |
 | `$A04E` | `InitSC` | Initialise 6551 serial card (19200 8-N-1) |
 | `$A051` | `SerialChrout` | Output character directly to serial (bypass `IO_MODE`) |
-| `$A054` | `AsciiLoad` | Receive raw binary over serial into `$0800` |
-| `$A057` | `AsciiSave` | Send current program as raw binary over serial |
+| `$A054` | `XModemLoad` | Receive data via XModem into memory at `XFER_PTR`; returns total bytes in `XFER_REMAIN` |
+| `$A057` | `XModemSave` | Send data via XModem from `XFER_PTR`, `XFER_REMAIN` bytes |
 | `$A05A` | `RtcReadTime` | Read time → `A`=hours, `X`=minutes, `Y`=seconds |
 | `$A05D` | `RtcReadDate` | Read date → `A`=date, `X`=month, `Y`=year |
 | `$A060` | `RtcWriteTime` | Write time ← `A`=hours, `X`=minutes, `Y`=seconds |

@@ -3828,16 +3828,42 @@ BasCmdLoad:
   cmp #CH_QUOTE
   beq @LoadCF
 
-  ; No filename — serial ASCII load
+  ; No filename — serial XModem load
   lda HW_PRESENT
   and #HW_SC
   beq @LoadNoDev
-  jsr AsciiLoad
-  bcs @LoadErr
-  ; Update BAS_PRGEND from XFER_PTR (points past last byte written)
-  lda XFER_PTR
+  ; Set destination to PROGRAM_START
+  lda #<PROGRAM_START
+  sta XFER_PTR
+  lda #>PROGRAM_START
+  sta XFER_PTR + 1
+  jsr XModemLoad
+  bcc :+
+  jmp @LoadErr
+:
+  ; Walk next-line pointer chain to find true BAS_PRGEND
+  lda #<BAS_PRG_START
+  sta BAS_TMP1
+  lda #>BAS_PRG_START
+  sta BAS_TMP1 + 1
+@LoadSerWalk:
+  ldy #LINE_NEXT
+  lda (BAS_TMP1),y
+  sta BAS_TMP2
+  iny
+  lda (BAS_TMP1),y
+  sta BAS_TMP2 + 1
+  ora BAS_TMP2
+  beq @LoadSerEnd
+  lda BAS_TMP2
+  sta BAS_TMP1
+  lda BAS_TMP2 + 1
+  sta BAS_TMP1 + 1
+  bra @LoadSerWalk
+@LoadSerEnd:
+  lda BAS_TMP1
   sta BAS_PRGEND
-  lda XFER_PTR + 1
+  lda BAS_TMP1 + 1
   sta BAS_PRGEND + 1
   rts
 
@@ -3912,18 +3938,31 @@ BasCmdLoad:
 
 ; --- SAVE ---
 ; SAVE "filename" — Save to CF filesystem
-; SAVE (no arg)   — Save via serial ASCII transfer
+; SAVE (no arg)   — Save via serial XModem transfer
 BasCmdSave:
   jsr BasSkipSpaces
   jsr BasGetTokChar
   cmp #CH_QUOTE
   beq @SaveCF
 
-  ; No filename — serial ASCII save
+  ; No filename — serial XModem save
   lda HW_PRESENT
   and #HW_SC
   beq @SaveNoDev
-  jsr AsciiSave
+  ; Set source to PROGRAM_START
+  lda #<PROGRAM_START
+  sta XFER_PTR
+  lda #>PROGRAM_START
+  sta XFER_PTR + 1
+  ; Calculate byte count = BAS_PRGEND - PROGRAM_START
+  lda BAS_PRGEND
+  sec
+  sbc #<PROGRAM_START
+  sta XFER_REMAIN
+  lda BAS_PRGEND + 1
+  sbc #>PROGRAM_START
+  sta XFER_REMAIN + 1
+  jsr XModemSave
   rts
 
 @SaveNoDev:

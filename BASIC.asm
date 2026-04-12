@@ -256,11 +256,22 @@ BasColdStart:
   bra @WalkChain
 
 @ChainEnd:
-  ; BAS_TMP1 points to the end sentinel ($00 $00).
-  ; PRGEND = sentinel address (matches @NoPrg convention).
-  lda BAS_TMP1
+  ; BAS_TMP1 points to the last line (next=$0000).
+  ; Scan past its payload to find the true program end.
+  ldy #LINE_PAYLOAD
+@ChainScan:
+  lda (BAS_TMP1),y
+  beq @ChainGotEnd
+  iny
+  bra @ChainScan
+@ChainGotEnd:
+  iny                            ; Past null terminator
+  tya
+  clc
+  adc BAS_TMP1
   sta BAS_PRGEND
   lda BAS_TMP1 + 1
+  adc #$00
   sta BAS_PRGEND + 1
   bra @PrgDone
 
@@ -3861,10 +3872,29 @@ BasCmdLoad:
   sta BAS_TMP1 + 1
   bra @LoadSerWalk
 @LoadSerEnd:
-  lda BAS_TMP1
+  ; BAS_TMP1 points to the last line (next=$0000).
+  ; Scan past its payload to find the true program end.
+  ldy #LINE_PAYLOAD
+@LoadSerScan:
+  lda (BAS_TMP1),y
+  beq @LoadSerGotEnd
+  iny
+  bra @LoadSerScan
+@LoadSerGotEnd:
+  iny                            ; Past null terminator
+  tya
+  clc
+  adc BAS_TMP1
   sta BAS_PRGEND
   lda BAS_TMP1 + 1
+  adc #$00
   sta BAS_PRGEND + 1
+  ; Write end sentinel at BAS_PRGEND
+  ldy #$00
+  lda #$00
+  sta (BAS_PRGEND),y
+  iny
+  sta (BAS_PRGEND),y
   rts
 
 @LoadNoDev:
@@ -3921,11 +3951,29 @@ BasCmdLoad:
   sta BAS_TMP1 + 1
   bra @LoadWalkChain
 @LoadChainEnd:
-  ; BAS_TMP1 points to the end sentinel — PRGEND = sentinel address
-  lda BAS_TMP1
+  ; BAS_TMP1 points to the last line (next=$0000).
+  ; Scan past its payload to find the true program end.
+  ldy #LINE_PAYLOAD
+@LoadCFScan:
+  lda (BAS_TMP1),y
+  beq @LoadCFGotEnd
+  iny
+  bra @LoadCFScan
+@LoadCFGotEnd:
+  iny                            ; Past null terminator
+  tya
+  clc
+  adc BAS_TMP1
   sta BAS_PRGEND
   lda BAS_TMP1 + 1
+  adc #$00
   sta BAS_PRGEND + 1
+  ; Write end sentinel at BAS_PRGEND
+  ldy #$00
+  lda #$00
+  sta (BAS_PRGEND),y
+  iny
+  sta (BAS_PRGEND),y
   rts
 
 @LoadErr:

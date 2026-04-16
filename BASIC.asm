@@ -256,22 +256,12 @@ BasColdStart:
   bra @WalkChain
 
 @ChainEnd:
-  ; BAS_TMP1 points to the last line (next=$0000).
-  ; Scan past its payload to find the true program end.
-  ldy #LINE_PAYLOAD
-@ChainScan:
-  lda (BAS_TMP1),y
-  beq @ChainGotEnd
-  iny
-  bra @ChainScan
-@ChainGotEnd:
-  iny                            ; Past null terminator
-  tya
-  clc
-  adc BAS_TMP1
+  ; BAS_TMP1 points to the end sentinel ($00 $00).
+  ; Pre-loaded programs (emulator -g, warm reset) include the sentinel,
+  ; so PRGEND = sentinel address.
+  lda BAS_TMP1
   sta BAS_PRGEND
   lda BAS_TMP1 + 1
-  adc #$00
   sta BAS_PRGEND + 1
   bra @PrgDone
 

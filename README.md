@@ -275,7 +275,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$B800–$BFFF` | 2KB | IBM CP437 character set (VRAM init data) |
 | `$C000–$E7FF` | 10KB | Integer BASIC interpreter |
 | `$E800–$FEFF` | ~6KB | Machine-code monitor |
-| `$FF00–$FFF9` | 250B | Wozmon (Apple II machine-code monitor) |
+| `$FF00–$FFF9` | 250B | Wozmon (Apple I machine-code monitor) |
 | `$FFFA–$FFFF` | 6B | CPU vectors (NMI / RESET / IRQ) |
 
 ### RAM (`$0000–$7FFF`, 32KB)

@@ -253,6 +253,8 @@ A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The 
 
 A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE` without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
 
+When an XModem transfer is initiated, the system prints `XMODEM RX READY` (receive) or `XMODEM TX READY` (send) and waits up to ~60 seconds for the terminal program to start the transfer, giving ample time to configure and begin the transfer in your terminal program.
+
 ### Real-Time Clock
 
 A DS1511Y RTC provides time and date. `RtcReadTime` returns hours/minutes/seconds in `A`/`X`/`Y` (binary). `RtcReadDate` returns date/month/year. 256 bytes of battery-backed NVRAM are accessible via `RtcReadNVRAM` / `RtcWriteNVRAM`.

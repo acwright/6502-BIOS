@@ -84,8 +84,9 @@ XMODEM_ACK          = $06                ; Acknowledge
 XMODEM_NAK          = $15                ; Negative Acknowledge
 XMODEM_CAN          = $18                ; Cancel
 XMODEM_SUB          = $1A                ; Padding byte (end of last block)
-XMODEM_BLKSZ        = 128               ; Data bytes per block
-XMODEM_MAXRETRY     = 10                ; Max retries before abort
+XMODEM_BLKSZ        = 128                ; Data bytes per block
+XMODEM_MAXRETRY     = 10                 ; Max retries per block during transfer
+XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (~60s)
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 1

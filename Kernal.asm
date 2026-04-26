@@ -2177,8 +2177,17 @@ XModemLoadImpl:
   sta XMODEM_BLK                ; First expected block number
   stz XFER_REMAIN
   stz XFER_REMAIN + 1
-  lda #XMODEM_MAXRETRY
+  lda #XMODEM_STARTRETRY
   sta XMODEM_RETRY
+  ; Print status message so user can start the terminal send
+  ldx #0
+@PrintMsg:
+  lda XModemStrReceive,x
+  beq @PrintDone
+  jsr Chrout
+  inx
+  bra @PrintMsg
+@PrintDone:
   jsr XModemPurge               ; Drain stale bytes
   ; Send initial NAK to start transfer
   lda #XMODEM_NAK
@@ -2322,8 +2331,17 @@ XModemSaveImpl:
   ; Initialize
   lda #$01
   sta XMODEM_BLK                ; First block number
-  lda #XMODEM_MAXRETRY
+  lda #XMODEM_STARTRETRY
   sta XMODEM_RETRY
+  ; Print status message so user can start the terminal receive
+  ldx #0
+@PrintMsg:
+  lda XModemStrSend,x
+  beq @PrintDone
+  jsr Chrout
+  inx
+  bra @PrintMsg
+@PrintDone:
   jsr XModemPurge               ; Drain stale bytes
   ; Wait for initial NAK (or 'C' for CRC mode) from receiver
 @SendWaitNAK:
@@ -2471,6 +2489,12 @@ XModemSaveImpl:
   sta IO_MODE
   clc                           ; Success
   rts
+
+; XModem status strings
+XModemStrReceive:
+  .byte "XMODEM RX READY", $0D, $0A, 0
+XModemStrSend:
+  .byte "XMODEM TX READY", $0D, $0A, 0
 
 ; Draw the splash screen
 ; Uses video output to display centered title and boot menu

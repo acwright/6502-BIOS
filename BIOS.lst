@@ -95,8 +95,9 @@ Current file: BIOS.asm
 000000r 2               XMODEM_NAK          = $15                ; Negative Acknowledge
 000000r 2               XMODEM_CAN          = $18                ; Cancel
 000000r 2               XMODEM_SUB          = $1A                ; Padding byte (end of last block)
-000000r 2               XMODEM_BLKSZ        = 128               ; Data bytes per block
-000000r 2               XMODEM_MAXRETRY     = 10                ; Max retries before abort
+000000r 2               XMODEM_BLKSZ        = 128                ; Data bytes per block
+000000r 2               XMODEM_MAXRETRY     = 10                 ; Max retries per block during transfer
+000000r 2               XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (~60s)
 000000r 2               
 000000r 2               ; BIOS Version
 000000r 2               BIOS_VERSION_MAJOR  = 1
@@ -2455,424 +2456,452 @@ Current file: BIOS.asm
 000C33r 2  85 36          sta XMODEM_BLK                ; First expected block number
 000C35r 2  9C 17 03       stz XFER_REMAIN
 000C38r 2  9C 18 03       stz XFER_REMAIN + 1
-000C3Br 2  A9 0A          lda #XMODEM_MAXRETRY
+000C3Br 2  A9 3C          lda #XMODEM_STARTRETRY
 000C3Dr 2  85 38          sta XMODEM_RETRY
-000C3Fr 2  20 rr rr       jsr XModemPurge               ; Drain stale bytes
-000C42r 2                 ; Send initial NAK to start transfer
-000C42r 2  A9 15          lda #XMODEM_NAK
-000C44r 2  20 rr rr       jsr SerialChrout
-000C47r 2               @RecvWait:
-000C47r 2  20 rr rr       jsr XModemGetByte
-000C4Ar 2  B0 0E          bcs @RecvTimeout
-000C4Cr 2  C9 01          cmp #XMODEM_SOH
-000C4Er 2  F0 3E          beq @RecvBlock
-000C50r 2  C9 04          cmp #XMODEM_EOT
-000C52r 2  F0 11          beq @RecvEOT
-000C54r 2  C9 18          cmp #XMODEM_CAN
-000C56r 2  F0 1F          beq @RecvFail
-000C58r 2  80 ED          bra @RecvWait                 ; Ignore unknown bytes
-000C5Ar 2               
-000C5Ar 2               @RecvTimeout:
-000C5Ar 2  C6 38          dec XMODEM_RETRY
-000C5Cr 2  F0 19          beq @RecvFail
-000C5Er 2  A9 15          lda #XMODEM_NAK
-000C60r 2  20 rr rr       jsr SerialChrout
-000C63r 2  80 E2          bra @RecvWait
-000C65r 2               
-000C65r 2               @RecvEOT:
-000C65r 2  A9 06          lda #XMODEM_ACK
-000C67r 2  20 rr rr       jsr SerialChrout
-000C6Ar 2                 ; Re-enable serial RX IRQ
-000C6Ar 2  A9 09          lda #$09
-000C6Cr 2  8D 02 90       sta SC_CMD
-000C6Fr 2  AD 19 03       lda XFER_IO_SAVE
-000C72r 2  8D 06 03       sta IO_MODE
-000C75r 2  18             clc                           ; Success
-000C76r 2  60             rts
-000C77r 2               
-000C77r 2               @RecvFail:
-000C77r 2  A9 18          lda #XMODEM_CAN
-000C79r 2  20 rr rr       jsr SerialChrout
-000C7Cr 2  A9 18          lda #XMODEM_CAN
-000C7Er 2  20 rr rr       jsr SerialChrout
-000C81r 2                 ; Re-enable serial RX IRQ
-000C81r 2  A9 09          lda #$09
-000C83r 2  8D 02 90       sta SC_CMD
-000C86r 2  AD 19 03       lda XFER_IO_SAVE
-000C89r 2  8D 06 03       sta IO_MODE
-000C8Cr 2  38             sec                           ; Failure
-000C8Dr 2  60             rts
-000C8Er 2               
-000C8Er 2               @RecvBlock:
-000C8Er 2                 ; Reset retry counter on SOH received
-000C8Er 2  A9 0A          lda #XMODEM_MAXRETRY
-000C90r 2  85 38          sta XMODEM_RETRY
-000C92r 2                 ; Read block number
-000C92r 2  20 rr rr       jsr XModemGetByte
-000C95r 2  B0 6B          bcs @RecvNAK
-000C97r 2  85 39          sta XMODEM_RCVBLK
-000C99r 2                 ; Read complement
-000C99r 2  20 rr rr       jsr XModemGetByte
-000C9Cr 2  B0 64          bcs @RecvNAK
-000C9Er 2                 ; Verify block# + complement = $FF
-000C9Er 2  18             clc
-000C9Fr 2  65 39          adc XMODEM_RCVBLK
-000CA1r 2  C9 FF          cmp #$FF
-000CA3r 2  D0 5D          bne @RecvNAK
-000CA5r 2                 ; Receive 128 data bytes into (XFER_PTR), accumulate checksum
-000CA5r 2  64 37          stz XMODEM_CHK
-000CA7r 2  A0 00          ldy #$00
-000CA9r 2               @RecvData:
-000CA9r 2  20 rr rr       jsr XModemGetByte             ; A = byte (X/Y preserved)
-000CACr 2  B0 54          bcs @RecvNAK
-000CAEr 2  91 2A          sta (XFER_PTR),y              ; Write to destination at offset Y
-000CB0r 2  18             clc
-000CB1r 2  65 37          adc XMODEM_CHK
-000CB3r 2  85 37          sta XMODEM_CHK
-000CB5r 2  C8             iny
-000CB6r 2  C0 80          cpy #XMODEM_BLKSZ
-000CB8r 2  D0 EF          bne @RecvData
-000CBAr 2                 ; Read and verify checksum
-000CBAr 2  20 rr rr       jsr XModemGetByte
-000CBDr 2  B0 43          bcs @RecvNAK
-000CBFr 2  C5 37          cmp XMODEM_CHK
-000CC1r 2  D0 3F          bne @RecvNAK
-000CC3r 2                 ; Verify block number matches expected
-000CC3r 2  A5 39          lda XMODEM_RCVBLK
-000CC5r 2  C5 36          cmp XMODEM_BLK
-000CC7r 2  D0 28          bne @RecvDupChk
-000CC9r 2                 ; Good block — advance pointer by 128
-000CC9r 2  18             clc
-000CCAr 2  A5 2A          lda XFER_PTR
-000CCCr 2  69 80          adc #XMODEM_BLKSZ
-000CCEr 2  85 2A          sta XFER_PTR
-000CD0r 2  A5 2B          lda XFER_PTR + 1
-000CD2r 2  69 00          adc #$00
-000CD4r 2  85 2B          sta XFER_PTR + 1
-000CD6r 2                 ; Update total bytes received
+000C3Fr 2                 ; Print status message so user can start the terminal send
+000C3Fr 2  A2 00          ldx #0
+000C41r 2               @PrintMsg:
+000C41r 2  BD rr rr       lda XModemStrReceive,x
+000C44r 2  F0 06          beq @PrintDone
+000C46r 2  20 rr rr       jsr Chrout
+000C49r 2  E8             inx
+000C4Ar 2  80 F5          bra @PrintMsg
+000C4Cr 2               @PrintDone:
+000C4Cr 2  20 rr rr       jsr XModemPurge               ; Drain stale bytes
+000C4Fr 2                 ; Send initial NAK to start transfer
+000C4Fr 2  A9 15          lda #XMODEM_NAK
+000C51r 2  20 rr rr       jsr SerialChrout
+000C54r 2               @RecvWait:
+000C54r 2  20 rr rr       jsr XModemGetByte
+000C57r 2  B0 0E          bcs @RecvTimeout
+000C59r 2  C9 01          cmp #XMODEM_SOH
+000C5Br 2  F0 3E          beq @RecvBlock
+000C5Dr 2  C9 04          cmp #XMODEM_EOT
+000C5Fr 2  F0 11          beq @RecvEOT
+000C61r 2  C9 18          cmp #XMODEM_CAN
+000C63r 2  F0 1F          beq @RecvFail
+000C65r 2  80 ED          bra @RecvWait                 ; Ignore unknown bytes
+000C67r 2               
+000C67r 2               @RecvTimeout:
+000C67r 2  C6 38          dec XMODEM_RETRY
+000C69r 2  F0 19          beq @RecvFail
+000C6Br 2  A9 15          lda #XMODEM_NAK
+000C6Dr 2  20 rr rr       jsr SerialChrout
+000C70r 2  80 E2          bra @RecvWait
+000C72r 2               
+000C72r 2               @RecvEOT:
+000C72r 2  A9 06          lda #XMODEM_ACK
+000C74r 2  20 rr rr       jsr SerialChrout
+000C77r 2                 ; Re-enable serial RX IRQ
+000C77r 2  A9 09          lda #$09
+000C79r 2  8D 02 90       sta SC_CMD
+000C7Cr 2  AD 19 03       lda XFER_IO_SAVE
+000C7Fr 2  8D 06 03       sta IO_MODE
+000C82r 2  18             clc                           ; Success
+000C83r 2  60             rts
+000C84r 2               
+000C84r 2               @RecvFail:
+000C84r 2  A9 18          lda #XMODEM_CAN
+000C86r 2  20 rr rr       jsr SerialChrout
+000C89r 2  A9 18          lda #XMODEM_CAN
+000C8Br 2  20 rr rr       jsr SerialChrout
+000C8Er 2                 ; Re-enable serial RX IRQ
+000C8Er 2  A9 09          lda #$09
+000C90r 2  8D 02 90       sta SC_CMD
+000C93r 2  AD 19 03       lda XFER_IO_SAVE
+000C96r 2  8D 06 03       sta IO_MODE
+000C99r 2  38             sec                           ; Failure
+000C9Ar 2  60             rts
+000C9Br 2               
+000C9Br 2               @RecvBlock:
+000C9Br 2                 ; Reset retry counter on SOH received
+000C9Br 2  A9 0A          lda #XMODEM_MAXRETRY
+000C9Dr 2  85 38          sta XMODEM_RETRY
+000C9Fr 2                 ; Read block number
+000C9Fr 2  20 rr rr       jsr XModemGetByte
+000CA2r 2  B0 6B          bcs @RecvNAK
+000CA4r 2  85 39          sta XMODEM_RCVBLK
+000CA6r 2                 ; Read complement
+000CA6r 2  20 rr rr       jsr XModemGetByte
+000CA9r 2  B0 64          bcs @RecvNAK
+000CABr 2                 ; Verify block# + complement = $FF
+000CABr 2  18             clc
+000CACr 2  65 39          adc XMODEM_RCVBLK
+000CAEr 2  C9 FF          cmp #$FF
+000CB0r 2  D0 5D          bne @RecvNAK
+000CB2r 2                 ; Receive 128 data bytes into (XFER_PTR), accumulate checksum
+000CB2r 2  64 37          stz XMODEM_CHK
+000CB4r 2  A0 00          ldy #$00
+000CB6r 2               @RecvData:
+000CB6r 2  20 rr rr       jsr XModemGetByte             ; A = byte (X/Y preserved)
+000CB9r 2  B0 54          bcs @RecvNAK
+000CBBr 2  91 2A          sta (XFER_PTR),y              ; Write to destination at offset Y
+000CBDr 2  18             clc
+000CBEr 2  65 37          adc XMODEM_CHK
+000CC0r 2  85 37          sta XMODEM_CHK
+000CC2r 2  C8             iny
+000CC3r 2  C0 80          cpy #XMODEM_BLKSZ
+000CC5r 2  D0 EF          bne @RecvData
+000CC7r 2                 ; Read and verify checksum
+000CC7r 2  20 rr rr       jsr XModemGetByte
+000CCAr 2  B0 43          bcs @RecvNAK
+000CCCr 2  C5 37          cmp XMODEM_CHK
+000CCEr 2  D0 3F          bne @RecvNAK
+000CD0r 2                 ; Verify block number matches expected
+000CD0r 2  A5 39          lda XMODEM_RCVBLK
+000CD2r 2  C5 36          cmp XMODEM_BLK
+000CD4r 2  D0 28          bne @RecvDupChk
+000CD6r 2                 ; Good block — advance pointer by 128
 000CD6r 2  18             clc
-000CD7r 2  AD 17 03       lda XFER_REMAIN
-000CDAr 2  69 80          adc #XMODEM_BLKSZ
-000CDCr 2  8D 17 03       sta XFER_REMAIN
-000CDFr 2  AD 18 03       lda XFER_REMAIN + 1
-000CE2r 2  69 00          adc #$00
-000CE4r 2  8D 18 03       sta XFER_REMAIN + 1
-000CE7r 2                 ; Increment expected block number (wraps 255→0)
-000CE7r 2  E6 36          inc XMODEM_BLK
-000CE9r 2                 ; ACK the block
-000CE9r 2  A9 06          lda #XMODEM_ACK
-000CEBr 2  20 rr rr       jsr SerialChrout
-000CEEr 2  4C rr rr       jmp @RecvWait
-000CF1r 2               
-000CF1r 2               @RecvDupChk:
-000CF1r 2                 ; Check if this is a retransmit of the previous block (lost ACK)
-000CF1r 2  A5 36          lda XMODEM_BLK
-000CF3r 2  38             sec
-000CF4r 2  E9 01          sbc #$01
-000CF6r 2  C5 39          cmp XMODEM_RCVBLK
-000CF8r 2  D0 08          bne @RecvNAK                  ; Not a dup — NAK
-000CFAr 2                 ; Duplicate — re-ACK without advancing
-000CFAr 2  A9 06          lda #XMODEM_ACK
-000CFCr 2  20 rr rr       jsr SerialChrout
-000CFFr 2  4C rr rr       jmp @RecvWait
-000D02r 2               
-000D02r 2               @RecvNAK:
-000D02r 2  20 rr rr       jsr XModemPurge               ; Drain any remaining bytes
-000D05r 2  A9 15          lda #XMODEM_NAK
-000D07r 2  20 rr rr       jsr SerialChrout
-000D0Ar 2  4C rr rr       jmp @RecvWait
-000D0Dr 2               
-000D0Dr 2               ; --- XModem Save (Send) ---
-000D0Dr 2               
-000D0Dr 2               ; XModemSaveImpl — Send data via standard XModem protocol
-000D0Dr 2               ; Input: XFER_PTR = source address, XFER_REMAIN = byte count (set by caller)
-000D0Dr 2               ; Output: Carry clear = success, Carry set = transfer failed
-000D0Dr 2               ; Modifies: Flags, A, X, Y
-000D0Dr 2               XModemSaveImpl:
-000D0Dr 2                 ; Save and switch IO_MODE to serial
-000D0Dr 2  AD 06 03       lda IO_MODE
-000D10r 2  8D 19 03       sta XFER_IO_SAVE
-000D13r 2  A9 01          lda #$01
-000D15r 2  8D 06 03       sta IO_MODE
-000D18r 2                 ; Disable serial RX IRQ — XModem polls SC_STATUS directly
-000D18r 2  A9 0B          lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
-000D1Ar 2  8D 02 90       sta SC_CMD
-000D1Dr 2                 ; Initialize
-000D1Dr 2  A9 01          lda #$01
-000D1Fr 2  85 36          sta XMODEM_BLK                ; First block number
-000D21r 2  A9 0A          lda #XMODEM_MAXRETRY
-000D23r 2  85 38          sta XMODEM_RETRY
-000D25r 2  20 rr rr       jsr XModemPurge               ; Drain stale bytes
-000D28r 2                 ; Wait for initial NAK (or 'C' for CRC mode) from receiver
-000D28r 2               @SendWaitNAK:
-000D28r 2  20 rr rr       jsr XModemGetByte
-000D2Br 2  B0 11          bcs @SendInitTO
-000D2Dr 2  C9 15          cmp #XMODEM_NAK
-000D2Fr 2  F0 16          beq @SendLoop
-000D31r 2  C9 43          cmp #'C'                      ; CRC mode request — treat as NAK (send checksum packets)
-000D33r 2  F0 12          beq @SendLoop
-000D35r 2  C9 18          cmp #XMODEM_CAN
-000D37r 2  D0 03          bne :+
-000D39r 2  4C rr rr       jmp @SendFail
-000D3Cr 2  80 EA        : bra @SendWaitNAK
-000D3Er 2               
-000D3Er 2               @SendInitTO:
-000D3Er 2  C6 38          dec XMODEM_RETRY
-000D40r 2  D0 03          bne :+
-000D42r 2  4C rr rr       jmp @SendFail
-000D45r 2  80 E1        : bra @SendWaitNAK
-000D47r 2               
-000D47r 2               @SendLoop:
-000D47r 2                 ; Check if any data remains to send
-000D47r 2  AD 17 03       lda XFER_REMAIN
-000D4Ar 2  0D 18 03       ora XFER_REMAIN + 1
-000D4Dr 2  D0 03          bne :+
-000D4Fr 2  4C rr rr       jmp @SendEOT                  ; All data sent
-000D52r 2               :
-000D52r 2                 ; Reset retry counter for this block
-000D52r 2  A9 0A          lda #XMODEM_MAXRETRY
-000D54r 2  85 38          sta XMODEM_RETRY
-000D56r 2               @SendBlock:
-000D56r 2                 ; Save XFER_PTR and XFER_REMAIN on stack for retry
-000D56r 2  A5 2B          lda XFER_PTR + 1
-000D58r 2  48             pha
-000D59r 2  A5 2A          lda XFER_PTR
-000D5Br 2  48             pha
-000D5Cr 2  AD 18 03       lda XFER_REMAIN + 1
-000D5Fr 2  48             pha
-000D60r 2  AD 17 03       lda XFER_REMAIN
-000D63r 2  48             pha
-000D64r 2                 ; Send header: SOH, block#, ~block#
-000D64r 2  A9 01          lda #XMODEM_SOH
-000D66r 2  20 rr rr       jsr SerialChrout
-000D69r 2  A5 36          lda XMODEM_BLK
-000D6Br 2  20 rr rr       jsr SerialChrout
-000D6Er 2  49 FF          eor #$FF
-000D70r 2  20 rr rr       jsr SerialChrout
-000D73r 2                 ; Send 128 data bytes, computing checksum
-000D73r 2  64 37          stz XMODEM_CHK
-000D75r 2  A0 00          ldy #$00                      ; Y=0 for (XFER_PTR),y indirect addressing
-000D77r 2  A2 80          ldx #XMODEM_BLKSZ             ; X = byte counter (128 down to 0)
-000D79r 2               @SendData:
-000D79r 2  AD 17 03       lda XFER_REMAIN
-000D7Cr 2  0D 18 03       ora XFER_REMAIN + 1
-000D7Fr 2  F0 20          beq @SendPad                  ; No more real data — pad remainder
-000D81r 2  B1 2A          lda (XFER_PTR),y              ; Read source byte
-000D83r 2  20 rr rr       jsr SerialChrout              ; Send it (A preserved by SerialChrout)
-000D86r 2  18             clc
-000D87r 2  65 37          adc XMODEM_CHK
-000D89r 2  85 37          sta XMODEM_CHK
-000D8Br 2                 ; Advance source pointer
-000D8Br 2  E6 2A          inc XFER_PTR
-000D8Dr 2  D0 02          bne @SendNoPg
-000D8Fr 2  E6 2B          inc XFER_PTR + 1
-000D91r 2               @SendNoPg:
-000D91r 2                 ; Decrement remaining byte count
-000D91r 2  AD 17 03       lda XFER_REMAIN
-000D94r 2  D0 03          bne @SendDecLo
-000D96r 2  CE 18 03       dec XFER_REMAIN + 1
-000D99r 2               @SendDecLo:
-000D99r 2  CE 17 03       dec XFER_REMAIN
-000D9Cr 2  CA             dex
-000D9Dr 2  D0 DA          bne @SendData
-000D9Fr 2  80 0D          bra @SendChk
-000DA1r 2               @SendPad:
-000DA1r 2                 ; Pad remaining block bytes with SUB ($1A)
-000DA1r 2  A9 1A          lda #XMODEM_SUB
-000DA3r 2  20 rr rr       jsr SerialChrout
-000DA6r 2  18             clc
-000DA7r 2  65 37          adc XMODEM_CHK
-000DA9r 2  85 37          sta XMODEM_CHK
-000DABr 2  CA             dex
-000DACr 2  D0 F3          bne @SendPad
-000DAEr 2               @SendChk:
-000DAEr 2                 ; Send checksum byte
-000DAEr 2  A5 37          lda XMODEM_CHK
-000DB0r 2  20 rr rr       jsr SerialChrout
-000DB3r 2                 ; Wait for ACK/NAK response
-000DB3r 2  20 rr rr       jsr XModemGetByte
-000DB6r 2  B0 08          bcs @SendRetry                ; Timeout — retry
-000DB8r 2  C9 06          cmp #XMODEM_ACK
-000DBAr 2  F0 19          beq @SendBlockOK
-000DBCr 2  C9 18          cmp #XMODEM_CAN
-000DBEr 2  F0 1E          beq @SendCancel
-000DC0r 2                 ; NAK or unknown — retry
-000DC0r 2               @SendRetry:
-000DC0r 2                 ; Restore XFER_PTR and XFER_REMAIN from stack
-000DC0r 2  68             pla
-000DC1r 2  8D 17 03       sta XFER_REMAIN
-000DC4r 2  68             pla
-000DC5r 2  8D 18 03       sta XFER_REMAIN + 1
-000DC8r 2  68             pla
-000DC9r 2  85 2A          sta XFER_PTR
-000DCBr 2  68             pla
-000DCCr 2  85 2B          sta XFER_PTR + 1
-000DCEr 2  C6 38          dec XMODEM_RETRY
-000DD0r 2  F0 10          beq @SendFail
-000DD2r 2  4C rr rr       jmp @SendBlock
-000DD5r 2               
-000DD5r 2               @SendBlockOK:
-000DD5r 2                 ; Discard saved state from stack (4 bytes)
-000DD5r 2  68             pla
-000DD6r 2  68             pla
-000DD7r 2  68             pla
-000DD8r 2  68             pla
-000DD9r 2                 ; Advance to next block
-000DD9r 2  E6 36          inc XMODEM_BLK
-000DDBr 2  4C rr rr       jmp @SendLoop
-000DDEr 2               
-000DDEr 2               @SendCancel:
-000DDEr 2                 ; Discard saved state from stack
+000CD7r 2  A5 2A          lda XFER_PTR
+000CD9r 2  69 80          adc #XMODEM_BLKSZ
+000CDBr 2  85 2A          sta XFER_PTR
+000CDDr 2  A5 2B          lda XFER_PTR + 1
+000CDFr 2  69 00          adc #$00
+000CE1r 2  85 2B          sta XFER_PTR + 1
+000CE3r 2                 ; Update total bytes received
+000CE3r 2  18             clc
+000CE4r 2  AD 17 03       lda XFER_REMAIN
+000CE7r 2  69 80          adc #XMODEM_BLKSZ
+000CE9r 2  8D 17 03       sta XFER_REMAIN
+000CECr 2  AD 18 03       lda XFER_REMAIN + 1
+000CEFr 2  69 00          adc #$00
+000CF1r 2  8D 18 03       sta XFER_REMAIN + 1
+000CF4r 2                 ; Increment expected block number (wraps 255→0)
+000CF4r 2  E6 36          inc XMODEM_BLK
+000CF6r 2                 ; ACK the block
+000CF6r 2  A9 06          lda #XMODEM_ACK
+000CF8r 2  20 rr rr       jsr SerialChrout
+000CFBr 2  4C rr rr       jmp @RecvWait
+000CFEr 2               
+000CFEr 2               @RecvDupChk:
+000CFEr 2                 ; Check if this is a retransmit of the previous block (lost ACK)
+000CFEr 2  A5 36          lda XMODEM_BLK
+000D00r 2  38             sec
+000D01r 2  E9 01          sbc #$01
+000D03r 2  C5 39          cmp XMODEM_RCVBLK
+000D05r 2  D0 08          bne @RecvNAK                  ; Not a dup — NAK
+000D07r 2                 ; Duplicate — re-ACK without advancing
+000D07r 2  A9 06          lda #XMODEM_ACK
+000D09r 2  20 rr rr       jsr SerialChrout
+000D0Cr 2  4C rr rr       jmp @RecvWait
+000D0Fr 2               
+000D0Fr 2               @RecvNAK:
+000D0Fr 2  20 rr rr       jsr XModemPurge               ; Drain any remaining bytes
+000D12r 2  A9 15          lda #XMODEM_NAK
+000D14r 2  20 rr rr       jsr SerialChrout
+000D17r 2  4C rr rr       jmp @RecvWait
+000D1Ar 2               
+000D1Ar 2               ; --- XModem Save (Send) ---
+000D1Ar 2               
+000D1Ar 2               ; XModemSaveImpl — Send data via standard XModem protocol
+000D1Ar 2               ; Input: XFER_PTR = source address, XFER_REMAIN = byte count (set by caller)
+000D1Ar 2               ; Output: Carry clear = success, Carry set = transfer failed
+000D1Ar 2               ; Modifies: Flags, A, X, Y
+000D1Ar 2               XModemSaveImpl:
+000D1Ar 2                 ; Save and switch IO_MODE to serial
+000D1Ar 2  AD 06 03       lda IO_MODE
+000D1Dr 2  8D 19 03       sta XFER_IO_SAVE
+000D20r 2  A9 01          lda #$01
+000D22r 2  8D 06 03       sta IO_MODE
+000D25r 2                 ; Disable serial RX IRQ — XModem polls SC_STATUS directly
+000D25r 2  A9 0B          lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+000D27r 2  8D 02 90       sta SC_CMD
+000D2Ar 2                 ; Initialize
+000D2Ar 2  A9 01          lda #$01
+000D2Cr 2  85 36          sta XMODEM_BLK                ; First block number
+000D2Er 2  A9 3C          lda #XMODEM_STARTRETRY
+000D30r 2  85 38          sta XMODEM_RETRY
+000D32r 2                 ; Print status message so user can start the terminal receive
+000D32r 2  A2 00          ldx #0
+000D34r 2               @PrintMsg:
+000D34r 2  BD rr rr       lda XModemStrSend,x
+000D37r 2  F0 06          beq @PrintDone
+000D39r 2  20 rr rr       jsr Chrout
+000D3Cr 2  E8             inx
+000D3Dr 2  80 F5          bra @PrintMsg
+000D3Fr 2               @PrintDone:
+000D3Fr 2  20 rr rr       jsr XModemPurge               ; Drain stale bytes
+000D42r 2                 ; Wait for initial NAK (or 'C' for CRC mode) from receiver
+000D42r 2               @SendWaitNAK:
+000D42r 2  20 rr rr       jsr XModemGetByte
+000D45r 2  B0 11          bcs @SendInitTO
+000D47r 2  C9 15          cmp #XMODEM_NAK
+000D49r 2  F0 16          beq @SendLoop
+000D4Br 2  C9 43          cmp #'C'                      ; CRC mode request — treat as NAK (send checksum packets)
+000D4Dr 2  F0 12          beq @SendLoop
+000D4Fr 2  C9 18          cmp #XMODEM_CAN
+000D51r 2  D0 03          bne :+
+000D53r 2  4C rr rr       jmp @SendFail
+000D56r 2  80 EA        : bra @SendWaitNAK
+000D58r 2               
+000D58r 2               @SendInitTO:
+000D58r 2  C6 38          dec XMODEM_RETRY
+000D5Ar 2  D0 03          bne :+
+000D5Cr 2  4C rr rr       jmp @SendFail
+000D5Fr 2  80 E1        : bra @SendWaitNAK
+000D61r 2               
+000D61r 2               @SendLoop:
+000D61r 2                 ; Check if any data remains to send
+000D61r 2  AD 17 03       lda XFER_REMAIN
+000D64r 2  0D 18 03       ora XFER_REMAIN + 1
+000D67r 2  D0 03          bne :+
+000D69r 2  4C rr rr       jmp @SendEOT                  ; All data sent
+000D6Cr 2               :
+000D6Cr 2                 ; Reset retry counter for this block
+000D6Cr 2  A9 0A          lda #XMODEM_MAXRETRY
+000D6Er 2  85 38          sta XMODEM_RETRY
+000D70r 2               @SendBlock:
+000D70r 2                 ; Save XFER_PTR and XFER_REMAIN on stack for retry
+000D70r 2  A5 2B          lda XFER_PTR + 1
+000D72r 2  48             pha
+000D73r 2  A5 2A          lda XFER_PTR
+000D75r 2  48             pha
+000D76r 2  AD 18 03       lda XFER_REMAIN + 1
+000D79r 2  48             pha
+000D7Ar 2  AD 17 03       lda XFER_REMAIN
+000D7Dr 2  48             pha
+000D7Er 2                 ; Send header: SOH, block#, ~block#
+000D7Er 2  A9 01          lda #XMODEM_SOH
+000D80r 2  20 rr rr       jsr SerialChrout
+000D83r 2  A5 36          lda XMODEM_BLK
+000D85r 2  20 rr rr       jsr SerialChrout
+000D88r 2  49 FF          eor #$FF
+000D8Ar 2  20 rr rr       jsr SerialChrout
+000D8Dr 2                 ; Send 128 data bytes, computing checksum
+000D8Dr 2  64 37          stz XMODEM_CHK
+000D8Fr 2  A0 00          ldy #$00                      ; Y=0 for (XFER_PTR),y indirect addressing
+000D91r 2  A2 80          ldx #XMODEM_BLKSZ             ; X = byte counter (128 down to 0)
+000D93r 2               @SendData:
+000D93r 2  AD 17 03       lda XFER_REMAIN
+000D96r 2  0D 18 03       ora XFER_REMAIN + 1
+000D99r 2  F0 20          beq @SendPad                  ; No more real data — pad remainder
+000D9Br 2  B1 2A          lda (XFER_PTR),y              ; Read source byte
+000D9Dr 2  20 rr rr       jsr SerialChrout              ; Send it (A preserved by SerialChrout)
+000DA0r 2  18             clc
+000DA1r 2  65 37          adc XMODEM_CHK
+000DA3r 2  85 37          sta XMODEM_CHK
+000DA5r 2                 ; Advance source pointer
+000DA5r 2  E6 2A          inc XFER_PTR
+000DA7r 2  D0 02          bne @SendNoPg
+000DA9r 2  E6 2B          inc XFER_PTR + 1
+000DABr 2               @SendNoPg:
+000DABr 2                 ; Decrement remaining byte count
+000DABr 2  AD 17 03       lda XFER_REMAIN
+000DAEr 2  D0 03          bne @SendDecLo
+000DB0r 2  CE 18 03       dec XFER_REMAIN + 1
+000DB3r 2               @SendDecLo:
+000DB3r 2  CE 17 03       dec XFER_REMAIN
+000DB6r 2  CA             dex
+000DB7r 2  D0 DA          bne @SendData
+000DB9r 2  80 0D          bra @SendChk
+000DBBr 2               @SendPad:
+000DBBr 2                 ; Pad remaining block bytes with SUB ($1A)
+000DBBr 2  A9 1A          lda #XMODEM_SUB
+000DBDr 2  20 rr rr       jsr SerialChrout
+000DC0r 2  18             clc
+000DC1r 2  65 37          adc XMODEM_CHK
+000DC3r 2  85 37          sta XMODEM_CHK
+000DC5r 2  CA             dex
+000DC6r 2  D0 F3          bne @SendPad
+000DC8r 2               @SendChk:
+000DC8r 2                 ; Send checksum byte
+000DC8r 2  A5 37          lda XMODEM_CHK
+000DCAr 2  20 rr rr       jsr SerialChrout
+000DCDr 2                 ; Wait for ACK/NAK response
+000DCDr 2  20 rr rr       jsr XModemGetByte
+000DD0r 2  B0 08          bcs @SendRetry                ; Timeout — retry
+000DD2r 2  C9 06          cmp #XMODEM_ACK
+000DD4r 2  F0 19          beq @SendBlockOK
+000DD6r 2  C9 18          cmp #XMODEM_CAN
+000DD8r 2  F0 1E          beq @SendCancel
+000DDAr 2                 ; NAK or unknown — retry
+000DDAr 2               @SendRetry:
+000DDAr 2                 ; Restore XFER_PTR and XFER_REMAIN from stack
+000DDAr 2  68             pla
+000DDBr 2  8D 17 03       sta XFER_REMAIN
 000DDEr 2  68             pla
-000DDFr 2  68             pla
-000DE0r 2  68             pla
-000DE1r 2  68             pla
-000DE2r 2               @SendFail:
-000DE2r 2                 ; Re-enable serial RX IRQ
-000DE2r 2  A9 09          lda #$09
-000DE4r 2  8D 02 90       sta SC_CMD
-000DE7r 2  AD 19 03       lda XFER_IO_SAVE
-000DEAr 2  8D 06 03       sta IO_MODE
-000DEDr 2  38             sec                           ; Failure
-000DEEr 2  60             rts
+000DDFr 2  8D 18 03       sta XFER_REMAIN + 1
+000DE2r 2  68             pla
+000DE3r 2  85 2A          sta XFER_PTR
+000DE5r 2  68             pla
+000DE6r 2  85 2B          sta XFER_PTR + 1
+000DE8r 2  C6 38          dec XMODEM_RETRY
+000DEAr 2  F0 10          beq @SendFail
+000DECr 2  4C rr rr       jmp @SendBlock
 000DEFr 2               
-000DEFr 2               @SendEOT:
-000DEFr 2                 ; All data sent — send EOT
-000DEFr 2  A9 04          lda #XMODEM_EOT
-000DF1r 2  20 rr rr       jsr SerialChrout
-000DF4r 2                 ; Wait for ACK (best-effort; don't fail if timeout)
-000DF4r 2  20 rr rr       jsr XModemGetByte
-000DF7r 2                 ; Re-enable serial RX IRQ
-000DF7r 2  A9 09          lda #$09
-000DF9r 2  8D 02 90       sta SC_CMD
-000DFCr 2  AD 19 03       lda XFER_IO_SAVE
-000DFFr 2  8D 06 03       sta IO_MODE
-000E02r 2  18             clc                           ; Success
-000E03r 2  60             rts
-000E04r 2               
-000E04r 2               ; Draw the splash screen
-000E04r 2               ; Uses video output to display centered title and boot menu
-000E04r 2               ; Skips if video card is absent
-000E04r 2               ; Modifies: Flags, A, X, Y
-000E04r 2               Splash:
-000E04r 2  AD 0D 03       lda HW_PRESENT
-000E07r 2  29 80          and #HW_VID
-000E09r 2  D0 01          bne @SplashStart
-000E0Br 2  60             rts                           ; No video — skip
-000E0Cr 2               @SplashStart:
-000E0Cr 2  20 rr rr       jsr VideoClear                ; Clear the video screen
-000E0Fr 2                 ; Position cursor at row 10, col 10 for title
-000E0Fr 2  A2 0A          ldx #10
-000E11r 2  A0 0A          ldy #10
-000E13r 2  20 rr rr       jsr VideoSetCursor
-000E16r 2  A9 rr          lda #<@SplashTitle
-000E18r 2  85 02          sta STR_PTR
-000E1Ar 2  A9 rr          lda #>@SplashTitle
-000E1Cr 2  85 03          sta STR_PTR + 1
-000E1Er 2  20 rr rr       jsr VideoPrintStrImpl
-000E21r 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
-000E21r 2  A2 08          ldx #8
-000E23r 2  A0 0C          ldy #12
-000E25r 2  20 rr rr       jsr VideoSetCursor
-000E28r 2  A9 rr          lda #<@SplashMenu
-000E2Ar 2  85 02          sta STR_PTR
-000E2Cr 2  A9 rr          lda #>@SplashMenu
-000E2Er 2  85 03          sta STR_PTR + 1
-000E30r 2  20 rr rr       jsr VideoPrintStrImpl
-000E33r 2  60             rts
-000E34r 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.0 --"
-000E38r 2  35 30 32 20  
-000E3Cr 2  42 49 4F 53  
-000E49r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
-000E4Dr 2  52 3D 42 41  
-000E51r 2  53 49 43 20  
-000E62r 2               
-000E62r 2               ; NMI Handler
-000E62r 2               Nmi:
-000E62r 2  40             rti
-000E63r 2               
-000E63r 2               ; BRK Handler — saves full CPU state and enters monitor
-000E63r 2               ; On entry from @IrqBrk: A/X/Y are the user's original values (restored by IRQ handler).
-000E63r 2               ; The CPU's hardware push left P/PCL/PCH on the stack.
-000E63r 2               Break:
-000E63r 2  8D 13 03       sta BRK_A                     ; Save user's A register
-000E66r 2  8E 14 03       stx BRK_X                     ; Save user's X register
-000E69r 2  8C 15 03       sty BRK_Y                     ; Save user's Y register
-000E6Cr 2  BA             tsx                           ; Get current SP
-000E6Dr 2  8E 16 03       stx BRK_SP                   ; Save SP (points below P/PCL/PCH on stack)
-000E70r 2  68             pla                           ; Pull saved P
-000E71r 2  8D 10 03       sta BRK_P
-000E74r 2  68             pla                           ; Pull saved PCL (PC+2)
-000E75r 2  8D 11 03       sta BRK_PCL
-000E78r 2  68             pla                           ; Pull saved PCH
-000E79r 2  8D 12 03       sta BRK_PCH
-000E7Cr 2  4C rr rr       jmp MonitorBrkEntry
-000E7Fr 2               
-000E7Fr 2               ; IRQ Handler
-000E7Fr 2               Irq:
-000E7Fr 2  48             pha
-000E80r 2  5A             phy
-000E81r 2  DA             phx
-000E82r 2  BA             tsx                           ; Get stack pointer to check saved status register
-000E83r 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
-000E86r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
-000E88r 2  D0 47          bne @IrqBrk                   ; Branch if this was a BRK instruction
-000E8Ar 2               @IrqSc:
-000E8Ar 2  AD 0D 03       lda HW_PRESENT
-000E8Dr 2  29 10          and #HW_SC
-000E8Fr 2  F0 19          beq @IrqCheckKB               ; Serial not present — skip
-000E91r 2  AD 01 90       lda SC_STATUS
-000E94r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-000E96r 2  F0 12          beq @IrqCheckKB               ; If not, check keyboard
-000E98r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
-000E9Br 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000E9Er 2  20 rr rr       jsr BufferSize
-000EA1r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-000EA3r 2  90 05          bcc @IrqCheckKB               ; If not, also check keyboard
-000EA5r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000EA7r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-000EAAr 2                                               ; Fall through to check keyboard — always clear VIA flags
-000EAAr 2               @IrqCheckKB:
-000EAAr 2  AD 0D 03       lda HW_PRESENT
-000EADr 2  29 20          and #HW_GPIO
-000EAFr 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
-000EB1r 2  AD 0D 94       lda GPIO_IFR
-000EB4r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
-000EB6r 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
-000EB8r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
-000EBBr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000EBEr 2  80 0D          bra @IrqExit
-000EC0r 2               @IrqCheckPS2:
-000EC0r 2  AD 0D 94       lda GPIO_IFR
-000EC3r 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
-000EC5r 2  F0 06          beq @IrqExit                  ; If not, exit
-000EC7r 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
-000ECAr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-000ECDr 2               @IrqExit:
-000ECDr 2  FA             plx
-000ECEr 2  7A             ply
-000ECFr 2  68             pla
-000ED0r 2  40             rti
-000ED1r 2               @IrqBrk:
-000ED1r 2  FA             plx                           ; Restore saved registers
-000ED2r 2  7A             ply
-000ED3r 2  68             pla
-000ED4r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
-000ED5r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
-000ED8r 2               
-000ED8r 2               ; NMI Vector
-000ED8r 2               NmiVec:
-000ED8r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
-000EDBr 2               
-000EDBr 2               ; Reset Vector
-000EDBr 2               ResetVec:
-000EDBr 2  4C rr rr       jmp Reset                     ; Initialize the system
-000EDEr 2               
-000EDEr 2               ; IRQ Vector
-000EDEr 2               IrqVec:
-000EDEr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
-000EE1r 2               
-000EE1r 1               .segment "CHARS"
+000DEFr 2               @SendBlockOK:
+000DEFr 2                 ; Discard saved state from stack (4 bytes)
+000DEFr 2  68             pla
+000DF0r 2  68             pla
+000DF1r 2  68             pla
+000DF2r 2  68             pla
+000DF3r 2                 ; Advance to next block
+000DF3r 2  E6 36          inc XMODEM_BLK
+000DF5r 2  4C rr rr       jmp @SendLoop
+000DF8r 2               
+000DF8r 2               @SendCancel:
+000DF8r 2                 ; Discard saved state from stack
+000DF8r 2  68             pla
+000DF9r 2  68             pla
+000DFAr 2  68             pla
+000DFBr 2  68             pla
+000DFCr 2               @SendFail:
+000DFCr 2                 ; Re-enable serial RX IRQ
+000DFCr 2  A9 09          lda #$09
+000DFEr 2  8D 02 90       sta SC_CMD
+000E01r 2  AD 19 03       lda XFER_IO_SAVE
+000E04r 2  8D 06 03       sta IO_MODE
+000E07r 2  38             sec                           ; Failure
+000E08r 2  60             rts
+000E09r 2               
+000E09r 2               @SendEOT:
+000E09r 2                 ; All data sent — send EOT
+000E09r 2  A9 04          lda #XMODEM_EOT
+000E0Br 2  20 rr rr       jsr SerialChrout
+000E0Er 2                 ; Wait for ACK (best-effort; don't fail if timeout)
+000E0Er 2  20 rr rr       jsr XModemGetByte
+000E11r 2                 ; Re-enable serial RX IRQ
+000E11r 2  A9 09          lda #$09
+000E13r 2  8D 02 90       sta SC_CMD
+000E16r 2  AD 19 03       lda XFER_IO_SAVE
+000E19r 2  8D 06 03       sta IO_MODE
+000E1Cr 2  18             clc                           ; Success
+000E1Dr 2  60             rts
+000E1Er 2               
+000E1Er 2               ; XModem status strings
+000E1Er 2               XModemStrReceive:
+000E1Er 2  58 4D 4F 44    .byte "XMODEM RX READY", $0D, $0A, 0
+000E22r 2  45 4D 20 52  
+000E26r 2  58 20 52 45  
+000E30r 2               XModemStrSend:
+000E30r 2  58 4D 4F 44    .byte "XMODEM TX READY", $0D, $0A, 0
+000E34r 2  45 4D 20 54  
+000E38r 2  58 20 52 45  
+000E42r 2               
+000E42r 2               ; Draw the splash screen
+000E42r 2               ; Uses video output to display centered title and boot menu
+000E42r 2               ; Skips if video card is absent
+000E42r 2               ; Modifies: Flags, A, X, Y
+000E42r 2               Splash:
+000E42r 2  AD 0D 03       lda HW_PRESENT
+000E45r 2  29 80          and #HW_VID
+000E47r 2  D0 01          bne @SplashStart
+000E49r 2  60             rts                           ; No video — skip
+000E4Ar 2               @SplashStart:
+000E4Ar 2  20 rr rr       jsr VideoClear                ; Clear the video screen
+000E4Dr 2                 ; Position cursor at row 10, col 10 for title
+000E4Dr 2  A2 0A          ldx #10
+000E4Fr 2  A0 0A          ldy #10
+000E51r 2  20 rr rr       jsr VideoSetCursor
+000E54r 2  A9 rr          lda #<@SplashTitle
+000E56r 2  85 02          sta STR_PTR
+000E58r 2  A9 rr          lda #>@SplashTitle
+000E5Ar 2  85 03          sta STR_PTR + 1
+000E5Cr 2  20 rr rr       jsr VideoPrintStrImpl
+000E5Fr 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
+000E5Fr 2  A2 08          ldx #8
+000E61r 2  A0 0C          ldy #12
+000E63r 2  20 rr rr       jsr VideoSetCursor
+000E66r 2  A9 rr          lda #<@SplashMenu
+000E68r 2  85 02          sta STR_PTR
+000E6Ar 2  A9 rr          lda #>@SplashMenu
+000E6Cr 2  85 03          sta STR_PTR + 1
+000E6Er 2  20 rr rr       jsr VideoPrintStrImpl
+000E71r 2  60             rts
+000E72r 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.0 --"
+000E76r 2  35 30 32 20  
+000E7Ar 2  42 49 4F 53  
+000E87r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
+000E8Br 2  52 3D 42 41  
+000E8Fr 2  53 49 43 20  
+000EA0r 2               
+000EA0r 2               ; NMI Handler
+000EA0r 2               Nmi:
+000EA0r 2  40             rti
+000EA1r 2               
+000EA1r 2               ; BRK Handler — saves full CPU state and enters monitor
+000EA1r 2               ; On entry from @IrqBrk: A/X/Y are the user's original values (restored by IRQ handler).
+000EA1r 2               ; The CPU's hardware push left P/PCL/PCH on the stack.
+000EA1r 2               Break:
+000EA1r 2  8D 13 03       sta BRK_A                     ; Save user's A register
+000EA4r 2  8E 14 03       stx BRK_X                     ; Save user's X register
+000EA7r 2  8C 15 03       sty BRK_Y                     ; Save user's Y register
+000EAAr 2  BA             tsx                           ; Get current SP
+000EABr 2  8E 16 03       stx BRK_SP                   ; Save SP (points below P/PCL/PCH on stack)
+000EAEr 2  68             pla                           ; Pull saved P
+000EAFr 2  8D 10 03       sta BRK_P
+000EB2r 2  68             pla                           ; Pull saved PCL (PC+2)
+000EB3r 2  8D 11 03       sta BRK_PCL
+000EB6r 2  68             pla                           ; Pull saved PCH
+000EB7r 2  8D 12 03       sta BRK_PCH
+000EBAr 2  4C rr rr       jmp MonitorBrkEntry
+000EBDr 2               
+000EBDr 2               ; IRQ Handler
+000EBDr 2               Irq:
+000EBDr 2  48             pha
+000EBEr 2  5A             phy
+000EBFr 2  DA             phx
+000EC0r 2  BA             tsx                           ; Get stack pointer to check saved status register
+000EC1r 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
+000EC4r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
+000EC6r 2  D0 47          bne @IrqBrk                   ; Branch if this was a BRK instruction
+000EC8r 2               @IrqSc:
+000EC8r 2  AD 0D 03       lda HW_PRESENT
+000ECBr 2  29 10          and #HW_SC
+000ECDr 2  F0 19          beq @IrqCheckKB               ; Serial not present — skip
+000ECFr 2  AD 01 90       lda SC_STATUS
+000ED2r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+000ED4r 2  F0 12          beq @IrqCheckKB               ; If not, check keyboard
+000ED6r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
+000ED9r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000EDCr 2  20 rr rr       jsr BufferSize
+000EDFr 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
+000EE1r 2  90 05          bcc @IrqCheckKB               ; If not, also check keyboard
+000EE3r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+000EE5r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+000EE8r 2                                               ; Fall through to check keyboard — always clear VIA flags
+000EE8r 2               @IrqCheckKB:
+000EE8r 2  AD 0D 03       lda HW_PRESENT
+000EEBr 2  29 20          and #HW_GPIO
+000EEDr 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
+000EEFr 2  AD 0D 94       lda GPIO_IFR
+000EF2r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
+000EF4r 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
+000EF6r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
+000EF9r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000EFCr 2  80 0D          bra @IrqExit
+000EFEr 2               @IrqCheckPS2:
+000EFEr 2  AD 0D 94       lda GPIO_IFR
+000F01r 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
+000F03r 2  F0 06          beq @IrqExit                  ; If not, exit
+000F05r 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
+000F08r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+000F0Br 2               @IrqExit:
+000F0Br 2  FA             plx
+000F0Cr 2  7A             ply
+000F0Dr 2  68             pla
+000F0Er 2  40             rti
+000F0Fr 2               @IrqBrk:
+000F0Fr 2  FA             plx                           ; Restore saved registers
+000F10r 2  7A             ply
+000F11r 2  68             pla
+000F12r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
+000F13r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+000F16r 2               
+000F16r 2               ; NMI Vector
+000F16r 2               NmiVec:
+000F16r 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
+000F19r 2               
+000F19r 2               ; Reset Vector
+000F19r 2               ResetVec:
+000F19r 2  4C rr rr       jmp Reset                     ; Initialize the system
+000F1Cr 2               
+000F1Cr 2               ; IRQ Vector
+000F1Cr 2               IrqVec:
+000F1Cr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+000F1Fr 2               
+000F1Fr 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; IBM Code Page 437 Character Set
 000000r 2               ; 5x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)

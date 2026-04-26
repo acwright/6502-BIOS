@@ -3682,7 +3682,7 @@ Current file: BIOS.asm
 000000r 2               ; ***                         ***
 000000r 2               ; ***   Integer BASIC v1.0    ***
 000000r 2               ; ***     for 6502-BIOS       ***
-000000r 2               ; ***   $C000-$E7FF (10240B)  ***
+000000r 2               ; ***   $C000-$EDFF (11776B)  ***
 000000r 2               ; ***                         ***
 000000r 2               
 000000r 2               ; ============================================================================
@@ -9321,11 +9321,11 @@ Current file: BIOS.asm
 000000r 2               ; ***             ***
 000000r 2               
 000000r 2               ; Machine Code Monitor — Supermon-style command set
-000000r 2               ; Segment: $E800-$FEFF (~6KB)
+000000r 2               ; Segment: $EE00-$FEFF (~4KB)
 000000r 2               ;
 000000r 2               ; Entry points:
-000000r 2               ;   MonitorEntry    ($E800) — Cold entry from boot menu or X return
-000000r 2               ;   MonitorBrkEntry ($E803) — BRK entry with register display
+000000r 2               ;   MonitorEntry    ($EE00) — Cold entry from boot menu or X return
+000000r 2               ;   MonitorBrkEntry ($EE03) — BRK entry with register display
 000000r 2               
 000000r 2               ; ============================================================================
 000000r 2               ; Monitor Constants
@@ -9431,7 +9431,7 @@ Current file: BIOS.asm
 000000r 2               ; ============================================================================
 000000r 2               
 000000r 2               MonitorEntry:
-000000r 2  4C rr rr       jmp MonColdEntry              ; $E800 - Cold entry (boot menu / return)
+000000r 2  4C rr rr       jmp MonColdEntry              ; $EE00 - Cold entry (boot menu / return)
 000003r 2               
 000003r 2               MonitorBrkEntry:
 000003r 2  4C rr rr       jmp MonBrkEntry               ; $C003 - BRK entry (register display)

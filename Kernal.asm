@@ -1072,6 +1072,7 @@ RtcReadDateImpl:
   jsr BcdToBin
   sta RTC_BUF_CENT              ; Store century in buffer
   lda RTC_MON
+  and #RTC_MON_MASK             ; Strip control bits (EOSC/E32K/BB32) before BCD decode
   jsr BcdToBin
   tax                           ; X = month
   lda RTC_YR
@@ -1133,6 +1134,11 @@ RtcWriteDateImpl:
   ; Write month
   pla                           ; A = month
   jsr BinToBcd
+  and #RTC_MON_MASK             ; Keep only the month value bits
+  sta RTC_TMP
+  lda RTC_MON
+  and #<~RTC_MON_MASK           ; Preserve control bits (EOSC/E32K/BB32)
+  ora RTC_TMP
   sta RTC_MON
   ; Write day
   pla                           ; A = day
@@ -1325,6 +1331,15 @@ ProbeRTC:
   lda HW_PRESENT
   ora #HW_RTC
   sta HW_PRESENT
+  ; The DS1511Y SQW pin feeds the AB Controller, which turns every SQW edge into
+  ; a 6502 NMI. Its control bits power up undefined and are battery-backed, so
+  ; explicitly disable the square-wave output here. E32K/BB32/EOSC live in the
+  ; upper 3 bits of the month register (05H); keep the month value and leave the
+  ; oscillator running.
+  lda RTC_MON
+  and #RTC_MON_MASK             ; Keep month value (low 5 bits)
+  ora #RTC_MON_E32K             ; E32K=1 → SQW disabled; BB32=0, EOSC=0
+  sta RTC_MON
 @ProbeRTCDone:
   pla
   sta RTC_RAM_DATA              ; Restore original value

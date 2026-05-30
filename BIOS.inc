@@ -143,6 +143,11 @@ RTC_RAM_ADDR        := $8810
 RTC_RAM_DATA        := $8813
 ; DS1511Y Control Register B Bits
 RTC_CTRL_B_TE       := %10000000         ; Transfer Enable — set to inhibit updates during write
+; DS1511Y Month Register (05H) — upper 3 bits are control bits, low 5 are month
+RTC_MON_MASK        := %00011111         ; Month value occupies the low 5 bits
+RTC_MON_EOSC        := %10000000         ; Oscillator Start/Stop (0 = oscillator running)
+RTC_MON_E32K        := %01000000         ; 32kHz square-wave enable (1 = SQW output disabled)
+RTC_MON_BB32        := %00100000         ; Battery-backup 32kHz SQW enable (1 = enabled in backup)
 
 ; Storage Card (CompactFlash 8-bit IDE) | IO 4 | $8C00-$8C07
 ST_DATA             := $8C00             ; R/W

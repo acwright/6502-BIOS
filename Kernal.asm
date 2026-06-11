@@ -864,7 +864,7 @@ BeepImpl:
 ; SysDelay — Delay for a specified number of centiseconds
 ; Input: A = count low byte, X = count high byte
 ; Uses VIA T1 in one-shot mode. 9999 cycles @ 1MHz = ~10ms per tick.
-; Modifies: Flags, A
+; Modifies: Flags, A, X, Y (X/Y clobbered only in software-fallback path)
 SysDelayImpl:
   sta DELAY_CNT
   stx DELAY_CNT + 1
@@ -964,7 +964,7 @@ KBEnable:
 ; ReadJoystick1 — Read joystick 1 on Port B
 ; Temporarily disables matrix keyboard encoder (CB2 high) to read raw port data
 ; Output: A = joystick bitmask (bits: R-L-D-U-Y-X-B-A)
-; Modifies: Flags, A
+; Modifies: Flags, A, X
 ReadJoystick1Impl:
   sei                           ; Disable interrupts during raw port read
   lda GPIO_PCR
@@ -983,7 +983,7 @@ ReadJoystick1Impl:
 ; ReadJoystick2 — Read joystick 2 on Port A
 ; Temporarily disables PS/2 keyboard encoder (CA2 high) to read raw port data
 ; Output: A = joystick bitmask (bits: R-L-D-U-Y-X-B-A)
-; Modifies: Flags, A
+; Modifies: Flags, A, X
 ReadJoystick2Impl:
   sei                           ; Disable interrupts during raw port read
   lda GPIO_PCR

@@ -1164,7 +1164,7 @@ Current file: BIOS.asm
 000555r 2               ; SysDelay — Delay for a specified number of centiseconds
 000555r 2               ; Input: A = count low byte, X = count high byte
 000555r 2               ; Uses VIA T1 in one-shot mode. 9999 cycles @ 1MHz = ~10ms per tick.
-000555r 2               ; Modifies: Flags, A
+000555r 2               ; Modifies: Flags, A, X, Y (X/Y clobbered only in software-fallback path)
 000555r 2               SysDelayImpl:
 000555r 2  85 2C          sta DELAY_CNT
 000557r 2  86 2D          stx DELAY_CNT + 1
@@ -1264,7 +1264,7 @@ Current file: BIOS.asm
 0005C8r 2               ; ReadJoystick1 — Read joystick 1 on Port B
 0005C8r 2               ; Temporarily disables matrix keyboard encoder (CB2 high) to read raw port data
 0005C8r 2               ; Output: A = joystick bitmask (bits: R-L-D-U-Y-X-B-A)
-0005C8r 2               ; Modifies: Flags, A
+0005C8r 2               ; Modifies: Flags, A, X
 0005C8r 2               ReadJoystick1Impl:
 0005C8r 2  78             sei                           ; Disable interrupts during raw port read
 0005C9r 2  AD 0C 94       lda GPIO_PCR
@@ -1283,7 +1283,7 @@ Current file: BIOS.asm
 0005DDr 2               ; ReadJoystick2 — Read joystick 2 on Port A
 0005DDr 2               ; Temporarily disables PS/2 keyboard encoder (CA2 high) to read raw port data
 0005DDr 2               ; Output: A = joystick bitmask (bits: R-L-D-U-Y-X-B-A)
-0005DDr 2               ; Modifies: Flags, A
+0005DDr 2               ; Modifies: Flags, A, X
 0005DDr 2               ReadJoystick2Impl:
 0005DDr 2  78             sei                           ; Disable interrupts during raw port read
 0005DEr 2  AD 0C 94       lda GPIO_PCR

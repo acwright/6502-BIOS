@@ -53,7 +53,7 @@ HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA —
 HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
 HW_VID              = %10000000          ; Bit 7: Video card (IO 8, TMS9918/pico9918)
 BAS_PENDKEY         := $030E             ; Pending key from BasCheckBreak (1 byte)
-                                         ; $030F Reserved
+CF_DISK             := $030F             ; Current CF "disk" bank (0-255); base LBA = CF_DISK * FS_DISK_SECTORS
 BRK_P               := $0310             ; Saved P at time of BRK
 BRK_PCL             := $0311             ; Saved PCL at time of BRK (points to BRK+2)
 BRK_PCH             := $0312             ; Saved PCH at time of BRK
@@ -90,6 +90,7 @@ BAS_WARM            := $036F             ; Warm-start magic ($A5 = previously in
 BAS_POSX            := $0370             ; PRINT column counter (0-39 video / 0-79 serial)
 BAS_INPSAV          := $0371             ; $0371-$0372 - Saved TXTPTR across INPUT REDO retry
 BAS_FNAME           := $0373             ; $0373-$037E - 12-byte scratch for null-terminated filename (Phase 7)
+FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
 
@@ -106,7 +107,7 @@ XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 1
-BIOS_VERSION_MINOR  = 0
+BIOS_VERSION_MINOR  = 1
 
 ; User Vars
 USER_VARS           := $0400             ; $0400-$07FF
@@ -188,6 +189,7 @@ FS_ENTRY_FLAGS      = 11                 ; Offset of flags byte within entry
 FS_ENTRY_START      = 12                 ; Offset of start sector (2 bytes)
 FS_ENTRY_FSIZE      = 14                 ; Offset of file size (2 bytes)
 FS_FLAG_USED        = %00000001          ; Entry in use
+FS_DISK_SECTORS     = 2048               ; Sectors per disk bank (2048 * 512 = 1 MB); 256 disks = 256 MB
 
 ; Serial Card / Serial Card Pro (R65C51) | IO 5 | $9000-$9003
 SC_DATA             := $9000             ; R/W

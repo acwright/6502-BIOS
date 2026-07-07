@@ -304,6 +304,8 @@ MonCmdTable:
   .word MonCmdDir - 1
   .byte 'N'
   .word MonCmdNum - 1
+  .byte '#'
+  .word MonCmdDisk - 1
   .byte 0                       ; End of table sentinel
 
 ; ============================================================================
@@ -890,6 +892,20 @@ MonCmdModRegs:
 
 MonCmdDir:
   jsr FsDirectory
+  rts
+
+; ============================================================================
+; MonCmdDisk — Select / report the current CF disk bank
+; Syntax: # NN   (hex disk 00-FF selects); # alone reports the current disk
+; ============================================================================
+
+MonCmdDisk:
+  jsr MonSkipSpaces
+  jsr MonParseHex2
+  bcc @MonDiskShow              ; No argument — just report current disk
+  jsr FsSetDisk                 ; CF_DISK = A
+@MonDiskShow:
+  jsr FsPrintDisk               ; Print "DISK n"
   rts
 
 ; ============================================================================
@@ -2426,7 +2442,7 @@ MonPrintBanner:
 ; ============================================================================
 
 MonStrBanner:
-  .byte "6502 MONITOR v1.0", $0D, $0A, 0
+  .byte "6502 MONITOR v1.1", $0D, $0A, 0
 MonStrBrk:
   .byte "BRK AT $", 0
 MonStrNotFound:

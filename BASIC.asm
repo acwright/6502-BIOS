@@ -311,8 +311,10 @@ TOK_INKEY       = $CD
 TOK_HEX         = $CE
 TOK_MIN         = $CF
 TOK_MAX         = $D0
-TOK_FPTEST      = $D1           ; debug only - removed in final cleanup
-TOK_VARTEST     = $D2           ; debug only - removed in final cleanup
+TOK_DISK        = $D1           ; select current CF disk bank
+TOK_BLOAD       = $D2           ; binary load to address
+TOK_BSAVE       = $D3           ; binary save from address
+TOK_FORMAT      = $D4           ; erase current disk directory
 
 ; =============================================================================
 ;   E R R O R   C O D E S
@@ -6546,12 +6548,26 @@ BasExecuteStatement:
         sbc     #TOK_BASE
         bcc     @doLet
         cmp     #NUM_STMT_TOKENS
-        bcs     @synErr
+        bcs     @ext
         asl     a
         tay
         lda     BasTokenAddrTbl+1,y
         pha
         lda     BasTokenAddrTbl,y
+        pha
+        jmp     ChrGet
+@ext:
+        ; Extended statement tokens DISK/BLOAD/BSAVE/FORMAT ($D1-$D4).
+        ; Bodies live in the Kernal via BasExtAddrTbl (thin-BASIC strategy).
+        sec
+        sbc     #(TOK_DISK - TOK_BASE)
+        cmp     #4
+        bcs     @synErr
+        asl     a
+        tay
+        lda     BasExtAddrTbl+1,y
+        pha
+        lda     BasExtAddrTbl,y
         pha
         jmp     ChrGet
 @doLet:
@@ -8354,7 +8370,8 @@ BasCmdMem:
         jsr     Chrout
         lda     HW_PRESENT
         jsr     PrintHexByte
-        jmp     BasPrintCRLF
+        jsr     BasPrintCRLF
+        jmp     FsPrintDisk             ; print "DISK n" line
 
 MsgFree:        .byte   " BYTES FREE  HW=",0
 MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
@@ -8525,6 +8542,10 @@ KeywordTbl:
         .byte   "HE",'X'|$80            ; $CE HEX
         .byte   "MI",'N'|$80            ; $CF MIN
         .byte   "MA",'X'|$80            ; $D0 MAX
+        .byte   "DIS",'K'|$80           ; $D1 DISK
+        .byte   "BLOA",'D'|$80          ; $D2 BLOAD
+        .byte   "BSAV",'E'|$80          ; $D3 BSAVE
+        .byte   "FORMA",'T'|$80         ; $D4 FORMAT
         .byte   0
 
 ; =============================================================================
@@ -8555,7 +8576,7 @@ ErrorMessages:
 ; =============================================================================
 
 MsgBanner:
-        .byte   $0D,$0A,"6502 BASIC V2.0",$0D,$0A,0
+        .byte   $0D,$0A,"6502 BASIC V2.1",$0D,$0A,0
 
 MsgBytesFreeNL:
         .byte   " BYTES FREE",$0D,$0A,0

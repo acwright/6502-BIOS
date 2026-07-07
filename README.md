@@ -21,7 +21,7 @@ The probe-and-boot sequence is:
 8. **Splash screen** — displayed on the active console:
 
 ```
-  -- 6502 BIOS v1.0 --
+  -- 6502 BIOS v1.1 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
@@ -101,10 +101,14 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `SAVE "name"` | Save the current program to CompactFlash |
 | `LOAD` (no arg) | Receive a program via XModem on the serial port |
 | `SAVE` (no arg) | Transmit the current program via XModem |
-| `DIR` | List CompactFlash directory |
-| `DEL "name"` | Delete a named file from CompactFlash |
+| `DIR` | List current disk's directory (prints `DISK n` header) |
+| `DEL "name"` | Delete a named file from the current disk |
+| `DISK <n>` | Select CF disk bank `n` (0–255); resets to 0 on boot. Each disk is 1 MB (2048 sectors) — 256 disks = 256 MB total |
+| `BLOAD <addr>,"name"` | Load a file's raw bytes from the current disk to address `addr` |
+| `BSAVE <addr>,<len>,"name"` | Save `len` bytes from address `addr` to a named file on the current disk |
+| `FORMAT` | Erase the current disk's file directory (prompts `ERASE DISK n? (Y/N)`) |
 | `BANK <n>` | Select 1KB RAM bank `n` at `$8000–$83FE` |
-| `MEM` | Print free bytes and `HW_PRESENT` (hex) |
+| `MEM` | Print free bytes, `HW=$xx`, and `DISK n` |
 
 **Video & Display**
 
@@ -232,7 +236,8 @@ The monitor is entered in three ways:
 |---------|--------|-------------|
 | `L` | `L "file" [addr]` | Load from CompactFlash (with filename) or XModem (without) to address (default `$0800`) |
 | `S` | `S "file" addr addr` | Save to CompactFlash (with filename) or XModem (without) |
-| `@` | `@` | List CompactFlash directory |
+| `@` | `@` | List current disk's directory (prints `DISK n` header) |
+| `#` | `# NN` | Select CF disk bank `NN` (hex 00–FF); `#` alone reports the current disk |
 | `N` | `N value` | Number conversion — hex (`$xx`), decimal (`+ddd`), or binary (`%bbbb`) input shown in all three bases |
 | `X` | `X` | Exit to BASIC |
 
@@ -257,7 +262,13 @@ Bit:  7   6   5   4   3   2   1   0
 
 ### CompactFlash Storage
 
-A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The directory lives at LBA 0 and holds up to 16 entries (8.3 filenames). Data sectors follow contiguously per file. `LOAD`, `SAVE`, and `DIR` in BASIC all use this filesystem.
+A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The card is divided into up to **256 disk banks** of 1 MB each (2048 sectors × 512 bytes), giving a maximum usable capacity of **256 MB**. The current disk bank is selected with `DISK n` in BASIC or `#NN` in the Monitor, and resets to 0 (disk 0) on power-on or reset.
+
+Within each disk, the directory lives at the first sector (LBA `n×2048`) and holds up to **16 entries** (8.3 filenames). Data sectors follow contiguously. The filesystem prevents a file on one disk from spilling into the next disk's region.
+
+`LOAD`/`SAVE`/`DIR`/`DEL` in BASIC, and `L`/`S`/`@` in the Monitor, all operate on the currently selected disk bank. `BLOAD` and `BSAVE` load/save raw binary data to/from any memory address, making it straightforward to load game maps, graphics, or data files while a program is running.
+
+Assembly programs can access disk storage directly through the Kernal jump table (see `FsLoadFileAddr`, `FsSaveFileAddr`, `FsSetDisk`, and `FsFormatDisk` below).
 
 ### Serial I/O & XModem Transfer
 
@@ -297,7 +308,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, HW\_PRESENT, BOOT\_VECTOR, RTC, FS state, array descriptors) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime) |
 | `$0400–$05FF` | 512B | BASIC line-input buffer, GOSUB stack, FOR stack |
 | `$0600–$07FF` | 512B | CompactFlash sector buffer (overlaps user RAM during `LOAD`/`SAVE`/`DIR`/`DEL`) |
 | `$0800–$7FFF` | ~31KB | Program text grows up from `$0800`; numeric/string variables follow; arrays then string heap grow down from `$8000` |
@@ -352,6 +363,12 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A075` | `SysDelay` | Delay `A`=count\_lo, `X`=count\_hi centiseconds (~10 ms each) using VIA T1 |
 | `$A078` | `KernalInit` | Initialise all hardware (caller must reset stack pointer first; no cli, no splash). Returns via `RTS` |
 | `$A07B` | `KernalVersion` | Get BIOS version → `A`=major, `X`=minor |
+| `$A07E` | `FsLoadFileAddr` | Load named file from current disk to `FS_IO_ADDR` ($037F); returns size in `FS_FILE_SIZE` |
+| `$A081` | `FsSaveFileAddr` | Save `FS_FILE_SIZE` bytes from `FS_IO_ADDR` to a named file on the current disk |
+| `$A084` | `FsFormatDisk` | Zero the current disk's directory sector (no confirmation — caller decides) |
+| `$A087` | `FsSetDisk` | Select current CF disk bank: `A` = 0–255 → `CF_DISK` ($030F) |
+| `$A08A` | `FsGetDisk` | Get current CF disk bank: `A` ← `CF_DISK` |
+| `$A08D` | `FsPrintDisk` | Print `DISK n` + CRLF via `Chrout` (uses current `CF_DISK`) |
 
 ### Cartridge Support
 

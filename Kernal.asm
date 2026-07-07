@@ -58,9 +58,16 @@ StWaitReady:    jmp StWaitReadyImpl     ; $A072 - Wait CF ready
 SysDelay:       jmp SysDelayImpl        ; $A075 - Delay A=cnt_lo, X=cnt_hi centiseconds
 KernalInit:     jmp KernalInitImpl      ; $A078 - Initialize all hardware (caller must reset SP; no cli, no splash); rts when done
 KernalVersion:  jmp KernalVersionImpl   ; $A07B - Get BIOS version (A=major, X=minor)
+; --- Disk banking / addressed storage ---
+FsLoadFileAddr: jmp FsLoadFileAddrImpl  ; $A07E - Load named file to FS_IO_ADDR
+FsSaveFileAddr: jmp FsSaveFileAddrImpl  ; $A081 - Save FS_FILE_SIZE bytes from FS_IO_ADDR to named file
+FsFormatDisk:   jmp FsFormatDiskImpl    ; $A084 - Zero the current disk's directory sector
+FsSetDisk:      jmp FsSetDiskImpl       ; $A087 - Select current CF disk (A=0-255)
+FsGetDisk:      jmp FsGetDiskImpl       ; $A08A - Get current CF disk (A=disk)
+FsPrintDisk:    jmp FsPrintDiskImpl     ; $A08D - Print "DISK n" + CRLF via Chrout
 
-; Reserved entries ($A07E-$A0FE)
-.repeat 43
+; Reserved entries ($A090-$A0FE)
+.repeat 37
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -470,6 +477,7 @@ KernalInitImpl:
   stz HW_PRESENT                ; Clear all hardware flags
   stz BOOT_VECTOR               ; Clear boot redirect vector
   stz BOOT_VECTOR + 1
+  stz CF_DISK                   ; Reset current CF disk bank to 0
 
   jsr InitBuffer                ; Initialize the input buffer (RAM-only, no hardware)
 
@@ -1490,13 +1498,33 @@ StInit:
 StSetupLba:
   lda #$01
   sta ST_SECT_CNT               ; Always 1 sector
+  ; Effective LBA = CF_LBA + CF_DISK * FS_DISK_SECTORS (disk banking base offset).
+  ; base = CF_DISK << 11: byte0=0, byte1=(CF_DISK<<3)&$FF, byte2=CF_DISK>>5, byte3=0.
+  ; Precompute base bits 16-23 (CF_DISK >> 5) into X before any add clobbers carry.
+  lda CF_DISK
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  tax                           ; X = CF_DISK >> 5 (disk base, LBA bits 16-23)
   lda CF_LBA
-  sta ST_LBA_0                  ; LBA bits 0-7
-  lda CF_LBA + 1
-  sta ST_LBA_1                  ; LBA bits 8-15
-  lda CF_LBA + 2
-  sta ST_LBA_2                  ; LBA bits 16-23
+  sta ST_LBA_0                  ; LBA bits 0-7 (base low byte is 0)
+  ; LBA bits 8-15: CF_LBA+1 + (CF_DISK << 3)
+  lda CF_DISK
+  asl a
+  asl a
+  asl a                         ; A = (CF_DISK << 3) & $FF
+  clc
+  adc CF_LBA + 1
+  sta ST_LBA_1
+  ; LBA bits 16-23: CF_LBA+2 + (CF_DISK >> 5) + carry
+  txa
+  adc CF_LBA + 2
+  sta ST_LBA_2
+  ; LBA bits 24-27: CF_LBA+3 + carry
   lda CF_LBA + 3
+  adc #$00
   and #$0F                      ; Mask to 4 bits (LBA 24-27)
   ora #ST_LBA3_MASTER           ; LBA mode, master drive
   sta ST_LBA_3
@@ -1821,6 +1849,7 @@ FsDirectory:
   bcc @FsDirStart
   rts                           ; Error reading directory
 @FsDirStart:
+  jsr FsPrintDiskImpl           ; Print "DISK n" header
   lda #<FS_SECTOR_BUF
   sta CF_BUF_PTR
   lda #>FS_SECTOR_BUF
@@ -1926,12 +1955,169 @@ FsPrintSize:
 @FsPow10Lo: .byte <10000, <1000, <100, <10
 @FsPow10Hi: .byte >10000, >1000, >100, >10
 
+; FsSetDiskImpl — Select the current CF disk bank
+; Input: A = disk number (0-255)
+; Modifies: Flags
+FsSetDiskImpl:
+  sta CF_DISK
+  rts
+
+; FsGetDiskImpl — Get the current CF disk bank
+; Output: A = current disk number
+; Modifies: Flags, A
+FsGetDiskImpl:
+  lda CF_DISK
+  rts
+
+; FsFormatDiskImpl — Zero the current disk's directory sector (erases its file list)
+; Output: Carry clear = success, Carry set = write error
+; Modifies: Flags, A, X, Y, CF_LBA, CF_BUF_PTR
+FsFormatDiskImpl:
+  lda #<FS_SECTOR_BUF
+  sta CF_BUF_PTR
+  lda #>FS_SECTOR_BUF
+  sta CF_BUF_PTR + 1
+  ldy #$00
+  ldx #$02                      ; 2 pages = 512 bytes
+  lda #$00
+@FsFormatClr:
+  sta (CF_BUF_PTR),y
+  iny
+  bne @FsFormatClr
+  inc CF_BUF_PTR + 1
+  dex
+  bne @FsFormatClr
+  jmp FsWriteDir                ; Write zeroed directory sector (returns carry status)
+
+; FsPrintDiskImpl — Print "DISK n" (decimal) + CRLF via Chrout
+; Modifies: Flags, A, X, Y, FS_FILE_SIZE, FS_DIR_IDX
+FsPrintDiskImpl:
+  ldy #$00
+@FsPDLbl:
+  lda FsDiskLbl,y
+  beq @FsPDNum
+  jsr Chrout
+  iny
+  bra @FsPDLbl
+@FsPDNum:
+  lda CF_DISK
+  sta FS_FILE_SIZE
+  stz FS_FILE_SIZE + 1
+  jsr FsPrintSize               ; Print CF_DISK as decimal (0-255, no leading zeros)
+  lda #$0D
+  jsr Chrout
+  lda #$0A
+  jmp Chrout
+FsDiskLbl: .byte "DISK ", 0
+
+; === BASIC command glue (thin handlers dispatched from BASIC) ===
+; These implement the BASIC statements DISK/BLOAD/BSAVE/FORMAT.  The bodies
+; live here (Kernal has room) while BASIC keeps only the keyword strings and a
+; tiny dispatch stub.  Each is entered via the BASIC statement trampoline with
+; TXTPTR at the first argument char (ChrGot state); argument parsing uses the
+; BASIC evaluator routines (all sources assemble as one unit, so the labels
+; resolve directly).
+
+; BasExtAddrTbl — dispatch targets for extended statement tokens $D1-$D4.
+; Entries are (handler-1) for the BASIC "push + JMP ChrGet -> RTS" trampoline.
+BasExtAddrTbl:
+  .word KBasCmdDisk - 1          ; $D1 DISK
+  .word KBasCmdBload - 1         ; $D2 BLOAD
+  .word KBasCmdBsave - 1         ; $D3 BSAVE
+  .word KBasCmdFormat - 1        ; $D4 FORMAT
+
+; DISK n — select the current CF disk bank (0-255)
+KBasCmdDisk:
+  jsr GetByt                     ; X = value 0-255
+  stx CF_DISK
+  rts
+
+; BLOAD addr, "name" — load a file's raw bytes to addr
+KBasCmdBload:
+  lda #HW_CF
+  jsr ReqHw
+  jsr EvalAddrU16                ; FAC+3 = hi, FAC+4 = lo
+  lda z:FAC + 4
+  sta FS_IO_ADDR
+  lda z:FAC + 3
+  sta FS_IO_ADDR + 1
+  jsr ChkCom
+  jsr EvalString                 ; filename -> BAS_FNAME, STR_PTR
+  jsr FsLoadFileAddr
+  bcs @KBloadErr
+  rts
+@KBloadErr:
+  lda #<MsgLoadErr
+  ldy #>MsgLoadErr
+  jmp BasPrintStr
+
+; BSAVE addr, len, "name" — save len bytes from addr to a file
+KBasCmdBsave:
+  lda #HW_CF
+  jsr ReqHw
+  jsr EvalAddrU16                ; addr
+  lda z:FAC + 4
+  sta FS_IO_ADDR
+  lda z:FAC + 3
+  sta FS_IO_ADDR + 1
+  jsr ChkCom
+  jsr EvalAddrU16                ; length in bytes
+  lda z:FAC + 4
+  sta FS_FILE_SIZE
+  lda z:FAC + 3
+  sta FS_FILE_SIZE + 1
+  jsr ChkCom
+  jsr EvalString                 ; filename
+  jsr FsSaveFileAddr
+  bcs @KBsaveErr
+  rts
+@KBsaveErr:
+  lda #<MsgSaveErr
+  ldy #>MsgSaveErr
+  jmp BasPrintStr
+
+; FORMAT — erase (zero) the current disk's directory, with confirmation
+KBasCmdFormat:
+  lda #HW_CF
+  jsr ReqHw
+  lda #<KMsgEraseDisk
+  ldy #>KMsgEraseDisk
+  jsr BasPrintStr
+  lda CF_DISK
+  sta FS_FILE_SIZE
+  stz FS_FILE_SIZE + 1
+  jsr FsPrintSize                ; print disk number (decimal)
+  lda #<KMsgConfirm
+  ldy #>KMsgConfirm
+  jsr BasPrintStr
+@KFmtWait:
+  jsr Chrin                      ; wait for a key (echoes)
+  bcc @KFmtWait
+  and #$DF                       ; fold to uppercase
+  pha
+  jsr BasPrintCRLF
+  pla
+  cmp #'Y'
+  bne @KFmtAbort
+  jmp FsFormatDisk               ; zero the directory (returns carry status)
+@KFmtAbort:
+  rts
+KMsgEraseDisk: .byte "ERASE DISK ", 0
+KMsgConfirm:   .byte "? (Y/N) ", 0
+
 ; FsLoadFileImpl — Load file from CF into PROGRAM_START ($0800)
 ; Input: STR_PTR ($02-$03) points to null-terminated filename
 ; Output: Carry clear = success, FS_FILE_SIZE = bytes loaded
 ;         Carry set = file not found or read error
 ; Modifies: Flags, A, X, Y, CF_LBA, CF_BUF_PTR
 FsLoadFileImpl:
+  lda #<PROGRAM_START           ; Default target = PROGRAM_START
+  sta FS_IO_ADDR
+  lda #>PROGRAM_START
+  sta FS_IO_ADDR + 1
+; FsLoadFileAddrImpl — Load named file to FS_IO_ADDR (caller preset)
+; Input: STR_PTR = filename, FS_IO_ADDR = destination address
+FsLoadFileAddrImpl:
   jsr FsParseName               ; Parse filename into FS_FNAME_BUF
   jsr FsReadDir                 ; Read directory sector
   bcs @FsLoadErr
@@ -1969,10 +2155,10 @@ FsLoadFileImpl:
   sta CF_LBA + 1
   stz CF_LBA + 2
   stz CF_LBA + 3
-  ; Set destination pointer to PROGRAM_START
-  lda #<PROGRAM_START
+  ; Set destination pointer from FS_IO_ADDR
+  lda FS_IO_ADDR
   sta CF_BUF_PTR
-  lda #>PROGRAM_START
+  lda FS_IO_ADDR + 1
   sta CF_BUF_PTR + 1
   ; Read sectors
   ldx FS_SEC_COUNT
@@ -2004,6 +2190,13 @@ FsLoadFileImpl:
 ; Output: Carry clear = success, Carry set = error (directory full or write error)
 ; Modifies: Flags, A, X, Y, CF_LBA, CF_BUF_PTR
 FsSaveFileImpl:
+  lda #<PROGRAM_START           ; Default source = PROGRAM_START
+  sta FS_IO_ADDR
+  lda #>PROGRAM_START
+  sta FS_IO_ADDR + 1
+; FsSaveFileAddrImpl — Save FS_FILE_SIZE bytes from FS_IO_ADDR to named file
+; Input: STR_PTR = filename, FS_IO_ADDR = source address, FS_FILE_SIZE = byte count
+FsSaveFileAddrImpl:
   jsr FsParseName               ; Parse filename into FS_FNAME_BUF
   jsr FsReadDir                 ; Read directory sector
   bcc @FsSaveReadOk
@@ -2060,6 +2253,22 @@ FsSaveFileImpl:
 @FsSaveRound:
   inc FS_SEC_COUNT
 @FsSaveNoRound:
+  ; Disk-full guard: reject if the file would spill past this disk's region.
+  ; end sector = FS_NEXT_SEC + FS_SEC_COUNT must be <= FS_DISK_SECTORS.
+  lda FS_NEXT_SEC
+  clc
+  adc FS_SEC_COUNT
+  tay                           ; Y = end sector low
+  lda FS_NEXT_SEC + 1
+  adc #$00                      ; A = end sector high
+  cmp #>FS_DISK_SECTORS
+  bcc @FsSaveSpaceOk            ; end high < high(FS_DISK_SECTORS) -> fits
+  bne @FsSaveDiskFull           ; end high > high(FS_DISK_SECTORS) -> full
+  tya                           ; end high equal: OK only if end low == 0
+  beq @FsSaveSpaceOk
+@FsSaveDiskFull:
+  jmp @FsSaveErr                ; Disk full
+@FsSaveSpaceOk:
   ; Fill in directory entry at CF_BUF_PTR
   ; Copy filename (11 bytes)
   ldy #$00
@@ -2106,10 +2315,10 @@ FsSaveFileImpl:
   sta CF_LBA + 1
   stz CF_LBA + 2
   stz CF_LBA + 3
-  ; Source = PROGRAM_START
-  lda #<PROGRAM_START
+  ; Source = FS_IO_ADDR
+  lda FS_IO_ADDR
   sta CF_BUF_PTR
-  lda #>PROGRAM_START
+  lda FS_IO_ADDR + 1
   sta CF_BUF_PTR + 1
   ldx FS_SEC_COUNT
   beq @FsSaveOk                 ; Zero-size file
@@ -2585,7 +2794,7 @@ Splash:
   sta STR_PTR + 1
   jsr VideoPrintStrImpl
   rts
-@SplashTitle: .asciiz "-- 6502 BIOS v1.0 --"
+@SplashTitle: .asciiz "-- 6502 BIOS v1.1 --"
 @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler

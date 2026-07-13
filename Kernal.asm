@@ -65,9 +65,13 @@ FsFormatDisk:   jmp FsFormatDiskImpl    ; $A084 - Zero the current disk's direct
 FsSetDisk:      jmp FsSetDiskImpl       ; $A087 - Select current CF disk (A=0-255)
 FsGetDisk:      jmp FsGetDiskImpl       ; $A08A - Get current CF disk (A=disk)
 FsPrintDisk:    jmp FsPrintDiskImpl     ; $A08D - Print "DISK n" + CRLF via Chrout
+; --- General output utilities (console = IO_MODE-routed via Chrout) ---
+PrintStr:       jmp PrintStrImpl        ; $A090 - Print NUL-terminated string (A=lo, Y=hi); clobbers A,Y,STR_PTR
+PrintCRLF:      jmp PrintCRLFImpl       ; $A093 - Print CR+LF
+PrintDecU16:    jmp PrintDecU16Impl     ; $A096 - Print unsigned 16-bit decimal (A=lo, X=hi), no leading zeros
 
-; Reserved entries ($A090-$A0FE)
-.repeat 37
+; Reserved entries ($A099-$A0FE)
+.repeat 34
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -448,6 +452,31 @@ VideoPrintStrImpl:
   bne @VideoPrintStrLoop        ; Max 256 chars per string
 @VideoPrintStrDone:
   rts
+
+; PrintStr — Print a NUL-terminated string to the console (routed by IO_MODE
+; through Chrout, so it works for video OR serial).  General-purpose; used by
+; BASIC (via the BasPrintStr alias) and available to cartridges.
+; Input : A = string address low, Y = string address high
+; Output: A, Y clobbered; X preserved; clobbers STR_PTR (Chrout preserves it)
+PrintStrImpl:
+  sta STR_PTR
+  sty STR_PTR + 1
+  ldy #$00
+@PrintStrLoop:
+  lda (STR_PTR),y
+  beq @PrintStrDone             ; NUL terminator
+  jsr Chrout
+  iny
+  bne @PrintStrLoop             ; Max 256 chars per call
+@PrintStrDone:
+  rts
+
+; PrintCRLF — Emit CR ($0D) then LF ($0A) via Chrout.
+PrintCRLFImpl:
+  lda #$0D
+  jsr Chrout
+  lda #$0A
+  jmp Chrout
 
 ; KernalInit — Initialize RAM variables, probe & init all hardware
 ; Sets HW_PRESENT, IO_MODE, IRQ/BRK/NMI pointers, BOOT_VECTOR=0
@@ -1809,24 +1838,31 @@ FsCalcNextSec:
 @FsCalcRound:
   inc FS_SEC_COUNT              ; Round up
 @FsCalcNoRound:
-  ; End sector = start + sector count
+  ; End sector = start + sector count.
+  ; NOTE: X holds the directory-entry loop counter, so the end sector must
+  ; NOT be kept in X (doing so ran the scan off the end of the directory
+  ; buffer into program memory, corrupting FS_NEXT_SEC and causing spurious
+  ; ?SAVE ERROR after a few files).  Stash it in memory scratch instead:
+  ; FS_SEC_COUNT (end low) and FS_DIR_IDX (end high) are both free here.
   lda FS_START_SEC
   clc
   adc FS_SEC_COUNT
-  pha
+  sta FS_SEC_COUNT              ; end sector low (reuse as scratch)
   lda FS_START_SEC + 1
   adc #$00
-  tax                           ; X = end sector high
-  pla                           ; A = end sector low
+  sta FS_DIR_IDX               ; end sector high (reuse as scratch)
   ; Compare with FS_NEXT_SEC — keep the larger value
-  cpx FS_NEXT_SEC + 1
-  bcc @FsCalcNext               ; End < FS_NEXT_SEC, skip
+  cmp FS_NEXT_SEC + 1
+  bcc @FsCalcNext               ; End high < FS_NEXT_SEC high, skip
   bne @FsCalcUpdate             ; End high > FS_NEXT_SEC high, update
+  lda FS_SEC_COUNT
   cmp FS_NEXT_SEC
-  bcc @FsCalcNext               ; End low < FS_NEXT_SEC low
+  bcc @FsCalcNext               ; End low < FS_NEXT_SEC low, skip
 @FsCalcUpdate:
+  lda FS_SEC_COUNT
   sta FS_NEXT_SEC
-  stx FS_NEXT_SEC + 1
+  lda FS_DIR_IDX
+  sta FS_NEXT_SEC + 1
 @FsCalcNext:
   ; Advance CF_BUF_PTR by 32
   lda CF_BUF_PTR
@@ -1910,6 +1946,15 @@ FsDirectory:
   bne @FsDirLoop
   rts
 
+; PrintDecU16 — Print an unsigned 16-bit value as decimal (no leading zeros).
+; General-purpose console output; used by BASIC (line numbers) and available
+; to cartridges.  Shares the FsPrintSize core below.
+; Input : A = value low, X = value high
+; Modifies: Flags, A, X, Y, FS_FILE_SIZE (consumed), FS_DIR_IDX
+PrintDecU16Impl:
+  sta FS_FILE_SIZE
+  stx FS_FILE_SIZE + 1
+  ; fall through to the shared decimal-print core
 ; FsPrintSize — Print 16-bit value in FS_FILE_SIZE as decimal
 ; Modifies: Flags, A, X, Y
 FsPrintSize:
@@ -2794,7 +2839,7 @@ Splash:
   sta STR_PTR + 1
   jsr VideoPrintStrImpl
   rts
-@SplashTitle: .asciiz "-- 6502 BIOS v1.1 --"
+@SplashTitle: .asciiz "-- 6502 BIOS v1.2 --"
 @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler

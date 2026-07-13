@@ -587,33 +587,14 @@ BasPrintOK:
         jmp     BasPrintStr
 
 ; =============================================================================
-;   B a s P r i n t S t r
+;   B a s P r i n t S t r  /  B a s P r i n t C R L F
 ; =============================================================================
-; Print a NUL-terminated string via Chrout.
-; Input  : A=lo, Y=hi  (string address)
-; Clobbers : A, Y  (X preserved)
-; =============================================================================
-BasPrintStr:
-        sta     BAS_TMP1
-        sty     BAS_TMP1+1
-        ldy     #0
-@Loop:
-        lda     (BAS_TMP1),y
-        beq     @Done
-        jsr     Chrout
-        iny
-        bne     @Loop
-@Done:
-        rts
-
-; =============================================================================
-;   B a s P r i n t C R L F
-; =============================================================================
-BasPrintCRLF:
-        lda     #$0D
-        jsr     Chrout
-        lda     #$0A
-        jmp     Chrout
+; These were promoted to the KERNAL jump table as PrintStr ($A090) and
+; PrintCRLF ($A093) so cartridges can reuse them and the KERNAL no longer
+; depends on BASIC-segment code.  Keep the old BASIC names as aliases so the
+; existing call sites (and A=lo/Y=hi convention) are unchanged.
+BasPrintStr     := PrintStr
+BasPrintCRLF    := PrintCRLF
 
 ; =============================================================================
 ;   B a s R e a d L i n e
@@ -1465,63 +1446,14 @@ BasCmdList:
 ;   B a s P r i n t L i n e N u m
 ; =============================================================================
 ; Print BAS_LINNUM (16-bit unsigned) as decimal (no leading zeros, no sign).
-; Clobbers : A, X, Y, BAS_TMP1.
+; Thin shim over the KERNAL PrintDecU16 ($A096); the decimal-print core now
+; lives once in the KERNAL (shared with FsPrintSize).
+; Clobbers : A, X, Y, FS_FILE_SIZE, FS_DIR_IDX.
 ; =============================================================================
 BasPrintLineNum:
-        ; Repeated-subtraction divide by powers of ten.
-        ; Suppress leading zeros via flag in BAS_TMP3.
-        stz     BAS_TMP3                ; printed-something flag
-        stz     BAS_TMP2                ; current-digit accumulator
-
         lda     BAS_LINNUM
-        sta     BAS_TMP1
-        lda     BAS_LINNUM+1
-        sta     BAS_TMP1+1
-
-        ldx     #0
-@PowerLoop:
-        ; Subtract powers[X], counting iterations to get digit.
-        ldy     #0                      ; digit counter
-@Sub:
-        sec
-        lda     BAS_TMP1
-        sbc     PowersOfTenLo,x
-        tay                             ; temp save
-        lda     BAS_TMP1+1
-        sbc     PowersOfTenHi,x
-        bcc     @SubDone
-        sta     BAS_TMP1+1
-        sty     BAS_TMP1
-        ; reuse Y for digit count via a scratch?  Use BAS_TMP2.
-        inc     BAS_TMP2
-        bra     @Sub
-@SubDone:
-        ; Digit is in BAS_TMP2.
-        lda     BAS_TMP2
-        ora     BAS_TMP3                ; if any prior digit OR this digit nonzero, print
-        beq     @SkipDigit
-        lda     BAS_TMP2
-        ora     #'0'
-        jsr     Chrout
-        lda     #1
-        sta     BAS_TMP3
-@SkipDigit:
-        stz     BAS_TMP2
-        inx
-        cpx     #4                      ; ten-thousands, thousands, hundreds, tens
-        bne     @ResetAndLoop
-        ; Final ones digit is in TMP1 (0-9).
-        lda     BAS_TMP1
-        ora     #'0'
-        jsr     Chrout
-        rts
-@ResetAndLoop:
-        bra     @PowerLoop
-
-PowersOfTenLo:
-        .byte   <10000, <1000, <100, <10
-PowersOfTenHi:
-        .byte   >10000, >1000, >100, >10
+        ldx     BAS_LINNUM+1
+        jmp     PrintDecU16
 
 ; =============================================================================
 ;   B a s C m d P r i n t
@@ -5656,8 +5588,13 @@ EvalAtom:
         ; ASCII numeric: jump to Fin.  Fin uses ChrGet to consume.
         jmp     Fin
 @str:
-        ; '"' string literal.  Consume the opening quote, then StrLit.
-        jsr     ChrGet                  ; consume "
+        ; '"' string literal.  Advance past the opening quote WITHOUT ChrGet:
+        ; ChrGet skips spaces, which would strip leading spaces inside the
+        ; string literal (e.g. PRINT "   X").  Bump TXTPTR by one byte instead.
+        inc     TXTPTR
+        bne     @strsrc
+        inc     TXTPTR+1
+@strsrc:
         ; StrLit expects (Y,A) = src.  Source = TXTPTR.
         lda     TXTPTR
         ldy     TXTPTR+1
@@ -5701,6 +5638,16 @@ EvalAtom:
         iny
         lda     (VARPNT),y
         sta     FAC+2
+        ; Record the descriptor's address (= VARPNT) in FAC+3/FAC+4 so the
+        ; temp-free logic (FreFac/FreTms) can tell this is a variable, not a
+        ; temp: VARPNT's high byte is nonzero (vars live at $08xx) so it can
+        ; never match a temp-stack slot (all in zero page) and will not be
+        ; freed or reclaimed.  Without this, a stale FAC+3/FAC+4 can spuriously
+        ; match LASTPT and free/reclaim a live string.
+        lda     VARPNT
+        sta     FAC+3
+        lda     VARPNT+1
+        sta     FAC+4
         rts
 
 ; ---------------------------------------------------------------------------
@@ -6450,6 +6397,17 @@ BasCmdLet:
         iny
         lda     FAC+2
         sta     (VARPNT),y
+        ; If the RHS was a temporary string (StrLt2/PutNew pushed it and left
+        ; its descriptor address in FAC+3/FAC+4 == LASTPT), pop it now that
+        ; the variable owns the heap copy.  Pop only (FreTms), never FreFac --
+        ; reclaiming would free the string we just stored.  For a plain
+        ; variable RHS, @loadStr set FAC+3/FAC+4 to that variable's address
+        ; (nonzero high byte), which cannot match a temp slot, so FreTms is a
+        ; no-op.  Without this, >3 consecutive string LETs leak the 3-slot
+        ; temp stack (?FORMULA TOO COMPLEX).
+        lda     FAC+3
+        ldy     FAC+4
+        jsr     FreTms
         rts
 @synErr:
         pla
@@ -7265,6 +7223,15 @@ BasCmdInput:
         iny
         lda     FAC+2
         sta     (BAS_FORPNT),y
+        ; StrLt2 pushed a temporary string descriptor via PutNew.  The
+        ; variable now owns the heap copy, so pop the temp (pop only -- do
+        ; NOT use FreFac, which would reclaim the heap we just handed to the
+        ; variable).  Leaving temps unfreed leaks the 3-slot temp stack and
+        ; both overflows it (?FORMULA TOO COMPLEX) and corrupts later strings
+        ; via stale descriptor pointers.
+        lda     FAC+3
+        ldy     FAC+4
+        jsr     FreTms
 @afterStore:
         ; Save data ptr; restore program TXTPTR.
         lda     TXTPTR
@@ -7842,10 +7809,23 @@ FnCall:
         jmp     BasErrorVec
 
 ; ---------------------------------------------------------------------------
-; Reserved dispatch slot -- raise SYNTAX ERROR.
+; BasCmdDim -- DIM statement.  Dimension one or more arrays.
+;   On entry ChrGet has advanced past the DIM token, so A = first char of the
+;   first variable name.  For each name we call PtrGet2 with the from-DIM flag
+;   ($40) set in X; the '(' branch runs Array -> MakeNewArray, which allocates
+;   the array using the subscripts as sizes (0..N) and returns without looking
+;   up an element (DIMFLG nonzero).  Names are separated by commas.
 ; ---------------------------------------------------------------------------
-BasCmdNotImpl:
-        jmp     SynErr
+BasCmdDim:
+        ldx     #$40                    ; from-DIM flag (bit 6)
+        jsr     PtrGet2                 ; A = name char; create/dimension array
+        jsr     ChrGot
+        cmp     #','
+        bne     @done
+        jsr     ChrGet                  ; consume comma, advance to next name
+        bra     BasCmdDim
+@done:
+        rts
 
 ; ===========================================================================
 ;   H A R D W A R E - E X T E N S I O N   S T A T E M E N T S
@@ -8400,7 +8380,7 @@ BasTokenAddrTbl:
         .word   BasCmdNext-1            ; $82 NEXT
         .word   BasCmdData-1            ; $83 DATA
         .word   BasCmdInput-1           ; $84 INPUT
-        .word   BasCmdNotImpl-1         ; $85 DIM (handled inline by LET/array access)
+        .word   BasCmdDim-1             ; $85 DIM
         .word   BasCmdRead-1            ; $86 READ
         .word   BasCmdLet-1             ; $87 LET
         .word   BasCmdGoto-1            ; $88 GOTO

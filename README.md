@@ -21,7 +21,7 @@ The probe-and-boot sequence is:
 8. **Splash screen** — displayed on the active console:
 
 ```
-  -- 6502 BIOS v1.1 --
+  -- 6502 BIOS v1.2 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
@@ -369,6 +369,9 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A087` | `FsSetDisk` | Select current CF disk bank: `A` = 0–255 → `CF_DISK` ($030F) |
 | `$A08A` | `FsGetDisk` | Get current CF disk bank: `A` ← `CF_DISK` |
 | `$A08D` | `FsPrintDisk` | Print `DISK n` + CRLF via `Chrout` (uses current `CF_DISK`) |
+| `$A090` | `PrintStr` | Print a NUL-terminated string via `Chrout`: `A`=lo, `Y`=hi (address) |
+| `$A093` | `PrintCRLF` | Print CR+LF via `Chrout` |
+| `$A096` | `PrintDecU16` | Print an unsigned 16-bit value as decimal, no leading zeros: `A`=lo, `X`=hi |
 
 ### Cartridge Support
 

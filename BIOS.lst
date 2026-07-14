@@ -100,8 +100,8 @@ Current file: BIOS.asm
 000000r 2               BAS_WARM            := $036F             ; Warm-start magic ($A5 = previously initialised)
 000000r 2               BAS_POSX            := $0370             ; PRINT column counter (0-39 video / 0-79 serial)
 000000r 2               BAS_INPSAV          := $0371             ; $0371-$0372 - Saved TXTPTR across INPUT REDO retry
-000000r 2               BAS_FNAME           := $0373             ; $0373-$037E - 12-byte scratch for null-terminated filename (Phase 7)
 000000r 2               FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
+000000r 2               BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 000000r 2               
 000000r 2               FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
 000000r 2               
@@ -12092,8 +12092,9 @@ Current file: BIOS.asm
 00279Dr 2               @illqty:
 00279Dr 2  4C rr rr             jmp     IqErr
 0027A0r 2               
-0027A0r 2               ; Evaluate string expression -> copy up to 11 chars to BAS_FNAME,
+0027A0r 2               ; Evaluate string expression -> copy up to 12 chars to BAS_FNAME,
 0027A0r 2               ; null-terminate, set STR_PTR := BAS_FNAME, free temp string.
+0027A0r 2               ; 12 = full 8.3 form ("NAME.EXT" = 8 name + '.' + 3 ext).
 0027A0r 2               EvalString:
 0027A0r 2  20 rr rr             jsr     FrmEvl
 0027A3r 2  20 rr rr             jsr     ChkStr
@@ -12104,19 +12105,19 @@ Current file: BIOS.asm
 0027AEr 2  A0 00                ldy     #0
 0027B0r 2  A6 0E                ldx     FAC                     ; length
 0027B2r 2               @cpy:
-0027B2r 2  C0 0B                cpy     #11
+0027B2r 2  C0 0C                cpy     #12
 0027B4r 2  F0 0D                beq     @done
 0027B6r 2  E0 00                cpx     #0
 0027B8r 2  F0 09                beq     @done
 0027BAr 2  B1 20                lda     (INDEX),y
-0027BCr 2  99 73 03             sta     BAS_FNAME,y
+0027BCr 2  99 81 03             sta     BAS_FNAME,y
 0027BFr 2  C8                   iny
 0027C0r 2  CA                   dex
 0027C1r 2  80 EF                bra     @cpy
 0027C3r 2               @done:
 0027C3r 2  A9 00                lda     #0
-0027C5r 2  99 73 03             sta     BAS_FNAME,y
-0027C8r 2  A9 73                lda     #<BAS_FNAME
+0027C5r 2  99 81 03             sta     BAS_FNAME,y
+0027C8r 2  A9 81                lda     #<BAS_FNAME
 0027CAr 2  85 02                sta     STR_PTR
 0027CCr 2  A9 03                lda     #>BAS_FNAME
 0027CEr 2  85 03                sta     STR_PTR+1

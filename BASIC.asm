@@ -7912,8 +7912,9 @@ FacToU16:
 @illqty:
         jmp     IqErr
 
-; Evaluate string expression -> copy up to 11 chars to BAS_FNAME,
+; Evaluate string expression -> copy up to 12 chars to BAS_FNAME,
 ; null-terminate, set STR_PTR := BAS_FNAME, free temp string.
+; 12 = full 8.3 form ("NAME.EXT" = 8 name + '.' + 3 ext).
 EvalString:
         jsr     FrmEvl
         jsr     ChkStr
@@ -7924,7 +7925,7 @@ EvalString:
         ldy     #0
         ldx     FAC                     ; length
 @cpy:
-        cpy     #11
+        cpy     #12
         beq     @done
         cpx     #0
         beq     @done

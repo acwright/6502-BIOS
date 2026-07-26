@@ -851,20 +851,19 @@ SidPlayNoteImpl:
   rts
 
 ; SidSilence — Silence all 3 SID voices
-; Gates off all voices and zeros their frequencies
+; Gates off all voices, letting the release phase of the envelope ring out.
+;
+; The frequency registers are deliberately left alone. Zeroing them stops the
+; oscillator dead, which freezes the waveform at whatever level it had reached
+; and leaves the envelope to decay a DC offset instead of a tone — an audible
+; thump at the end of every note. Gate off is all the SID needs; the envelope
+; takes the voice to zero on its own.
 ; Modifies: Flags, A
 SidSilenceImpl:
   lda #$10                      ; Triangle wave, Gate off
   sta SID_V1_CTRL
   sta SID_V2_CTRL
   sta SID_V3_CTRL
-  lda #$00
-  sta SID_V1_FREQ_LO
-  sta SID_V1_FREQ_HI
-  sta SID_V2_FREQ_LO
-  sta SID_V2_FREQ_HI
-  sta SID_V3_FREQ_LO
-  sta SID_V3_FREQ_HI
   rts
 
 ; Play a short beep sound

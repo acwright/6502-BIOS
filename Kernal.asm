@@ -824,7 +824,7 @@ SidPlayNoteImpl:
   sty SID_V1_FREQ_HI
   lda #$09                      ; Attack = 0, Decay = 9
   sta SID_V1_AD
-  lda #$A2                      ; Sustain = A, Release = 2
+  lda #$F8                      ; Sustain = F, Release = 8
   sta SID_V1_SR
   lda #$11                      ; Triangle wave + Gate on
   sta SID_V1_CTRL
@@ -834,7 +834,7 @@ SidPlayNoteImpl:
   sty SID_V2_FREQ_HI
   lda #$09
   sta SID_V2_AD
-  lda #$A2
+  lda #$F8
   sta SID_V2_SR
   lda #$11
   sta SID_V2_CTRL
@@ -844,7 +844,7 @@ SidPlayNoteImpl:
   sty SID_V3_FREQ_HI
   lda #$09
   sta SID_V3_AD
-  lda #$A2
+  lda #$F8
   sta SID_V3_SR
   lda #$11
   sta SID_V3_CTRL

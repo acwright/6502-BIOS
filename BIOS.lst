@@ -1126,7 +1126,7 @@ Current file: BIOS.asm
 0004EBr 2  8C 01 98       sty SID_V1_FREQ_HI
 0004EEr 2  A9 09          lda #$09                      ; Attack = 0, Decay = 9
 0004F0r 2  8D 05 98       sta SID_V1_AD
-0004F3r 2  A9 A2          lda #$A2                      ; Sustain = A, Release = 2
+0004F3r 2  A9 F8          lda #$F8                      ; Sustain = F, Release = 8
 0004F5r 2  8D 06 98       sta SID_V1_SR
 0004F8r 2  A9 11          lda #$11                      ; Triangle wave + Gate on
 0004FAr 2  8D 04 98       sta SID_V1_CTRL
@@ -1136,7 +1136,7 @@ Current file: BIOS.asm
 000501r 2  8C 08 98       sty SID_V2_FREQ_HI
 000504r 2  A9 09          lda #$09
 000506r 2  8D 0C 98       sta SID_V2_AD
-000509r 2  A9 A2          lda #$A2
+000509r 2  A9 F8          lda #$F8
 00050Br 2  8D 0D 98       sta SID_V2_SR
 00050Er 2  A9 11          lda #$11
 000510r 2  8D 0B 98       sta SID_V2_CTRL
@@ -1146,7 +1146,7 @@ Current file: BIOS.asm
 000517r 2  8C 0F 98       sty SID_V3_FREQ_HI
 00051Ar 2  A9 09          lda #$09
 00051Cr 2  8D 13 98       sta SID_V3_AD
-00051Fr 2  A9 A2          lda #$A2
+00051Fr 2  A9 F8          lda #$F8
 000521r 2  8D 14 98       sta SID_V3_SR
 000524r 2  A9 11          lda #$11
 000526r 2  8D 12 98       sta SID_V3_CTRL

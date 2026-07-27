@@ -89,6 +89,7 @@ BAS_OLDTEXT         := $036D             ; $036D-$036E - Saved text ptr for CONT
 BAS_WARM            := $036F             ; Warm-start magic ($A5 = previously initialised)
 BAS_POSX            := $0370             ; PRINT column counter (0-39 video / 0-79 serial)
 BAS_INPSAV          := $0371             ; $0371-$0372 - Saved TXTPTR across INPUT REDO retry
+BAS_FNPTR           := $0373             ; $0373-$0374 - FN variable slot addr held across FnCall's expression evaluations (out of ZP so FrmEvl/Garbag cannot touch it)
 FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 

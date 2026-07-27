@@ -5985,8 +5985,11 @@ MinMaxArgs:
 ; ---------------------------------------------------------------------------
 FnLen:
         jsr     ParenStr
-        ldy     FAC                     ; length
+        lda     FAC                     ; length
+        pha                             ; FreFac returns with Y = descriptor hi
         jsr     FreFac                  ; release temp string if any
+        pla
+        tay
         jmp     SngFlt
 
 ; ---------------------------------------------------------------------------
@@ -6057,6 +6060,7 @@ FnVal:
         bne     @nz
         ; empty string -> 0
         jsr     FreFac
+        stz     VALTYP                  ; result is numeric (ParenStr set $FF)
         jmp     ZeroFac
 @nz:
         ; Stash length, address into TEMP1..TEMP1+2.
@@ -6105,6 +6109,7 @@ FnVal:
         sta     TXTPTR+1
         pla
         sta     TXTPTR
+        stz     VALTYP                  ; Fin left VALTYP = $FF from ParenStr
         rts
 
 ; ---------------------------------------------------------------------------
@@ -6196,15 +6201,15 @@ FnMidStr:
         beq     @bad                    ; m must be >= 1
         sec
         sbc     #1
-        sta     BAS_TMP1                ; offset = m-1
+        pha                             ; offset = m-1; FrmEvl below would
+                                        ; clobber BAS_TMP1, so park it here
         ; Optional ", n".
         jsr     ChrGot
         cmp     #','
         beq     @hasN
         ; No n: take rest -> n = 255 (will clamp).
         lda     #255
-        sta     BAS_TMP1+1
-        bra     @cls
+        bra     @gotN
 @hasN:
         jsr     ChrGet
         jsr     FrmEvl
@@ -6213,8 +6218,10 @@ FnMidStr:
         lda     FAC+3
         bne     @bad
         lda     FAC+4
+@gotN:
         sta     BAS_TMP1+1
-@cls:
+        pla
+        sta     BAS_TMP1
         jsr     ChkCls
         jsr     PullArg                 ; ARG = string
         ; Clamp offset to length.
@@ -7733,6 +7740,8 @@ FnCall:
         ora     #$80
         sta     SUBFLG
         jsr     PtrGet                  ; locate FN var
+        sta     BAS_FNPTR               ; durable copy: FNCNAM lives in ZP and
+        sty     BAS_FNPTR+1             ; is scratch for Garbag
         sta     BAS_FNCNAM
         sty     BAS_FNCNAM+1
         jsr     ChkNum
@@ -7758,6 +7767,9 @@ FnCall:
         jsr     FrmNum
         lda     #')'
         jsr     SynChr
+        ; Any variable reference in the argument re-pointed VARPNT (and Garbag
+        ; may have eaten FNCNAM) — reload both before storing the argument.
+        jsr     @reload
         ; Store FAC into param slot.
         ldx     VARPNT
         ldy     VARPNT+1
@@ -7790,12 +7802,7 @@ FnCall:
         pla
         sta     TXTPTR+1
         ; Restore param.  VARPNT may have been clobbered; reload.
-        ldy     #2
-        lda     (BAS_FNCNAM),y
-        sta     VARPNT
-        iny
-        lda     (BAS_FNCNAM),y
-        sta     VARPNT+1
+        jsr     @reload
         ldy     #0
 @restp:
         pla
@@ -7807,6 +7814,20 @@ FnCall:
 @undef:
         ldx     #ERR_UNDEFSTMT
         jmp     BasErrorVec
+; Re-seed FNCNAM from BAS_FNPTR and VARPNT from the FN slot's param pointer.
+; Preserves FAC (touches A and Y only).
+@reload:
+        lda     BAS_FNPTR
+        sta     BAS_FNCNAM
+        lda     BAS_FNPTR+1
+        sta     BAS_FNCNAM+1
+        ldy     #2
+        lda     (BAS_FNCNAM),y
+        sta     VARPNT
+        iny
+        lda     (BAS_FNCNAM),y
+        sta     VARPNT+1
+        rts
 
 ; ---------------------------------------------------------------------------
 ; BasCmdDim -- DIM statement.  Dimension one or more arrays.
@@ -8031,11 +8052,13 @@ BasCmdColor:
         asl     a
         asl     a
         asl     a
-        sta     BAS_TMP1
+        pha                             ; fg must survive FrmEvl -> stack, not ZP
         jsr     ChkCom
         jsr     GetByt                  ; X = bg
         txa
         and     #$0F
+        sta     BAS_TMP1
+        pla
         ora     BAS_TMP1
         jmp     VideoSetColor
 
@@ -8191,15 +8214,21 @@ BasCmdNvram:
         jmp     RtcWriteNVRAM
 
 ; WAIT addr, mask
+; As with POKE, the address must survive evaluation of the second argument,
+; which is free to trample BAS_TMP1 (FacToU16, MID$/LEFT$/RIGHT$, ...).
 BasCmdWait:
         jsr     EvalAddrU16
-        lda     FAC+4
-        sta     BAS_TMP1
-        lda     FAC+3
-        sta     BAS_TMP1+1
+        lda     FAC+3                   ; hi
+        pha
+        lda     FAC+4                   ; lo
+        pha
         jsr     ChkCom
         jsr     GetByt                  ; X = mask
         stx     BAS_TMP2
+        pla
+        sta     BAS_TMP1
+        pla
+        sta     BAS_TMP1+1
 @poll:
         jsr     BasCheckBreak
         ldy     #0
@@ -8230,14 +8259,22 @@ BasCmdBrk:
         rts
 
 ; POKE addr, val
+; The value expression is evaluated BEFORE the address is parked in INDEX:
+; FrmEvl clobbers every zero-page scratch pair (INDEX via LoadFacFromYa,
+; BAS_TMP1 via FacToU16 / the string functions), so the address has to ride
+; the hardware stack across the evaluation.
 BasCmdPoke:
         jsr     EvalAddrU16
-        lda     FAC+4
-        sta     INDEX
-        lda     FAC+3
-        sta     INDEX+1
+        lda     FAC+3                   ; hi
+        pha
+        lda     FAC+4                   ; lo
+        pha
         jsr     ChkCom
         jsr     GetByt                  ; X = val
+        pla
+        sta     INDEX
+        pla
+        sta     INDEX+1
         txa
         ldy     #0
         sta     (INDEX),y

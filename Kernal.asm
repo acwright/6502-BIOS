@@ -16,7 +16,7 @@ BufferSize:     jmp BufferSizeImpl      ; $A00C - Get buffer count
 SetIOMode:      jmp SetIOModeImpl       ; $A00F - Set IO_MODE
 GetIOMode:      jmp GetIOModeImpl       ; $A012 - Get IO_MODE
 ; --- Video (TMS9918) ---
-InitVideo:      jmp InitVideoImpl       ; $A015 - Initialize TMS9918
+InitVideo:      jmp InitVideoImpl       ; $A015 - Initialize TMS9918 (mode registers + character set)
 VideoClear:     jmp VideoClearImpl      ; $A018 - Clear video screen
 VideoPutChar:   jmp VideoPutCharImpl    ; $A01B - Write char at cursor
 VideoSetCursor: jmp VideoSetCursorImpl  ; $A01E - Set cursor (X=col, Y=row)
@@ -541,8 +541,7 @@ KernalInitImpl:
   lda HW_PRESENT
   and #HW_VID
   beq @SkipVideo
-  jsr InitVideoImpl
-  jsr InitCharacters
+  jsr InitVideoImpl             ; Also loads the character set
 @SkipVideo:
 
   ; Console auto-detection — determine IO_MODE from available hardware
@@ -680,19 +679,22 @@ InitSIDImpl:
   rts
 
 ; Initialize the Video Card (TMS9918)
-; Modifies: Flags, A, X
+; Writes the eight mode registers (text mode, 40x24) and reloads the character
+; set into the pattern table at $0800, so a program that overwrote the glyphs
+; can fully restore text mode with a single call.
+; Modifies: Flags, A, X, Y
 InitVideoImpl:
   ldx #$00                      ; Start with register 0
 @InitVideoLoop:
   lda @InitVideoRegData,x       ; Load register value
   sta VC_REG                    ; Write data byte
-  txa                           
+  txa
   ora #$80                      ; Set bit 7 to indicate register write
   sta VC_REG                    ; Write register number
   inx
   cpx #$08                      ; Check if all 8 registers written
   bne @InitVideoLoop            ; Continue until done
-  rts
+  jmp InitCharacters            ; Restore the character set (tail call)
 @InitVideoRegData:
   .byte $00                     ; R0: Mode control (no external video)
   .byte $D0                     ; R1: 16K, display on, interrupt off, text mode M1
@@ -704,8 +706,15 @@ InitVideoImpl:
   .byte $1F                     ; R7: Black text on white background
 
 ; Initialize the character set
+; Copies the 2KB character ROM into the pattern table at VRAM $0800.
+; STR_PTR is used as the source pointer but is saved and restored, so callers
+; may hold a pointer there across the call.
 ; Modifies: Flags, A, X, Y
 InitCharacters:
+  lda STR_PTR                   ; Preserve caller's STR_PTR
+  pha
+  lda STR_PTR + 1
+  pha
   ; Set VRAM write address to $0800 (pattern table base)
   lda #$00                      ; Low byte of address
   sta VC_REG
@@ -727,6 +736,10 @@ InitCharacters:
   inc STR_PTR + 1               ; Move to next page
   dex
   bne @InitCharPageLoop         ; Loop for all 8 pages
+  pla                           ; Restore caller's STR_PTR
+  sta STR_PTR + 1
+  pla
+  sta STR_PTR
   rts
 
 ; Initialize the INPUT_BUFFER

@@ -328,7 +328,7 @@ All public Kernal entry points are accessed through stable 3-byte `jmp` slots. C
 | `$A00C` | `BufferSize` | Return number of bytes waiting in buffer |
 | `$A00F` | `SetIOMode` | Set `IO_MODE`: `A`=0 (video) or 1 (serial) |
 | `$A012` | `GetIOMode` | Get `IO_MODE` → `A` |
-| `$A015` | `InitVideo` | Initialise TMS9918 video chip |
+| `$A015` | `InitVideo` | Initialise TMS9918 video chip — writes the mode registers **and** reloads the character set into the pattern table at `$0800` |
 | `$A018` | `VideoClear` | Clear the screen |
 | `$A01B` | `VideoPutChar` | Write character at current cursor position |
 | `$A01E` | `VideoSetCursor` | Set cursor: `X`=column (0–39), `Y`=row (0–23) |

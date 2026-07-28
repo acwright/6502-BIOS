@@ -1004,6 +1004,7 @@ MonCmdLoad:
   sta MON_ADDR
   lda XFER_REMAIN+1
   sta MON_ADDR+1
+  jsr MonNoteImage
   jsr MonPrintLoaded            ; Print "LOADED nnnn BYTES AT $xxxx"
   rts
 @LoadSerErr:
@@ -1121,6 +1122,7 @@ MonCmdLoad:
   sta MON_ADDR
   lda FS_FILE_SIZE+1
   sta MON_ADDR+1
+  jsr MonNoteImage
   jsr MonPrintLoaded            ; Print "LOADED nnnn BYTES AT $xxxx"
   rts
 @LoadCFSecErr:
@@ -1138,6 +1140,35 @@ MonCmdLoad:
   bra @LoadCFNFLoop
 @LoadCFNFDone:
   jsr MonPrintCRLF
+  rts
+
+; ============================================================================
+; MonNoteImage — Record a program image loaded to PROGRAM_START, so that BASIC
+; can size it correctly on entry.  'L' is the one raw loader that can land a
+; .prg where BASIC expects one; without the byte count BASIC would walk the
+; line chain, stop at the stub's end marker, and leave the machine code
+; unprotected below VARTAB.
+; Input: MON_END = load address, MON_ADDR = byte count
+; Output: PRG_IMAGE_END set, but only for a load to PROGRAM_START — a load to
+;         any other address is BLOAD-shaped and must not touch BASIC's state.
+; Modifies: Flags, A
+; ============================================================================
+
+MonNoteImage:
+  lda MON_END
+  cmp #<PROGRAM_START
+  bne @NoteDone
+  lda MON_END+1
+  cmp #>PROGRAM_START
+  bne @NoteDone
+  clc
+  lda MON_ADDR
+  adc #<PROGRAM_START
+  sta PRG_IMAGE_END
+  lda MON_ADDR+1
+  adc #>PROGRAM_START
+  sta PRG_IMAGE_END+1
+@NoteDone:
   rts
 
 ; ============================================================================

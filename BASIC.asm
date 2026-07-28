@@ -372,6 +372,23 @@ BasEntry:
 
 @Warm:
         ; Warm restart - skip banner; the OK printer will lead with CRLF.
+        ; A loader outside BASIC may have dropped a new image at $0800 since we
+        ; were last here (drop to the Monitor, 'L' a program, 'X' back).  Adopt
+        ; it: the old variables describe a program that no longer exists, so
+        ; ARYTAB/STREND follow VARTAB exactly as they would on a fresh LOAD.
+        lda     PRG_IMAGE_END
+        ora     PRG_IMAGE_END+1
+        beq     BasReadyLoop
+        jsr     ProgramEnd
+        sta     BAS_VARTAB
+        sty     BAS_VARTAB+1
+        ldx     #1
+@adopt:
+        lda     BAS_VARTAB,x
+        sta     BAS_ARYTAB,x
+        sta     BAS_STREND,x
+        dex
+        bpl     @adopt
 
 ; -----------------------------------------------------------------------------
 ; BasReadyLoop - REPL: print OK, read a line, dispatch.
@@ -427,66 +444,14 @@ BasColdInit:
         lda     #>$8000
         sta     BAS_MEMSIZ+1
 
-        ; Auto-detect a pre-loaded program at $0800: if the first word looks
-        ; like a valid next-pointer (high byte in [$08, $80)), walk the chain
-        ; to compute end-of-program.  Otherwise install an empty program.
-        lda     BAS_PRG_START+1         ; high byte of first next-ptr
-        cmp     #$08
-        bcc     @InstallEmpty
-        cmp     #$80
-        bcs     @InstallEmpty
-
-        ; Walk the chain to find the end-marker (next-ptr = 0).
-        lda     #<BAS_PRG_START
-        sta     BAS_TMP1
-        lda     #>BAS_PRG_START
-        sta     BAS_TMP1+1
-@WalkLoop:
-        ldy     #1
-        lda     (BAS_TMP1),y            ; next-ptr high byte
-        beq     @WalkDone               ; 0 → end-marker reached
-        cmp     #>$8000                 ; next-ptr must point below MEMSIZ
-        bcs     @InstallEmpty           ; out of range → not a real program
-        sta     BAS_TMP2+1              ; stash candidate next-ptr
-        ldy     #0
-        lda     (BAS_TMP1),y            ; next-ptr low byte
-        sta     BAS_TMP2
-        ; Program lines are stored in strictly ascending address order.  If the
-        ; candidate next-ptr does not advance upward, we are walking random
-        ; power-up RAM (which on a cold boot can otherwise loop forever) — bail
-        ; out and install an empty program instead.
-        lda     BAS_TMP1
-        cmp     BAS_TMP2
-        lda     BAS_TMP1+1
-        sbc     BAS_TMP2+1
-        bcs     @InstallEmpty           ; current >= candidate → invalid chain
-        lda     BAS_TMP2                ; advance to the next line
-        sta     BAS_TMP1
-        lda     BAS_TMP2+1
-        sta     BAS_TMP1+1
-        bra     @WalkLoop
-@WalkDone:
-        ; BAS_TMP1 points at the end-marker; VARTAB = TMP1 + 2.
-        clc
-        lda     BAS_TMP1
-        adc     #2
+        ; Where does the program already sitting at $0800 end?  The Kernal owns
+        ; this: it prefers a byte count recorded by a loader outside BASIC (so a
+        ; Monitor-loaded .prg keeps its machine code), falls back to a chain
+        ; walk, and installs an empty program if there is nothing usable.
+        jsr     ProgramEnd
         sta     BAS_VARTAB
-        lda     BAS_TMP1+1
-        adc     #0
-        sta     BAS_VARTAB+1
-        bra     @InitFinalize
+        sty     BAS_VARTAB+1
 
-@InstallEmpty:
-        ; Write [00][00] end-marker at $0800; VARTAB = $0802.
-        lda     #0
-        sta     BAS_PRG_START
-        sta     BAS_PRG_START+1
-        lda     #<(BAS_PRG_START+2)
-        sta     BAS_VARTAB
-        lda     #>(BAS_PRG_START+2)
-        sta     BAS_VARTAB+1
-
-@InitFinalize:
         ; ARYTAB = STREND = VARTAB; FRETOP = MEMSIZ.
         lda     BAS_VARTAB
         sta     BAS_ARYTAB
@@ -1162,6 +1127,11 @@ BasDeleteAtIndex:
 ;            BAS_TOKBUF = NUL-terminated payload (non-empty).
 ; On exit  : Carry SET on success, CLEAR if not enough memory.
 ;            VARTAB / ARYTAB / STREND advanced to new end-of-program.
+;
+; This is why a .prg's BASIC stub cannot be edited: the shift moves everything
+; up to VARTAB, and the new pointers come from the chain alone, so attached
+; machine code is both relocated and dropped from VARTAB's view.  Its addresses
+; are absolute, so it would break either way — the C64 has the same constraint.
 ; =============================================================================
 BasInsertAtIndex:
         ; Compute payload length L (excluding NUL): scan TOKBUF.
@@ -7982,29 +7952,52 @@ BasPr2D:
         ora     #'0'
         jmp     Chrout
 
-; Walk program chain after LOAD to recompute BAS_VARTAB.
-;   On entry: ChrGot any.
+; BasFixChain -- recompute end-of-program pointers after a program image load.
+; A program image is the raw bytes belonging at $0800 up: a tokenized line chain
+; and, for a .prg, machine code sitting past the chain's $0000 terminator.  A
+; chain walk alone only ever finds the end of the BASIC part, so the loader's
+; byte count has to be taken into account too.
+;   Input:  A = loaded image size lo, Y = size hi (0 = size unknown; chain only)
+;   Output: BAS_VARTAB = BAS_ARYTAB = BAS_STREND
+;             = max(chain-end + 2, PROGRAM_START + size)
+;   Note:   a size that would push the result past BAS_MEMSIZ is rejected and the
+;           chain-end candidate is used instead.
+; Mirroring VARTAB into ARYTAB/STREND matters on its own: Makenewvariable places
+; a new scalar at ARYTAB, so leaving it at its post-NEW $0802 makes the first
+; direct-mode assignment after a LOAD overwrite the program's first line.
+        .assert (PROGRAM_START & $FF) = 0, error, "PROGRAM_START must be page-aligned"
 BasFixChain:
-        lda     #<PROGRAM_START
-        sta     INDEX
+        sta     BAS_TMP2                ; BAS_TMP2 = PROGRAM_START + size; the
+        tya                             ; low byte passes through untouched
+        clc                             ; because PROGRAM_START is page-aligned
+        adc     #>PROGRAM_START
+        sta     BAS_TMP2+1
+        stz     INDEX
         lda     #>PROGRAM_START
         sta     INDEX+1
 @walk:
-        ldy     #0
-        lda     (INDEX),y
+        ldy     #1
+        lda     (INDEX),y               ; next-ptr hi
         sta     BAS_TMP1
-        iny
-        lda     (INDEX),y
-        sta     BAS_TMP1+1
-        ora     BAS_TMP1
+        dey
+        ora     (INDEX),y               ; both bytes zero -> terminator
         beq     @end
-        lda     BAS_TMP1
+        ; Lines ascend in memory.  LOAD accepts any file, so a corrupt or
+        ; cyclic chain is reachable here — stop at the last good line rather
+        ; than loop forever.
+        sec
+        lda     INDEX
+        sbc     (INDEX),y
+        lda     INDEX+1
+        sbc     BAS_TMP1
+        bcs     @end                    ; current >= next -> not a real chain
+        lda     (INDEX),y               ; next-ptr lo
         sta     INDEX
-        lda     BAS_TMP1+1
+        lda     BAS_TMP1
         sta     INDEX+1
         bra     @walk
 @end:
-        ; INDEX points at terminator ($00 $00).  VARTAB = INDEX + 2.
+        ; INDEX points at terminator ($00 $00).  Candidate A = INDEX + 2.
         clc
         lda     INDEX
         adc     #2
@@ -8012,6 +8005,34 @@ BasFixChain:
         lda     INDEX+1
         adc     #0
         sta     BAS_VARTAB+1
+        ; Candidate B = BAS_TMP2.  Keep it only when A <= B <= MEMSIZ, so a
+        ; short or absent size loses the max and a bogus one cannot push
+        ; VARTAB out of memory.
+        sec
+        lda     BAS_TMP2
+        sbc     BAS_VARTAB
+        lda     BAS_TMP2+1
+        sbc     BAS_VARTAB+1
+        bcc     @mirror                 ; B < A -> keep A
+        sec
+        lda     BAS_MEMSIZ
+        sbc     BAS_TMP2
+        lda     BAS_MEMSIZ+1
+        sbc     BAS_TMP2+1
+        bcc     @mirror                 ; B > MEMSIZ -> reject, keep A
+        lda     BAS_TMP2
+        sta     BAS_VARTAB
+        lda     BAS_TMP2+1
+        sta     BAS_VARTAB+1
+@mirror:
+        ; ARYTAB / STREND follow VARTAB on a fresh load: no variables yet.
+        ldx     #1
+@copy:
+        lda     BAS_VARTAB,x
+        sta     BAS_ARYTAB,x
+        sta     BAS_STREND,x
+        dex
+        bpl     @copy
         rts
 
 ; --- Statements -----------------------------------------------------------
@@ -8284,10 +8305,7 @@ BasCmdPoke:
 BasCmdLoad:
         jsr     ChrGot
         beq     @bare
-        cmp     #'"'
-        beq     @cf
-        ; treat as expression that should yield a string -> CF
-        bra     @cf
+        bra     @cf                     ; any argument is a filename expression
 @bare:
         lda     #HW_SC
         jsr     ReqHw
@@ -8296,6 +8314,11 @@ BasCmdLoad:
         lda     #>PROGRAM_START
         sta     XFER_PTR+1
         jsr     XModemLoad
+        ; XMODEM rounds up to a 128-byte block, so this can overshoot the true
+        ; end by up to 127 bytes: it wastes a little variable space, never
+        ; truncates.
+        lda     XFER_REMAIN
+        ldy     XFER_REMAIN+1
         jmp     BasFixChain
 @cf:
         lda     #HW_CF
@@ -8303,6 +8326,8 @@ BasCmdLoad:
         jsr     EvalString
         jsr     FsLoadFile
         bcs     @err
+        lda     FS_FILE_SIZE
+        ldy     FS_FILE_SIZE+1
         jmp     BasFixChain
 @err:
         lda     #<MsgLoadErr
@@ -8313,9 +8338,7 @@ BasCmdLoad:
 BasCmdSave:
         jsr     ChrGot
         beq     @bare
-        cmp     #'"'
-        beq     @cf
-        bra     @cf
+        bra     @cf                     ; any argument is a filename expression
 @bare:
         lda     #HW_SC
         jsr     ReqHw

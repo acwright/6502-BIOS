@@ -506,6 +506,9 @@ KernalInitImpl:
   stz HW_PRESENT                ; Clear all hardware flags
   stz BOOT_VECTOR               ; Clear boot redirect vector
   stz BOOT_VECTOR + 1
+  stz PRG_IMAGE_END             ; No externally-loaded program image yet.  This
+  stz PRG_IMAGE_END + 1         ;   runs before any loader can, so a non-zero
+                                ;   value always means a loader put it there
   stz CF_DISK                   ; Reset current CF disk bank to 0
 
   jsr InitBuffer                ; Initialize the input buffer (RAM-only, no hardware)
@@ -576,6 +579,91 @@ KernalInitImpl:
 KernalVersionImpl:
   lda #BIOS_VERSION_MAJOR
   ldx #BIOS_VERSION_MINOR
+  rts
+
+; ProgramEnd — Determine where the program image at PROGRAM_START ends.
+; A program image is a tokenized BASIC line chain, optionally followed by machine
+; code (a ".prg").  Only a byte count can find the end of the machine code; a
+; chain walk stops at the $0000 end marker.  So prefer a count recorded by a
+; loader running outside BASIC, and fall back to the walk when there is none.
+; Input: none (reads PRG_IMAGE_END, set by Monitor L when it loads to $0800)
+; Output: A = end lo, Y = end hi — the address BASIC should use for VARTAB
+; Modifies: Flags, A, X, Y, PE_PTR, PE_NEXT, PRG_IMAGE_END (consumed)
+; Note: writes the $00 $00 end marker at PROGRAM_START in the empty case.
+; Not in the jump table — BASIC calls this label directly, as it does ReqHw.
+ProgramEnd:
+  ; --- 1. A loader recorded a byte count: trust it if it is in range ---
+  lda PRG_IMAGE_END
+  ldx PRG_IMAGE_END + 1
+  stz PRG_IMAGE_END             ; Consume it either way, so a stale value cannot
+  stz PRG_IMAGE_END + 1         ;   be acted on twice
+  cpx #>PROGRAM_START           ; Must be >= PROGRAM_START + 2 (0 fails here too)
+  bcc @PeWalk
+  bne @PeHiOk
+  cmp #<(PROGRAM_START + 2)
+  bcc @PeWalk
+@PeHiOk:
+  cpx #>MEMORY_TOP              ; ...and must not run past the top of RAM
+  bcc @PeUse
+  bne @PeWalk
+  cmp #<MEMORY_TOP
+  bne @PeWalk
+@PeUse:
+  phx                           ; Y = hi; A still holds lo
+  ply
+  rts
+
+  ; --- 2. No count: walk the line chain to the $0000 end marker ---
+@PeWalk:
+  lda PROGRAM_START + 1         ; High byte of the first next-pointer: a real
+  cmp #>PROGRAM_START           ;   program's lines all live in [$0800, $8000)
+  bcc @PeEmpty
+  cmp #>MEMORY_TOP
+  bcs @PeEmpty
+  lda #<PROGRAM_START
+  sta PE_PTR
+  lda #>PROGRAM_START
+  sta PE_PTR + 1
+@PeWalkLoop:
+  ldy #1
+  lda (PE_PTR),y                ; Next-pointer high byte
+  beq @PeWalkDone               ; 0 → end marker reached
+  cmp #>MEMORY_TOP              ; Out of range → not a real program
+  bcs @PeEmpty
+  sta PE_NEXT + 1
+  dey
+  lda (PE_PTR),y                ; Next-pointer low byte
+  sta PE_NEXT
+  ; Lines are stored in strictly ascending address order.  If the next-pointer
+  ; does not advance upward we are walking random power-up RAM, which would
+  ; otherwise loop forever — bail out and install an empty program.
+  lda PE_PTR
+  cmp PE_NEXT
+  lda PE_PTR + 1
+  sbc PE_NEXT + 1
+  bcs @PeEmpty                  ; current >= candidate → invalid chain
+  lda PE_NEXT                   ; Advance to the next line
+  sta PE_PTR
+  lda PE_NEXT + 1
+  sta PE_PTR + 1
+  bra @PeWalkLoop
+@PeWalkDone:
+  clc                           ; PE_PTR is on the end marker; end = PE_PTR + 2
+  lda PE_PTR
+  adc #2
+  tax
+  lda PE_PTR + 1
+  adc #0
+  tay
+  txa
+  rts
+
+  ; --- 3. Nothing usable at $0800: install an empty program ---
+@PeEmpty:
+  stz PROGRAM_START             ; Write the [00][00] end marker
+  stz PROGRAM_START + 1
+  lda #<(PROGRAM_START + 2)
+  ldy #>(PROGRAM_START + 2)
   rts
 
 ; Reset — Full system startup: init hardware, beep, check boot vector, splash, boot menu
@@ -1642,6 +1730,10 @@ StWriteSectorImpl:
 ; Input: STR_PTR ($02-$03) points to null-terminated filename
 ; Output: FS_FNAME_BUF filled with padded 8+3 name
 ; Modifies: Flags, A, X, Y
+; The extension is inert: it is split on the dot, padded into the directory
+; fields, and matched by FsFindFile's flat 11-byte compare.  Nothing anywhere
+; branches on it, so .PRG / .BAS / .FOO all behave identically — what a file
+; means is decided by the command that loads it (LOAD vs BLOAD), never by name.
 FsParseName:
   ; Fill FS_FNAME_BUF with spaces
   lda #$20
@@ -2851,7 +2943,7 @@ Splash:
   sta STR_PTR + 1
   jsr VideoPrintStrImpl
   rts
-@SplashTitle: .asciiz "-- 6502 BIOS v1.2 --"
+@SplashTitle: .asciiz "-- 6502 BIOS v1.3 --"
 @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler

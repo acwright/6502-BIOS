@@ -21,7 +21,7 @@ The probe-and-boot sequence is:
 8. **Splash screen** — displayed on the active console:
 
 ```
-  -- 6502 BIOS v1.2 --
+  -- 6502 BIOS v1.3 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
@@ -109,6 +109,36 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `FORMAT` | Erase the current disk's file directory (prompts `ERASE DISK n? (Y/N)`) |
 | `BANK <n>` | Select 1KB RAM bank `n` at `$8000–$83FE` |
 | `MEM` | Print free bytes, `HW=$xx`, and `DISK n` |
+
+#### Program Files (`.bas` and `.prg`)
+
+Both extensions name the same thing: the bytes of a program, ready to sit at
+`$0800`. A `.prg` is one of these whose BASIC part is a single `10 SYS 2060` line
+with machine code attached behind it. The extension is a label for your benefit —
+nothing in the BIOS reads it, so name files whatever helps you.
+
+What decides the behaviour is the command, not the filename:
+
+| Command | Use it for |
+|---------|------------|
+| `LOAD "name"` / `SAVE "name"` | Programs. Loads at `$0800` and readies BASIC to `RUN` it |
+| `BLOAD <addr>,"name"` / `BSAVE <addr>,<len>,"name"` | Raw bytes at an address you choose — data, graphics, code |
+
+Both accept any filename, so `BLOAD 32768,"GUESS.BAS"` will happily drop a BASIC
+program at `$8000` as raw data.
+
+`LOAD` and `SAVE` round-trip a `.prg` intact, machine code included, and `MEM`
+accounts for the whole thing.
+
+Two rules for `.prg` files:
+
+- **Don't edit the BASIC line.** Inserting or deleting a line shifts the attached
+  machine code, whose addresses were fixed when it was built. `LIST`, `RUN` and
+  `SAVE` are all fine. (The C64 works the same way.)
+- **Load them with `LOAD`.** The Monitor's `L` also works, as long as you take its
+  default `$0800` address and then `X` back to BASIC. A Wozmon upload does not —
+  it has no way to tell BASIC how long the image is, so the machine code is lost
+  as soon as you assign a variable.
 
 **Video & Display**
 
@@ -234,7 +264,7 @@ The monitor is entered in three ways:
 
 | Command | Syntax | Description |
 |---------|--------|-------------|
-| `L` | `L "file" [addr]` | Load from CompactFlash (with filename) or XModem (without) to address (default `$0800`) |
+| `L` | `L "file" [addr]` | Load from CompactFlash (with filename) or XModem (without) to address (default `$0800`). Loading at the default address lets `X` hand the program straight to BASIC, ready to `RUN` |
 | `S` | `S "file" addr addr` | Save to CompactFlash (with filename) or XModem (without) |
 | `@` | `@` | List current disk's directory (prints `DISK n` header) |
 | `#` | `# NN` | Select CF disk bank `NN` (hex 00–FF); `#` alone reports the current disk |

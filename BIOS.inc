@@ -25,6 +25,12 @@ MON_TMP             := $32               ; $32-$33 - Monitor temp pointer (2 byt
 MON_BYTE            := $34               ; $34     - Monitor parsed byte scratch
 MON_IDX             := $35               ; $35     - Monitor input line index
 
+; ProgramEnd chain-walk scratch.  Aliases the CF sector pointer / LBA, which are
+; idle whenever ProgramEnd runs (BASIC cold init or BASIC entry, never with an
+; I/O transfer in flight).
+PE_PTR              := CF_BUF_PTR        ; $24-$25 - chain walk cursor
+PE_NEXT             := CF_LBA            ; $26-$27 - candidate next-pointer
+
 ; Stack
 STACK               := $0100             ; $0100-$01FF
 
@@ -92,6 +98,9 @@ BAS_INPSAV          := $0371             ; $0371-$0372 - Saved TXTPTR across INP
 BAS_FNPTR           := $0373             ; $0373-$0374 - FN variable slot addr held across FnCall's expression evaluations (out of ZP so FrmEvl/Garbag cannot touch it)
 FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
+PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a program image placed at PROGRAM_START by a loader
+                                         ;   outside BASIC (Monitor L); 0 = none.  Cleared by KernalInit and consumed by
+                                         ;   ProgramEnd, so a stale value can never be mistaken for a fresh load.
 
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
 
@@ -108,13 +117,14 @@ XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 1
-BIOS_VERSION_MINOR  = 2
+BIOS_VERSION_MINOR  = 3
 
 ; User Vars
 USER_VARS           := $0400             ; $0400-$07FF
 
 ; Program
 PROGRAM_START       := $0800             ; $0800-$7FFF
+MEMORY_TOP          := $8000             ; First address past usable RAM (I/O starts here)
 
 ; RAM Card | IO 1 | $8000-$83FF 
 RAM_DATA_L          := $8000             ; R/W ($8000-$83FE)

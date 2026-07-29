@@ -8617,7 +8617,7 @@ ErrorMessages:
 ; =============================================================================
 
 MsgBanner:
-        .byte   $0D,$0A,"6502 BASIC V2.1",$0D,$0A,0
+        .byte   $0D,$0A,"6502 BASIC V2.0",$0D,$0A,0
 
 MsgBytesFreeNL:
         .byte   " BYTES FREE",$0D,$0A,0

@@ -1,0 +1,9 @@
+name: self-check — a tier 2 expectation that cannot match is reported as a failure
+selftest: must-fail
+timeout: 3000
+
+# The tier 1 self-check proves the BASIC verdict path; this one proves the
+# transcript path, which has its own way of deciding a case passed.
+> PRINT 6*7
+~ ^ 42$
+~ THIS TEXT IS NEVER PRINTED

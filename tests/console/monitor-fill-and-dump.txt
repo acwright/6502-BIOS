@@ -1,0 +1,13 @@
+name: the Monitor fills a range and dumps it back
+# README: "F addr addr byte — Fill memory range with a byte value"
+#         "M [addr] [addr] — Hex + ASCII memory dump (8 bytes/line)"
+#
+# Dump lines carry the Supermon leading `.` so a line can be edited on screen
+# and re-entered; the prompt itself is `. `.
+mode: monitor
+
+> F 1000 100F AA
+> M 1000 100F
+~ ^\.:1000 AA AA AA AA AA AA AA AA
+~ ^\.:1008 AA AA AA AA AA AA AA AA
+! ^\.:1010

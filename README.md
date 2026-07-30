@@ -73,7 +73,7 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `GOSUB` | `GOSUB linenum` | Push current position and jump. Up to 64 levels deep |
 | `RETURN` | `RETURN` | Pop the GOSUB stack and resume after the calling `GOSUB` |
 | `IF` | `IF expr THEN stmt [ELSE stmt]` | Execute THEN branch if `expr` non-zero, else (if present) the ELSE branch. `THEN linenum` is shorthand for `THEN GOTO linenum` |
-| `FOR` | `FOR var = init TO limit [STEP step]` | Counted loop. Default step is `1`. Up to 8 nested loops |
+| `FOR` | `FOR var = init TO limit [STEP step]` | Counted loop. Default step is `1`. Up to 8 nested loops. The limit is tested at `NEXT`, as in Microsoft 6502 BASIC, so the body always runs at least once — `FOR I = 5 TO 1` runs once and leaves `I` at 6 |
 | `NEXT` | `NEXT [var [, var ...]]` | Increment loop variable and branch back to matching `FOR` if condition holds |
 | `REM` | `REM [text]` | Comment — rest of line is ignored |
 | `END` | `END` | Stop execution and return to `OK`. Variables preserved |

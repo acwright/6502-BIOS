@@ -1,0 +1,11 @@
+name: PRINT uses the leading-space sign convention
+# README: "Numbers print with a leading-space sign convention (positive numbers
+# prefixed by a space, negative by `-`)."
+mode: basic
+
+> PRINT 6*7
+~ ^ 42$
+> PRINT -6*7
+~ ^-42$
+> PRINT 0
+~ ^ 0$

@@ -1,0 +1,5 @@
+# name: GOTO jumps unconditionally
+10 GOTO 40
+20 PRINT "FAIL FELL THROUGH"
+30 END
+40 PRINT "PASS"

@@ -17,6 +17,7 @@ package-lock.json
 # *.lst
 *.map
 *.sym
+*.dbg
 
 # Backup and temporary files
 *~
@@ -34,6 +35,9 @@ Thumbs.db
 
 # Test binaries
 tests/*.bin
+tests/fixtures/*.img
+tests/fixtures/*.prg
+tests/fixtures/*.bin
 
 # AI prompts
 *.prompt.md

@@ -1,0 +1,9 @@
+# name: THEN linenum is shorthand for THEN GOTO linenum
+# README: "`THEN linenum` is shorthand for `THEN GOTO linenum`"
+10 IF 1 THEN 100
+20 PRINT "FAIL NO BRANCH ON TRUE"
+30 END
+100 IF 0 THEN 200
+110 PRINT "PASS"
+120 END
+200 PRINT "FAIL BRANCHED ON FALSE"

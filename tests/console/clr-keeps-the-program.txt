@@ -1,0 +1,19 @@
+name: CLR keeps the program while NEW erases it
+# README: "CLR — Clear variables and arrays; reset GOSUB/FOR stacks. Program is kept"
+#         "NEW — Erase the program and clear variables"
+#
+# The pair is one case because the contrast is the point: both clear variables,
+# and only one of them keeps the program. The second RUN is what proves it —
+# LIST would too, but that pins the detokenizer's spacing at the same time,
+# which belongs in its own case.
+mode: basic
+
+> 10 CLR
+> 20 PRINT "RAN"
+> RUN
+~ ^RAN
+> RUN
+~ ^RAN
+> NEW
+> RUN
+! RAN

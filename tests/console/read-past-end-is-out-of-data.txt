@@ -1,0 +1,9 @@
+name: READ past the last DATA item raises OUT OF DATA
+# README: "READ var [,var ...] — ... OUT OF DATA if exhausted"
+mode: basic
+
+> 10 READ A
+> 20 READ B
+> 100 DATA 1
+> RUN
+~ ^\?OUT OF DATA ERROR IN 20

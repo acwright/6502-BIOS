@@ -1,0 +1,8 @@
+name: dimensioning an array twice raises REDIM'D ARRAY
+# README: "DIM var(size) ... REDIM'D ARRAY if already dimensioned"
+mode: basic
+
+> 10 DIM A(5)
+> 20 DIM A(5)
+> RUN
+~ ^\?REDIM'D ARRAY ERROR IN 20

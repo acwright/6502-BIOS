@@ -1,0 +1,12 @@
+name: END returns to OK with variables intact
+# README: "END — Stop execution and return to OK. Variables preserved"
+#
+# Tier 1 cannot see this: the verdict has to be read after the program has
+# already stopped, from immediate mode.
+mode: basic
+
+> 10 A = 42
+> 20 END
+> RUN
+> PRINT A
+~ ^ 42

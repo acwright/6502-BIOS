@@ -1,0 +1,8 @@
+name: an index past a DIMed array's size raises BAD SUBSCRIPT
+# README: "DIM var(size) ... valid indices 0..size. ... BAD SUBSCRIPT"
+mode: basic
+
+> 10 DIM A(5)
+> 20 A(6) = 1
+> RUN
+~ ^\?BAD SUBSCRIPT ERROR IN 20

@@ -584,13 +584,32 @@ commit before its fix.
 1. Write the phase's tests against the README, not against the ROM.
 2. Run them. Triage every failure per §10.1 — a failing test is a finding, not a
    test bug, until shown otherwise.
-3. Fix the BIOS bugs. One commit per fix, each adding its pin to §6.12.
+3. Fix the BIOS bugs, **committing each one as it goes green** (§10.6). Each
+   commit carries its fix, its pin from §6.12, and its doc change together.
 4. Fix the README where the code was right.
 5. Phase is done when nothing is red and every `xfail` has been raised.
 
 Writing the tests before looking at the ROM's actual output is what keeps step 2
 honest. Reading the output first makes it very easy to write an assertion that
 describes it.
+
+### 10.6 Commit as the work happens
+
+**Commit at each green point, when it goes green.** A fix and its pin are one
+commit, made as soon as the suite passes with them — not batched up and sorted
+out later.
+
+This is a rule about *when*, not about how many. Many small commits are wanted.
+What is not wanted is arriving at a large working tree with several fixes in it
+and then reconstructing the history — reverting the tree, replaying each change,
+committing between. That produces a tidy log, but the tree it replays is not the
+tree that was tested, every intermediate state has to be rebuilt from memory, and
+the reviewer is reading a story written after the fact. If the log needs to show
+one commit per fix, the way to get it is to make them one at a time.
+
+A commit is ready when `make test` is green and the fix, its pinned case, and any
+README change are all in it. That is a cheap bar to clear several times an hour,
+which is the point: it means there is never a reason to rewind.
 
 ### 10.5 Version and release policy
 

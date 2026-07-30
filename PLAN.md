@@ -291,6 +291,22 @@ case, and a malformed-input case.
 Also: an unknown command character is rejected without hanging; a blank line
 re-prompts; the `.` prompt is exactly `. `.
 
+**What §6.3 hands to later phases.** Everything above is covered except three
+things, all of which need something a later phase builds:
+
+- `L` and `S` round-trips, and a populated or full directory, need phase 4's CF
+  fixtures. The blank-card cases — an empty `@` listing and `L`'s
+  `FILE NOT FOUND` — are done, since the emulator always attaches a card.
+- The CF-absent row (`L`/`S`/`@` → `I/O ERROR`) is **not** reachable by
+  detaching anything: the emulator's `Machine` always fits a blank 32 MB
+  `Storage`, so there is no card-absent state to run on. It is reached the way
+  §6.11 reaches every other degradation row — clear the CF bit in `HW_PRESENT`
+  at `$030D` — and so it belongs to phase 6, not here.
+- `D`'s output is pinned against a planted fixture rather than a ROM region,
+  with one ROM case asserting only the jump table's `JMP` stride. Disassembling
+  real ROM text would re-pin the ROM's contents into a test about the
+  disassembler, and would break on any unrelated Kernal edit.
+
 ### 6.4 BASIC statements — ~70 cases, Tier 1 unless noted
 
 Every one of the 54 entries in `KeywordTbl` from `$80 END` to `$B5 MEM`.
@@ -435,7 +451,7 @@ Every row of the README's degradation table. `HW_PRESENT` is patched with
 |---|---|
 | CF (`$08`) | `LOAD`/`SAVE`/`DIR`/`DEL`/`BLOAD`/`BSAVE`/`FORMAT` → `NO DEVICE`; Monitor `L`/`S`/`@` → `I/O ERROR`; no hang |
 | Serial (`$10`) | no hang in the IRQ handler; XModem paths return an error |
-| VIA (`$20`) | `JOY()` → 0; `PAUSE` still takes roughly the right time via the software fallback |
+| VIA (`$20`) | `JOY()` → `$FF`, not 0 — the ports are active low and idle high, so "no VIA" has to read as *nothing pressed*, which is what phase 2 fixed and `JOY reads $FF, not 0, when no VIA is fitted` pins; `PAUSE` still takes roughly the right time via the software fallback |
 | SID (`$40`) | `SOUND`, `VOL`, `Beep` return silently, no error |
 | Video (`$80`) | `CLS`, `LOCATE`, `COLOR` consume their arguments and do nothing |
 | RTC (`$04`) | `TIME`/`DATE`/`SETTIME`/`SETDATE`/`NVRAM` write → `NO DEVICE`; `NVRAM()` read → 0 |

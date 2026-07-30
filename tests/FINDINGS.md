@@ -54,6 +54,35 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### String comparison and VAL leaked temp descriptors
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/basic/string-concat-and-compare.bas`,
+  `tests/basic/val-parses-what-it-can.bas`, `tests/basic/len-asc-chr-str.bas`
+- **Phase:** 2 (found and fixed)
+
+The third string comparison in a program raised `?FORMULA TOO COMPLEX`, and so
+did the fourth `VAL` of a literal. The temp string descriptor stack holds three
+entries; both routines pushed one per call and never popped it, so any program
+doing real string work died after a couple of statements.
+
+Two independent causes, both leaving a slot behind:
+
+**`RelOpsStr`** frees both operands and had the order right, but freeing goes by
+the descriptor's *own address* in `FAC+3`/`FAC+4`, and the ARG path copied only
+the length and pointer (`ARG`..`ARG+2`) into `FAC`. `FreFac` was left looking at
+the right operand's slot, already popped, so `FreTms` never matched `LASTPT` and
+the left operand's temp stayed. `PushFac`/`PullArg` already carry those two
+bytes through as `ARG+3`/`ARG+4` — they just weren't being copied back.
+
+**`FnVal`** frees its argument on the empty-string path and not on the parsing
+path. The free cannot simply be appended after the parse: `FAC+3`/`FAC+4` are
+mantissa bytes of the number `Fin` has just produced, and writing the descriptor
+address back over them corrupts the result — `VAL("123")` returned `123.000839`
+when tried that way. It is freed before parsing instead, which is what msbasic's
+`VAL` does. Releasing the heap only marks it reusable, and nothing allocates
+between there and `Fin`, so the characters are still intact to parse.
+
 ### RUN linenum branched and then stopped
 
 - **Bucket:** BIOS bug — code wrong, docs right

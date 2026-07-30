@@ -5305,6 +5305,16 @@ RelOpsStr:
         sta     FAC+1
         lda     ARG+2
         sta     FAC+2
+        ; +3/+4 are the descriptor's own address, which is what FreFac frees
+        ; by -- copying only the len/lo/hi above left FreFac looking at the
+        ; right operand's slot, already popped, so it never matched LASTPT and
+        ; the left temp was never reclaimed.  PushFac/PullArg carry these two
+        ; bytes through for exactly this.  One leaked slot per comparison, and
+        ; the third string compare in a program hit ?FORMULA TOO COMPLEX.
+        lda     ARG+3
+        sta     FAC+3
+        lda     ARG+4
+        sta     FAC+4
         lda     #$FF
         sta     VALTYP
         jsr     FreFac
@@ -6047,6 +6057,16 @@ FnVal:
         sta     TEMP1+1
         lda     FAC+2
         sta     TEMP1+2
+        ; Reclaim the argument's temp now, while FAC still holds its
+        ; descriptor -- msbasic's VAL frees before parsing for the same
+        ; reason.  It cannot wait until after Fin: FAC+3/+4 are the two bytes
+        ; FreFac frees by, and by then they are mantissa of the parsed number.
+        ; Freeing only releases the heap for reuse and nothing allocates
+        ; between here and Fin, so the characters stay intact to parse.
+        ; Without it the temp leaked: the empty-string path above frees, the
+        ; parsing path did not, and three VALs of a literal in one program
+        ; exhausted the 3-slot temp stack with ?FORMULA TOO COMPLEX.
+        jsr     FreFac
         ; Save the byte at offset = length and replace with $00.
         lda     TEMP1+1
         sta     INDEX

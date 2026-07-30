@@ -54,6 +54,24 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### RUN linenum branched and then stopped
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/run-from-a-line-number.txt`
+- **Phase:** 2 (found and fixed)
+
+`RUN 20` cleared variables, printed nothing at all, and returned to `OK`.
+
+Bare `RUN` ends by zeroing `CURLIN` to leave direct mode. `RUN linenum` took a
+different path — `BasCmdClr` then `BasCmdGoto` — and `BasCmdGoto` only moves
+`TXTPTR`. With `CURLIN+1` still `$FF`, `BasNewstt` treated the branch target as
+an immediate-mode statement and returned to the READY loop after it, so exactly
+one statement ran unless it happened to print.
+
+Fixed by zeroing `CURLIN` on that path too, after the branch rather than before
+it, so an undefined target still reports `?UNDEF'D STATEMENT ERROR` without a
+spurious `IN 0`.
+
 ### READ put garbage in every string DATA item
 
 - **Bucket:** BIOS bug — code wrong, docs right

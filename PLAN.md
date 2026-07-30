@@ -453,6 +453,8 @@ obvious. From the current log:
 - **String DATA read as zero-page garbage** — `tests/basic/data-string-literals.bas`.
   Found and fixed in phase 2. `tests/console/input-reads-numbers-and-strings.txt`
   guards the INPUT side of the routine the fix merged them into.
+- **`RUN linenum` ran one statement and stopped** —
+  `tests/console/run-from-a-line-number.txt`. Found and fixed in phase 2.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

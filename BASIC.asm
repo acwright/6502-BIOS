@@ -6972,7 +6972,16 @@ BasCmdRun:
 @withLine:
         jsr     BasCmdClr
         jsr     ChrGot
-        jmp     BasCmdGoto
+        jsr     BasCmdGoto              ; does not return if the line is undefined
+        ; Leave direct mode, exactly as the bare RUN path above does.
+        ; BasCmdGoto only moves TXTPTR; while CURLIN+1 is still $FF, BasNewstt
+        ; treats the branch target as an immediate-mode statement and returns
+        ; to the READY loop after it -- so `RUN 20` printed nothing at all.
+        ; Set after the branch, not before, so an undefined line still reports
+        ; `?UNDEF'D STATEMENT ERROR` with no spurious `IN 0` line number.
+        stz     BAS_CURLIN
+        stz     BAS_CURLIN+1
+        rts
 
 ; ---------------------------------------------------------------------------
 ; Statement: END / STOP -- save CONT context and return to REPL.

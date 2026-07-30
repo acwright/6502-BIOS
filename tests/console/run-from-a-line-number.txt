@@ -1,0 +1,15 @@
+name: RUN linenum starts at that line and RUN clears variables
+# README: "RUN [linenum] — Clear variables and run the program (optionally from linenum)"
+mode: basic
+
+> 10 PRINT "FIRST"
+> 20 PRINT "SECOND"
+> RUN 20
+~ ^SECOND
+! ^FIRST
+> 5 A = 7
+> 30 PRINT "A IS";A
+> RUN
+~ ^A IS 7
+> RUN 20
+~ ^A IS 0

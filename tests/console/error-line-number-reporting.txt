@@ -1,0 +1,14 @@
+name: an error in a program reports IN nnnn, one in immediate mode does not
+# README: errors print `?MESSAGE ERROR`, with `IN nnnn` when running
+#
+# The same fault raised twice, once from a program and once from the prompt.
+# The immediate-mode assertion is a negative one: `IN` must not appear, since
+# BAS_CURLIN is $FF there and there is no line to name.
+mode: basic
+
+> 10 PRINT 1 / 0
+> RUN
+~ \?DIVISION BY ZERO ERROR IN 10
+> PRINT 1 / 0
+~ \?DIVISION BY ZERO ERROR$
+! DIVISION BY ZERO ERROR IN

@@ -1,0 +1,21 @@
+name: TYPE MISMATCH and STRING TOO LONG
+# README: the error list in ErrorMessages
+#
+# A string cannot exceed 255 characters, so building one past that has to fail
+# rather than wrap into a short string — the failure mode a length byte invites.
+mode: basic
+
+> PRINT "A" + 1
+~ \?TYPE MISMATCH ERROR
+> A = "TEXT"
+~ \?TYPE MISMATCH ERROR
+> B$ = 42
+~ \?TYPE MISMATCH ERROR
+> PRINT LEN(5)
+~ \?TYPE MISMATCH ERROR
+> 10 A$ = "0123456789"
+> 20 FOR I = 1 TO 8
+> 30 A$ = A$ + A$
+> 40 NEXT I
+> RUN
+~ \?STRING TOO LONG ERROR IN 30

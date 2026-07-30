@@ -1,0 +1,32 @@
+name: ILLEGAL DIRECT and FORMULA TOO COMPLEX
+# README: the error list in ErrorMessages
+#
+# ILLEGAL DIRECT is what INPUT raises when typed at the prompt: it has nowhere
+# to return to.
+#
+# FORMULA TOO COMPLEX comes from exhausting the three-slot temp string
+# descriptor stack. Until the leaks fixed in 97374e0 that fired after two or
+# three ordinary string operations; now it takes genuine nesting, which is what
+# makes this case worth having — it tests the limit rather than the leak.
+#
+# Right-nested concatenation is what reaches it: each pending left operand sits
+# on the temp stack while the right side is evaluated, so three nested levels
+# hold three descriptors and the fourth has nowhere to go. Nesting that reduces
+# as it goes, like LEFT$(LEFT$(...)), frees each temp as it is consumed and
+# never holds more than a couple at once — which is why the LEFT$ line below
+# succeeds and the shorter concatenation does not.
+#
+# Both sides of the boundary are asserted, so the case fails if the limit
+# shrinks as well as if it disappears. Three slots is msbasic's limit too, and
+# FORMULA TOO COMPLEX is its documented signal: reaching it here is the error
+# working, not a defect.
+mode: basic
+
+> INPUT A
+~ \?ILLEGAL DIRECT ERROR
+> PRINT LEFT$(LEFT$(LEFT$(LEFT$("ABCDE",4),3),2),1)
+~ ^A$
+> PRINT "A"+("B"+"C")
+~ ^ABC$
+> PRINT "A"+("B"+("C"+"D"))
+~ \?FORMULA TOO COMPLEX ERROR

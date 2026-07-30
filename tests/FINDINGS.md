@@ -54,6 +54,32 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### NEXT without a FOR ran off a garbage stack frame
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/error-control-flow.txt`
+- **Phase:** 2 (found and fixed)
+
+`NEXT` with no matching `FOR` printed `?SYNTAX ERROR IN 0` instead of
+`?NEXT WITHOUT FOR ERROR` — the wrong message, and an `IN 0` that cannot be
+right in immediate mode, where there is no line to name.
+
+`GtForPnt` reports "no frame found" by ending its search paths with `lda #0`,
+which **sets** Z. `BasCmdNext` tested `beq` for *found*. So a search that found
+nothing was read as success: `NEXT` did `txs` onto whatever offset the walk had
+left in X, read a frame out of unrelated stack bytes, and eventually died on the
+garbage — with `CURLIN` picked up from the same rubbish, hence `IN 0`.
+
+`BasCmdFor` already carried a comment observing that `GtForPnt`'s Z flag cannot
+distinguish the two cases, and worked around it by skipping its prior-frame pop
+entirely. `BasCmdReturn` escapes because it re-tests the returned tag against
+`TOK_GOSUB` itself rather than trusting the flag.
+
+`GtForPnt` now reports found in carry — `sec` on the found path, `clc` on both
+not-found paths — and `BasCmdNext` branches on that. Two bytes. `BasCmdFor`'s
+branch was switched to carry as well so it is at least honest about which case
+it is in; its behaviour is unchanged, since skipping the pop is deliberate.
+
 ### PRINT HEX() rejected the top half of the address map
 
 - **Bucket:** BIOS bug — code wrong, docs right

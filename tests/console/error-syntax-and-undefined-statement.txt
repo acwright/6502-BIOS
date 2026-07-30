@@ -1,0 +1,24 @@
+name: SYNTAX and UNDEF'D STATEMENT, each from its minimal cause
+# README: the error list in ErrorMessages
+#
+# Every case in this group asserts two things: the exact text, and that BASIC
+# comes back to `OK` rather than wedging — which is what the transcript's
+# closing prompt expectation covers for free.
+#
+# An unterminated string literal is deliberately not in here: end of line
+# closes it, as in Microsoft 6502 BASIC, so `PRINT "UNCLOSED` prints UNCLOSED
+# and is not an error. That was the first thing this case tried and the ROM was
+# right to accept it.
+mode: basic
+
+> PRINT 1 +
+~ \?SYNTAX ERROR
+> LET = 5
+~ \?SYNTAX ERROR
+> IF 1 GOSUB 10
+~ \?SYNTAX ERROR
+> GOTO 9999
+~ \?UNDEF'D STATEMENT ERROR
+> 10 GOSUB 8888
+> RUN
+~ \?UNDEF'D STATEMENT ERROR IN 10

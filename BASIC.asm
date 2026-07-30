@@ -6826,13 +6826,16 @@ GtForPnt:
         bne     @scan
         ; Walked off stack
         lda     #0
+        clc                             ; not found
         rts
 @notFor:
         cmp     #TOK_GOSUB
         beq     @found
         lda     #0
+        clc                             ; not found
         rts
 @found:
+        sec                             ; found; A still holds the tag or FORPNT
         rts
 
 ; ---------------------------------------------------------------------------
@@ -7500,12 +7503,12 @@ BasCmdFor:
         sta     BAS_FORPNT+1
         ; Discard any prior FOR frame for the same variable to avoid leak.
         jsr     GtForPnt
-        bne     @noOld                  ; Z=0 -> not found (lda #0 sets Z=1; we invert below)
-        ; Actually GtForPnt's "not found" path also ends with `lda #0;rts` (Z=1).
-        ; So the BEQ/BNE distinction can't be used. Skip the prior-frame
-        ; pop entirely; the runtime can tolerate one stray frame and msbasic
-        ; FOR re-uses the same slot only when an explicit FOR with a matching
-        ; variable already exists, which is rare.
+        bcc     @noOld                  ; carry clear -> no matching frame
+        ; The prior-frame pop is still skipped: the runtime tolerates one stray
+        ; frame, and msbasic re-uses the slot only when an explicit FOR with a
+        ; matching variable already exists, which is rare. GtForPnt does now
+        ; report found/not-found in carry (Z was ambiguous and unusable), so
+        ; this branch is at least honest about which case it is in.
 @noOld:
         ; Discard our caller's (BasExecuteStatement's) return address so
         ; that the FOR frame sits on the stack with no other junk above it.
@@ -7619,8 +7622,12 @@ BasCmdNext:
         sta     BAS_FORPNT
         sta     BAS_FORPNT+1
 @find:
+        ; Carry, not Z: GtForPnt's not-found paths end in `lda #0`, which sets
+        ; Z, so testing `beq` here read "no frame" as "found" -- a bare NEXT
+        ; then did `txs` onto a garbage offset and died as ?SYNTAX ERROR IN 0
+        ; instead of ?NEXT WITHOUT FOR.
         jsr     GtForPnt
-        beq     @found
+        bcs     @found
         ldx     #ERR_NF
         jmp     BasErrorVec
 @found:

@@ -1,0 +1,11 @@
+name: NVRAM rejects an address outside 0-255
+# README: "NVRAM <addr>, <value> — Write a byte to RTC NVRAM at address 0–255"
+mode: basic
+
+> NVRAM 256, 1
+~ \?ILLEGAL QUANTITY ERROR
+> PRINT NVRAM(256)
+~ \?ILLEGAL QUANTITY ERROR
+> NVRAM 255, 9
+> PRINT NVRAM(255)
+~ ^ 9$

@@ -14,6 +14,46 @@ under PLAN.md §6.12 on the way out.
 
 ---
 
+## JOY reads $FF regardless of the stick
+
+- **Bucket:** undecided — may be BIOS, may be the emulator
+- **Found by:** `tests/probe/joy-returns-the-button-bitmask.mjs`
+- **Phase:** 2
+- **Status:** open, `xfail`
+
+`JOY(1)` and `JOY(2)` return 255 at rest and 255 with any combination of
+directions and buttons held through `input.joystick`. The injected state never
+reaches BASIC.
+
+`ReadJoystick1Impl` (Kernal.asm) drops CB2 to disable the matrix encoder and
+reads `GPIO_PORTB` raw; `ReadJoystick2Impl` does the same on Port A. 255 is what
+an unwired active-low port with pull-ups reads, so the value is consistent with
+the port simply never being driven.
+
+**Two separate questions, and the first has to be answered first.**
+
+1. **Does the emulator wire `input.joystick` to the VIA ports the BIOS reads?**
+   Unknown from this side. PLAN.md §2 already records that VIA registers read
+   back as `$00` through the debug memory interface, so the VIA is modelled at
+   least partly; whether the joystick input feeds Port A/B, and whether it
+   honours the CB2 encoder-disable the BIOS asserts first, is not established.
+   Check the emulator's VIA and `input.joystick` implementation before touching
+   the Kernal. If the port is never driven, there is nothing wrong here to fix.
+
+2. **Polarity, which is a real documentation inconsistency either way.** A raw
+   active-low port reads 255 with nothing held. But the README's degradation
+   table says `JOY()` returns 0 when the VIA is absent — so "no VIA" and "stick
+   at rest" report opposite values, and 0 means *everything held* on a machine
+   that has the hardware. One of the two has to move: either `ReadJoystick`
+   inverts, so a set bit means held and rest is 0 and the two agree, or the
+   degradation row changes to 255. Inverting is what makes both README
+   sentences true at once, and matches what `IF JOY(1) AND 16` reads like.
+
+The case asserts the inverting reading — set bit means held — because that is
+the one the README supports as a whole. It stays `xfail` until question 1 is
+answered, since a case cannot distinguish a BIOS polarity bug from an emulator
+that never drives the pins.
+
 ## The splash and boot menu are never shown on a serial console
 
 - **Bucket:** BIOS bug — code wrong, docs right

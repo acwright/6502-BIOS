@@ -442,6 +442,9 @@ obvious. From the current log:
   and `LEN`/`VAL`. Each gets a case that fails on the pre-fix ROM.
 - `73273b6` — a `.prg` survives `LOAD`/`SAVE` (see §6.7).
 - `3194337` — `InitVideo` restores the character set (see §6.8).
+- **ELSE on a false condition** — `tests/basic/if-then-else.bas` and
+  `if-else-linenum.bas`. Found by phase 1, fixed in phase 1. Both fail on the
+  pre-fix ROM with `?SYNTAX ERROR`.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

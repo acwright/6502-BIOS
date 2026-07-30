@@ -6858,16 +6858,19 @@ BasCmdIf:
         jsr     BasRemn
         jmp     BasAddon
 @gotElse:
-        ; Advance TXTPTR past ELSE token; continue execution.
+        ; Advance TXTPTR past ELSE token, then run the ELSE branch as a
+        ; statement.  Falling through to @true's tail is deliberate: the
+        ; branch after ELSE is dispatched exactly like the one after THEN,
+        ; so `ELSE <linenum>` is an implicit GOTO too.  Returning here
+        ; instead would leave TXTPTR mid-statement and the interpreter loop
+        ; would report ?SYNTAX ERROR.
         iny
         tya
         clc
         adc     TXTPTR
         sta     TXTPTR
-        bcc     @t1
+        bcc     @true
         inc     TXTPTR+1
-@t1:
-        rts
 @true:
         ; TRUE: if next is a digit, IF expr THEN <linenum> -> implicit GOTO.
         jsr     ChrGot

@@ -14,31 +14,6 @@ under PLAN.md §6.12 on the way out.
 
 ---
 
-## ELSE on a false condition is a syntax error
-
-- **Bucket:** BIOS bug — code wrong, docs right
-- **Found by:** `tests/basic/if-then-else.bas`
-- **Phase:** 1
-
-`IF 0 THEN B = 1 ELSE B = 2` raises `?SYNTAX ERROR` on the line. The true branch
-is fine: `IF 1 THEN A = 1 ELSE A = 2` assigns 1 and carries on. So the failure is
-specifically in reaching the ELSE branch when the condition is false — the
-interpreter appears to skip to the end of the statement without recognising the
-`ELSE` token on the way.
-
-The README documents `IF expr THEN stmt [ELSE stmt]` with "else (if present) the
-ELSE branch", so the documented behaviour is what the test asserts.
-
-Minimal reproduction, at the prompt:
-
-```basic
-10 B = 0
-20 IF 0 THEN B = 1 ELSE B = 2
-30 PRINT B
-RUN
-?SYNTAX ERROR IN 20
-```
-
 ## GOSUB nests 31 levels, not 64, and crashes past that
 
 - **Bucket:** BIOS bug — code wrong, docs right (with a design decision attached)
@@ -119,6 +94,24 @@ with CRLF between? menu on the same write or a separate one?).
 ---
 
 ## Resolved
+
+### ELSE on a false condition was a syntax error
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/basic/if-then-else.bas`
+- **Phase:** 1 (found and fixed)
+
+`IF 0 THEN B = 1 ELSE B = 2` raised `?SYNTAX ERROR`. The true branch was fine, so
+the fault was specifically in reaching ELSE on a false condition.
+
+`BasCmdIf`'s ELSE path found the token and advanced `TXTPTR` past it correctly,
+then ended with `rts` — returning to the interpreter loop with `TXTPTR` parked
+mid-statement at ` B = 2`, where the loop wants `:` or end-of-line. Hence the
+syntax error. The true path a few lines below dispatches with
+`jmp BasExecuteStatement` instead, which is what the ELSE path needed too; it now
+falls into that same tail. Sharing the tail also gives `ELSE linenum` the
+implicit-GOTO shorthand that `THEN linenum` already had, which the README now
+documents and `tests/basic/if-else-linenum.bas` pins.
 
 ### FOR tests its limit at NEXT — not a bug
 

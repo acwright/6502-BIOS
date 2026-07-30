@@ -7179,60 +7179,8 @@ BasCmdInput:
         pla
         jmp     @doRedo
 @inpStr:
-        ; Peek at the first data character.  If it's a '"', use quote-mode
-        ; (terminator = '"' or NUL); otherwise terminate at ',' or NUL.
-        ldy     #0
-        lda     (TXTPTR),y
-        cmp     #'"'
-        beq     @sQuoted
-        ; Unquoted: STRLT2 source = TXTPTR.
-        lda     #0
-        sta     CHARAC
-        lda     #','
-        sta     ENDCHR
-        lda     TXTPTR
-        ldy     TXTPTR+1
-        bra     @sCallStrLt
-@sQuoted:
-        lda     #'"'
-        sta     CHARAC
-        sta     ENDCHR
-        ; Skip the opening '"'; STRLT2 source = TXTPTR + 1.
-        clc
-        lda     TXTPTR
-        adc     #1
-        ldy     TXTPTR+1
-        bcc     @sCallStrLt
-        iny
-@sCallStrLt:
-        jsr     StrLt2
-        ; StrLt2 leaves STRNG2 pointing past the consumed string (at the
-        ; terminator for unquoted input, or just past the closing '"' for
-        ; quoted input).  Advance TXTPTR (== data pointer) accordingly so
-        ; the trailing-extra check sees only what truly remained on the
-        ; input line.
-        lda     STRNG2
-        sta     TXTPTR
-        lda     STRNG2+1
-        sta     TXTPTR+1
-        ldy     #0
-        lda     FAC
-        sta     (BAS_FORPNT),y
-        iny
-        lda     FAC+1
-        sta     (BAS_FORPNT),y
-        iny
-        lda     FAC+2
-        sta     (BAS_FORPNT),y
-        ; StrLt2 pushed a temporary string descriptor via PutNew.  The
-        ; variable now owns the heap copy, so pop the temp (pop only -- do
-        ; NOT use FreFac, which would reclaim the heap we just handed to the
-        ; variable).  Leaving temps unfreed leaks the 3-slot temp stack and
-        ; both overflows it (?FORMULA TOO COMPLEX) and corrupts later strings
-        ; via stale descriptor pointers.
-        lda     FAC+3
-        ldy     FAC+4
-        jsr     FreTms
+        ldx     #0                      ; INPUT stops an unquoted item at ',' only
+        jsr     BasStrItem
 @afterStore:
         ; Save data ptr; restore program TXTPTR.
         lda     TXTPTR
@@ -7290,6 +7238,68 @@ MsgExtra:
 ; Statement: READ var[,var,...] -- pull next DATA item from BAS_DATAPTR
 ; into the variable pointed to by PtrGet.
 ; ---------------------------------------------------------------------------
+; ---------------------------------------------------------------------------
+; BasStrItem -- read one string item at TXTPTR into the variable BAS_FORPNT
+; points at.  Shared by INPUT and READ, which differ only in what ends an
+; unquoted item: INPUT stops at ',' or NUL, READ also stops at ':' because a
+; DATA statement can be followed by another statement on the same line.
+;
+; On entry : X        = the extra unquoted terminator (StrLt2's CHARAC)
+;            TXTPTR   = first character of the item
+;            FORPNT   = the variable's 3-byte descriptor slot
+; On exit  : TXTPTR advanced past the item, descriptor stored, temp popped.
+; ---------------------------------------------------------------------------
+BasStrItem:
+        ; A '"' here means quote-mode (terminator '"' or NUL); anything else
+        ; is a bare item running to X, ',' or NUL.
+        ldy     #0
+        lda     (TXTPTR),y
+        cmp     #'"'
+        beq     @quoted
+        stx     CHARAC
+        lda     #','
+        sta     ENDCHR
+        lda     TXTPTR                  ; StrLt2's source = TXTPTR
+        ldy     TXTPTR+1
+        bra     @call
+@quoted:
+        sta     CHARAC                  ; A is still '"' from the compare
+        sta     ENDCHR
+        clc                             ; skip it: source = TXTPTR + 1
+        lda     TXTPTR
+        adc     #1
+        ldy     TXTPTR+1
+        bcc     @call
+        iny
+@call:
+        jsr     StrLt2
+        ; StrLt2 leaves STRNG2 past the text it consumed -- at the terminator
+        ; for an unquoted item, just past the closing '"' for a quoted one.
+        ; TXTPTR has to follow it: for INPUT so the trailing-extra check sees
+        ; only what really remained on the line, and for READ so the next one
+        ; doesn't start again in the middle of the item this one took.
+        lda     STRNG2
+        sta     TXTPTR
+        lda     STRNG2+1
+        sta     TXTPTR+1
+        ldy     #0
+        lda     FAC
+        sta     (BAS_FORPNT),y
+        iny
+        lda     FAC+1
+        sta     (BAS_FORPNT),y
+        iny
+        lda     FAC+2
+        sta     (BAS_FORPNT),y
+        ; StrLt2 pushed a temporary descriptor via PutNew.  The variable owns
+        ; the heap copy now, so pop the temp -- do NOT use FreFac, which would
+        ; reclaim the heap we just handed over.  Leaving temps unfreed leaks
+        ; the 3-slot temp stack, both overflowing it (?FORMULA TOO COMPLEX)
+        ; and corrupting later strings via stale descriptor pointers.
+        lda     FAC+3
+        ldy     FAC+4
+        jmp     FreTms
+
 BasCmdRead:
         ldx     BAS_DATAPTR
         ldy     BAS_DATAPTR+1
@@ -7334,29 +7344,12 @@ BasInpDoit:
         jsr     StoreFacAtYxRounded
         bra     @afterStore
 @readStr:
-        ; String.
-        lda     #'"'
-        sta     CHARAC
-        sta     ENDCHR
-        ldy     #0
-        lda     (TXTPTR),y
-        cmp     #'"'
-        beq     @quoted
-        lda     #':'
-        sta     CHARAC
-        lda     #','
-        sta     ENDCHR
-@quoted:
-        jsr     StrLt2
-        ldy     #0
-        lda     FAC
-        sta     (BAS_FORPNT),y
-        iny
-        lda     FAC+1
-        sta     (BAS_FORPNT),y
-        iny
-        lda     FAC+2
-        sta     (BAS_FORPNT),y
+        ; Previously this called StrLt2 without setting up its (A,Y) source
+        ; argument at all, so every DATA string pointed into zero page: an
+        ; unquoted item read back empty and a quoted one read back as garbage
+        ; from $0022.  BasStrItem is INPUT's path, which had it right.
+        ldx     #':'                    ; a DATA item also ends at a statement break
+        jsr     BasStrItem
 @afterStore:
         ; Save updated data ptr.
         lda     TXTPTR

@@ -1,0 +1,19 @@
+name: INPUT reads numbers, strings and multiple variables
+# README: "INPUT [\"prompt\";] var [,var ...] — Read from the console"
+#
+# INPUT and READ share BasStrItem for string items, so this is what keeps the
+# shared path honest from the INPUT side: tests/basic/data-string-literals.bas
+# is the same assertion from the READ side.
+mode: basic
+
+> 10 INPUT "NAME";A$
+> 20 INPUT B
+> 30 INPUT C, D$
+> 40 PRINT "[";A$;"][";B;"][";C;"][";D$;"]"
+> RUN
+~ NAME\?
+> ADA
+~ \?
+> 7
+> 3, "WORLD"
+~ ^\[ADA\]\[ 7\]\[ 3\]\[WORLD\]

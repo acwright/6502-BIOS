@@ -54,6 +54,32 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### READ put garbage in every string DATA item
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/basic/data-string-literals.bas`
+- **Phase:** 2 (found and fixed)
+
+`DATA "ONE"` read back as a single garbage character and `DATA TWO` read back
+empty. Numeric `DATA` was unaffected, which is why it survived this long.
+
+`StrLt2` takes the source address of the string in `(A,Y)`. `BasCmdRead`'s
+string branch never set it — it called `StrLt2` with whatever the preceding
+`sta CHARAC` / `sta ENDCHR` had left behind, so the descriptor pointed at `$0022`
+(quoted, `A` = `"`) or `$002C` (unquoted, `A` = `,`) and the "string" was
+whatever sat in zero page. It also never advanced the data pointer past the item
+it had consumed.
+
+`BasCmdInput` had the same job and did it correctly. The two paths are now one
+routine, `BasStrItem`, parameterised by the only thing they actually disagree
+about: an unquoted `INPUT` item ends at `,`, an unquoted `DATA` item also ends at
+`:`. Sharing it was not tidying — the fix pushed the `BASIC` segment 10 bytes
+over its memory area, and folding the duplicate back out is what paid for it.
+
+`tests/console/input-reads-numbers-and-strings.txt` was written at the same time
+because the refactor moved code INPUT depends on and INPUT had no coverage. It
+passes identically on the pre-fix and post-fix ROMs, which is the point of it.
+
 ### GOSUB overran the stack instead of raising OUT OF MEMORY
 
 - **Bucket:** BIOS bug — code wrong, docs wrong (both were fixed)

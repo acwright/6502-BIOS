@@ -450,6 +450,9 @@ obvious. From the current log:
   Found by phase 1, fixed in phase 1; the pre-fix ROM crashes into the Monitor
   instead. `tests/basic/gosub-nests-deeply.bas` holds the documented floor of 20
   levels alongside it.
+- **String DATA read as zero-page garbage** — `tests/basic/data-string-literals.bas`.
+  Found and fixed in phase 2. `tests/console/input-reads-numbers-and-strings.txt`
+  guards the INPUT side of the routine the fix merged them into.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

@@ -1,0 +1,30 @@
+name: N converts a value between hex, decimal and binary
+# README: "N value — Number conversion — hex ($xx), decimal (+ddd), or binary
+#          (%bbbb) input shown in all three bases"
+#
+# The same number entered three ways has to come back as the same line. That is
+# the property worth testing here — three parsers feeding one printer — and it
+# is what would catch a parser that agrees with itself but not with the others.
+#
+# The output format is not in the README, so it is pinned: 16-bit hex and binary
+# fields zero-padded to width, decimal without leading zeros, two spaces between.
+mode: monitor
+
+> N $FF
+~ ^\$00FF  \+255  %0000000011111111$
+> N +255
+~ ^\$00FF  \+255  %0000000011111111$
+> N %11111111
+~ ^\$00FF  \+255  %0000000011111111$
+
+# Both ends of the 16-bit range, which is where a width or a carry goes wrong.
+> N $0
+~ ^\$0000  \+0  %0000000000000000$
+> N $FFFF
+~ ^\$FFFF  \+65535  %1111111111111111$
+> N +65535
+~ ^\$FFFF  \+65535  %1111111111111111$
+
+# No argument at all is malformed input, not a reason to print something.
+> N
+~ ^\?$

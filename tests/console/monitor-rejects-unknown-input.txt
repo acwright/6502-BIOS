@@ -1,0 +1,21 @@
+name: The Monitor rejects an unknown command and re-prompts on a blank line
+# README: "The monitor prompt is `.`"
+#
+# Less about output than about survival. A character that falls off the end of
+# the dispatch table, and an empty line, both have to come back to a prompt —
+# the transcript's closing prompt check is doing as much work as the assertions.
+mode: monitor
+
+> Z
+~ ^\?$
+> QQQQ
+~ ^\?$
+
+# A blank line is not an error, it is just another prompt.
+>
+! ^\?$
+
+# And the monitor is still the monitor afterwards.
+> > 1000 5A
+> M 1000 1000
+~ ^\.:1000 5A

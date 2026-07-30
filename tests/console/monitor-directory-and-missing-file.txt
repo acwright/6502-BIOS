@@ -1,0 +1,29 @@
+name: @ lists an empty directory with its DISK header, and L reports a missing file
+# README: "@ — List current disk's directory (prints DISK n header)"
+#         "L "file" [addr] — Load from CompactFlash (with filename) ..."
+#         "L, S, @ ... all operate on the currently selected disk bank"
+#
+# The default profile's card is blank, so this is the empty-directory case: the
+# header is printed unconditionally and no entries follow it. A listing that
+# printed nothing at all would still look plausible on an empty card, which is
+# why the header is asserted rather than just the absence of entries.
+#
+# `@` following `#` is the part of "operate on the currently selected bank" that
+# is observable without fixtures — the header has to track the selection.
+#
+# FILE NOT FOUND is the Monitor's own string (Monitor.asm), not a README-
+# documented message; the README's table gives no error text for any command.
+# The populated-directory and round-trip cases are phase 4's, with fixtures.
+mode: monitor
+
+> @
+~ ^DISK 0$
+! ^[A-Z0-9]+\.
+> # 05
+> @
+~ ^DISK 5$
+
+# A name that cannot be on a blank card, so this is the not-found path rather
+# than a parse failure.
+> L "NOPE"
+~ ^FILE NOT FOUND$

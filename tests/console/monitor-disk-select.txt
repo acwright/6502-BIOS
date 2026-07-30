@@ -1,0 +1,25 @@
+name: # reports the current CF disk bank and selects a new one
+# README: "# NN — Select CF disk bank NN (hex 00–FF); # alone reports the
+#          current disk"
+#         "The current disk bank ... resets to 0 (disk 0) on power-on or reset"
+#
+# The argument is hex and the report is decimal, so `# 10` is the case that
+# matters: a report that echoed the input base would say DISK 10 and look
+# perfectly reasonable.
+#
+# Selecting a bank writes a variable and needs no card, which is why this case
+# runs on the default profile — the directory listing it selects for is phase 4.
+mode: monitor
+
+> #
+~ ^DISK 0$
+> # 05
+~ ^DISK 5$
+
+# The selection sticks: a bare # afterwards reports the bank that was chosen.
+> #
+~ ^DISK 5$
+> # 10
+~ ^DISK 16$
+> # FF
+~ ^DISK 255$

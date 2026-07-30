@@ -1,0 +1,7 @@
+name: CONT with nothing to continue raises CAN'T CONTINUE
+# README: "CONT — ... Error if nothing to continue"
+mode: basic
+
+> NEW
+> CONT
+~ ^\?CAN'T CONTINUE ERROR

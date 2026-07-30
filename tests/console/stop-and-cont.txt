@@ -1,0 +1,12 @@
+name: STOP reports BREAK IN nnnn and CONT resumes after it
+# README: "STOP — Stop and print `BREAK IN nnnn`. Resume with `CONT`"
+#         "CONT — Continue after `STOP` or Ctrl+C break"
+mode: basic
+
+> 10 A = 1
+> 20 STOP
+> 30 PRINT "RESUMED";A
+> RUN
+~ ^BREAK IN 20
+> CONT
+~ ^RESUMED 1$

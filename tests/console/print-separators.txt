@@ -1,0 +1,22 @@
+name: PRINT joins with ;, advances a print zone with , and ends the line alone
+# README: "PRINT [item [sep item ...]] — ... `;` = no separator (trailing `;`
+#          suppresses CRLF); `,` = advance to next 14-column print zone.
+#          Bare PRINT prints only CRLF"
+#
+# Driven from a program rather than immediate mode: a trailing `;` leaves the
+# cursor mid-line, and at the prompt the next thing on that line would be the
+# echo of whatever gets typed next.
+mode: basic
+
+> 10 PRINT "A";"B";"C"
+> 20 PRINT "D","E"
+> 30 PRINT "F";
+> 40 PRINT "G"
+> 50 PRINT
+> 60 PRINT "H"
+> RUN
+~ ^ABC$
+~ ^D {13}E$
+~ ^FG$
+~ ^$
+~ ^H$

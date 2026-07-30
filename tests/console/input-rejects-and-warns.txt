@@ -1,0 +1,17 @@
+name: INPUT re-prompts on bad numeric input and warns about extra values
+# README: "INPUT [\"prompt\"{;|,}] var [, var ...] — ... Re-prompts with
+#          `?REDO FROM START` on bad numeric input; `?EXTRA IGNORED` if too
+#          many comma-separated values"
+mode: basic
+
+> 10 INPUT A
+> 20 PRINT "GOT";A
+> RUN
+> XYZ
+~ \?REDO FROM START
+> 5
+~ ^GOT 5$
+> RUN
+> 1,2,3
+~ \?EXTRA IGNORED
+~ ^GOT 1$

@@ -1,0 +1,19 @@
+name: TAB advances to a column and SPC emits a count of spaces
+# README: "TAB(n) — In PRINT, advance cursor to column `n` (no-op if already past)"
+#         "SPC(n) — In PRINT, emit `n` spaces"
+#
+# The README does not say whether TAB's columns are counted from 0 or from 1.
+# The ROM counts from 0, which is the Microsoft convention the README claims
+# comparability with: "A" leaves the cursor at column 1, so TAB(10) owes 9
+# spaces. That was written here as an assertion before it was checked, and the
+# ROM agreed — so this case is now what pins the base, since the README still
+# does not state it.
+mode: basic
+
+> 10 PRINT "A";TAB(10);"B"
+> 20 PRINT "C";SPC(3);"D"
+> 30 PRINT "EEEEE";TAB(2);"F"
+> RUN
+~ ^A {9}B$
+~ ^C {3}D$
+~ ^EEEEEF$

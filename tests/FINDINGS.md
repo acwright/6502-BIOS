@@ -14,47 +14,6 @@ under PLAN.md §6.12 on the way out.
 
 ---
 
-## GOSUB nests 31 levels, not 64, and crashes past that
-
-- **Bucket:** BIOS bug — code wrong, docs right (with a design decision attached)
-- **Found by:** `tests/basic/gosub-64-deep.bas`
-- **Phase:** 1
-
-The README says "Up to 64 levels deep". Measured: 31 levels work, 32 does not.
-At 32 the machine does not report an error — it drops into the Monitor with
-`BRK AT $1A8F`, which is a crash, not a diagnosis.
-
-`BasCmdGosub` (BASIC.asm:6684) pushes a 5-byte frame onto the **6502 hardware
-stack**, and nothing anywhere checks the remaining depth. With the interpreter's
-own `JSR` returns interleaved, page 1 is exhausted at about 8 bytes per level —
-hence 31. `OUT OF MEMORY` exists in `ErrorMessages` but no GOSUB path raises it.
-
-Two things are wrong and they are separable:
-
-1. **The crash.** Whatever the limit is, exceeding it must raise `OUT OF MEMORY`
-   and return to `OK`, not corrupt page 1. This is not a judgement call.
-2. **The limit.** 64 frames is 320 bytes and cannot live in page 1 alongside the
-   interpreter's own stack use, so "64" needs either a GOSUB stack somewhere
-   else, or a README that says 31.
-
-Fixing (1) is worth doing on its own even if (2) is settled by changing the
-document. That decision is open — see PLAN.md §10.1's "undecided" row.
-
-Minimal reproduction:
-
-```basic
-10 D = 0
-20 GOSUB 100
-30 PRINT "DEPTH";D
-40 END
-100 D = D + 1
-110 IF D < 32 THEN GOSUB 100
-120 RETURN
-RUN
-6502 MONITOR v1.1
-BRK AT $1A8F
-```
-
 ## The splash and boot menu are never shown on a serial console
 
 - **Bucket:** BIOS bug — code wrong, docs right
@@ -94,6 +53,40 @@ with CRLF between? menu on the same write or a separate one?).
 ---
 
 ## Resolved
+
+### GOSUB overran the stack instead of raising OUT OF MEMORY
+
+- **Bucket:** BIOS bug — code wrong, docs wrong (both were fixed)
+- **Found by:** `tests/basic/gosub-64-deep.bas`, since replaced
+- **Phase:** 1 (found and fixed)
+
+The README said "Up to 64 levels deep". Measured: 31 worked, 32 dropped into the
+Monitor with `BRK AT $1A8F` — a crash, not a diagnosis.
+
+`BasCmdGosub` pushes a 5-byte frame onto the 6502 hardware stack and nothing
+checked the remaining depth. **This is the divergence from MS BASIC** — the
+hardware stack is where MS 6502 BASIC keeps GOSUB frames too, so that part was
+never wrong, but every msbasic frame push is guarded by `GETSTK`, which raises
+`OUT OF MEMORY` when the stack pointer has descended past a margin. The BIOS
+ported the frames and not the guard.
+
+Fixed by adding that check, specialised to GOSUB's fixed frame with msbasic's own
+arithmetic (`GOSUB_STACK_MIN = $44` = 3*2 bytes of frame + GETSTK's `$3E` margin
+for the interpreter's JSR nesting inside the subroutine). `BasError` already
+resets the stack pointer, so the error unwinds to `OK` cleanly from any depth.
+
+The 64 was never achievable and came from nowhere: 64 frames is 320 bytes and
+page 1 holds 256. Measured after the fix: **27 levels** for a trivial subroutine
+body, against 31 before it — four levels traded for not corrupting page 1. The
+README now documents a floor of 20 (headroom for a body that nests expressions
+or calls `FN`) rather than a ceiling, which is the number
+`tests/basic/gosub-nests-deeply.bas` holds us to;
+`tests/console/gosub-too-deep-raises-out-of-memory.txt` pins the error itself.
+
+The second half of the original finding — moving the GOSUB stack off page 1 to
+reach a larger documented depth — was **declined**. MS BASIC lives with the same
+bound (Commodore BASIC manages about 23 levels, Applesoft about 25), so 27 is
+already at parity with what the README claims comparability to.
 
 ### ELSE on a false condition was a syntax error
 

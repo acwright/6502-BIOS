@@ -70,7 +70,7 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `INPUT` | `INPUT ["prompt"{;`&#124;`,}] var [, var ...]` | Read value(s) from the user. Numeric or string vars supported. Re-prompts with `?REDO FROM START` on bad numeric input; `?EXTRA IGNORED` if too many comma-separated values |
 | `LET` | `[LET] var = expr` | Assign expression to variable. `LET` keyword is optional |
 | `GOTO` | `GOTO linenum` | Jump unconditionally to line `linenum` |
-| `GOSUB` | `GOSUB linenum` | Push current position and jump. Up to 64 levels deep |
+| `GOSUB` | `GOSUB linenum` | Push current position and jump. Nesting is bounded by the 6502 stack, which the frames share with the interpreter's own working space — at least 20 levels are available whatever the subroutine does, and about 27 for a simple one. Exceeding the space raises `OUT OF MEMORY` |
 | `RETURN` | `RETURN` | Pop the GOSUB stack and resume after the calling `GOSUB` |
 | `IF` | `IF expr THEN stmt [ELSE stmt]` | Execute THEN branch if `expr` non-zero, else (if present) the ELSE branch. `THEN linenum` is shorthand for `THEN GOTO linenum`, and `ELSE linenum` for `ELSE GOTO linenum` |
 | `FOR` | `FOR var = init TO limit [STEP step]` | Counted loop. Default step is `1`. Up to 8 nested loops. The limit is tested at `NEXT`, as in Microsoft 6502 BASIC, so the body always runs at least once — `FOR I = 5 TO 1` runs once and leaves `I` at 6 |

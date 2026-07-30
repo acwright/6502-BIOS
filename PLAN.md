@@ -289,7 +289,8 @@ re-prompts; the `.` prompt is exactly `. `.
 Every one of the 54 entries in `KeywordTbl` from `$80 END` to `$B5 MEM`.
 
 - **Control flow** — `END`, `STOP`+`CONT` (Tier 2, `BREAK IN nnnn`), `GOTO`,
-  `GOSUB`/`RETURN` incl. 64-level nesting and the 65th → `OUT OF MEMORY`,
+  `GOSUB`/`RETURN` incl. deep nesting and exhaustion → `OUT OF MEMORY` (done in
+  phase 1),
   `ON…GOTO`, `ON…GOSUB`, out-of-range `ON` index falls through, `IF/THEN`,
   `IF/THEN/ELSE`, `THEN linenum` shorthand, `FOR/NEXT`, `STEP`, negative `STEP`,
   a loop whose body never runs, 8-level nesting and the 9th → `OUT OF MEMORY`,
@@ -445,6 +446,10 @@ obvious. From the current log:
 - **ELSE on a false condition** — `tests/basic/if-then-else.bas` and
   `if-else-linenum.bas`. Found by phase 1, fixed in phase 1. Both fail on the
   pre-fix ROM with `?SYNTAX ERROR`.
+- **GOSUB stack overrun** — `tests/console/gosub-too-deep-raises-out-of-memory.txt`.
+  Found by phase 1, fixed in phase 1; the pre-fix ROM crashes into the Monitor
+  instead. `tests/basic/gosub-nests-deeply.bas` holds the documented floor of 20
+  levels alongside it.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

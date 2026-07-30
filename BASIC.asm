@@ -346,6 +346,14 @@ ERR_MEMFULL     = ERR_OUTOFMEM
 ERR_STRLONG     = ERR_LONGSTR
 ERR_ILLQTY      = ERR_ILLQUAN
 
+; Lowest stack pointer GOSUB may descend to before raising OUT OF MEMORY.
+; Matches msbasic's GETSTK arithmetic for a GOSUB frame: 3*2 bytes of frame
+; plus a $3E-byte margin left for the interpreter's own JSR nesting (FrmEvl
+; recursion in particular) once the subroutine is running.  Frames cost about
+; 8 bytes apiece with those returns interleaved, so this permits roughly 23
+; levels -- the same working depth as Commodore BASIC.
+GOSUB_STACK_MIN = $44
+
 ; =============================================================================
 ;   B A S E N T R Y   -   $C000
 ;
@@ -6682,6 +6690,16 @@ BasCmdGoto:
 ; Frame layout (top-down): [tag $8C][CURLIN-lo][CURLIN-hi][TXTPTR-lo][TXTPTR-hi]
 ; ---------------------------------------------------------------------------
 BasCmdGosub:
+        ; Refuse to nest deeper than page 1 can hold.  msbasic guards every
+        ; stack-frame push with GETSTK; this is that check specialised to
+        ; GOSUB's fixed frame (msbasic's `LDA #3 : JSR GETSTK`, i.e. 3*2
+        ; bytes of frame plus GETSTK's $3E-byte margin for the interpreter's
+        ; own JSR nesting inside the subroutine).  Without it the frames run
+        ; off the bottom of the stack and corrupt page 1 instead of raising
+        ; an error.
+        tsx
+        cpx     #GOSUB_STACK_MIN
+        bcc     @outOfMemory
         lda     TXTPTR+1
         pha
         lda     TXTPTR
@@ -6695,6 +6713,9 @@ BasCmdGosub:
         jsr     ChrGot
         jsr     BasCmdGoto
         jmp     BasNewstt
+@outOfMemory:
+        lda     #ERR_OUTOFMEM
+        jmp     BasError
 
 ; ---------------------------------------------------------------------------
 ; BasCmdReturn -- locate GOSUB frame on stack and resume at saved TXTPTR.

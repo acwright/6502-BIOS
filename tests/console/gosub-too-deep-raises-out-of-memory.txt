@@ -1,0 +1,20 @@
+name: GOSUB past the stack's capacity raises OUT OF MEMORY instead of crashing
+# README: "GOSUB linenum — ... exceeding the space raises OUT OF MEMORY"
+#
+# The pinned half of tests/FINDINGS.md#gosub-nests-31-levels-not-64-and-crashes-past-that.
+# Before the fix this ran the frames off the bottom of page 1 and landed in the
+# Monitor with `BRK AT $1A8F` — a crash, not a diagnosis. Whatever the depth
+# limit is, exceeding it has to be an error the user can recover from, which is
+# why this asserts the return to `OK` (the default final expectation) as much as
+# it asserts the message.
+mode: basic
+
+> 10 D = 0
+> 20 GOSUB 100
+> 100 D = D + 1
+> 110 GOSUB 100
+> 120 RETURN
+> RUN
+~ ^\?OUT OF MEMORY ERROR IN 110
+! BRK AT
+! MONITOR

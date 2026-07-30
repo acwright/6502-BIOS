@@ -91,11 +91,18 @@ which under active low means *everything held*. `FnJoy`'s absent path returns
 `$FF` now, and the README says the polarity outright rather than leaving it to
 be inferred. Pinned by `tests/probe/joy-without-a-via-reads-released.mjs`.
 
-**To close this out:** release an emulator containing the two fixes, then delete
-the `xfail` from the bitmask case. It passes against a build of the current
-`6502-EMULATOR` working tree — `SIXTY502="node …/out/cli/index.js" make test` —
-and fails against 2.4.0, which is why the marker is still there. An `xfail` that
-passes is reported red, so the first run against a fixed emulator will say so.
+**To close this out:** both emulator fixes are applied but deliberately
+**uncommitted** in the `6502-EMULATOR` working tree, and stay that way until
+phase 8 — PLAN.md §10.7. They ship in the same release as BIOS v1.4, because the
+emulator also bundles the ROM, and cutting an emulator release mid-build-out just
+to unblock this one case is what would pull the two histories apart.
+
+The bitmask case passes against a build of that working tree —
+`SIXTY502="node …/out/cli/index.js" make test` — and fails against the released
+2.4.0, which is why the marker is still here. Once the emulator release is out,
+delete the `xfail` and commit; that changes no ROM and needs no version bump. An
+`xfail` that passes is reported red, so the first run against the new emulator
+will demand it.
 
 ## The splash and boot menu are never shown on a serial console
 

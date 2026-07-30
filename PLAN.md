@@ -5,6 +5,13 @@ A regression suite for `BIOS.bin`, run against the A.C. Wright 6502 emulator
 BASIC keyword has at least one executable assertion behind it, and that a
 `make test` failure is the normal way a BIOS regression is discovered.
 
+> **This is now a two-repository release.** The suite has found bugs in
+> `6502-EMULATOR` as well as in the ROM, and the emulator bundles the ROM that
+> every user runs by default. `6502-BIOS` v1.4 and the emulator's patch release
+> go out together, in that order, and neither ships alone. **§10.7 is the
+> procedure** — read it before touching either project's release process, and
+> before cutting an emulator release to unblock a test.
+
 ---
 
 ## 1. Objectives
@@ -530,7 +537,7 @@ Each phase ends with something runnable, and each is independently useful.
 | **5. Hardware** | §6.1, §6.2, §6.8, §6.9, §6.10 — boot, jump table, video, sound, clock. Adds the `video` and `nvram` profiles. | ~57 cases |
 | **6. Degradation and pins** | §6.11, §6.12, and the rule that every future fix adds a case. | ~26 cases |
 | **7. CI** | GitHub Actions: install cc65, `make`, `make test`. Needs the emulator available to the runner — see §11. | — |
-| **8. Release** | Only if phases 2–6 produced BIOS fixes: bump both version sites, update the README, tag **v1.4** with notes listing what the suite found. If nothing was fixed, this phase does not happen — see §10.5. | — |
+| **8. Release** | **Two repositories, one release.** Bump both BIOS version sites, update the README, tag **v1.4**; then bundle that ROM into the emulator alongside the emulator fixes this build-out found, and cut its patch release. Neither ships alone — see §10.7. | — |
 
 Phases 2–6 are independent of each other once phase 1 lands.
 
@@ -643,9 +650,11 @@ about the ROM's behaviour, and a test suite is not part of the ROM.
   Seven phases with a tag each is noise; one release whose notes list everything
   the suite found is a genuinely useful artifact — and it is the honest framing,
   since the fixes and the suite that found them are one piece of work.
+  **v1.4 is already certain**: phase 2 alone fixed nine defects.
 - **Urgent exception** — a fix serious enough to want on hardware before the
   build-out finishes gets its own release immediately. Don't sit on a real defect
-  waiting for phase 7.
+  waiting for phase 7. That exception releases *both* projects early, per §10.7;
+  it does not license shipping a BIOS the emulator does not carry.
 
 Bumping the version means **two** edits that must stay in step:
 
@@ -662,6 +671,54 @@ process itself.
 version their own components and move on their own schedule; they are not tied to
 the BIOS version.
 
+### 10.7 This is a two-repository release
+
+The build-out stopped being a BIOS-only exercise the moment it found a bug on the
+other side of the fence. **`6502-BIOS` and `6502-EMULATOR` now ship together, as
+one release, and neither goes out alone.**
+
+Two dependencies point in opposite directions, which is what makes this a single
+release rather than two:
+
+- **The emulator carries the ROM.** `assets/roms/BIOS.bin` in `6502-EMULATOR` is
+  the ROM every user gets when they run the app without `--rom`. Its history —
+  `Bundle BIOS v1.3 …`, `Bundle BIOS v1.2 …` — shows it re-bundled for each BIOS
+  release, and an emulator shipping a v1.3 ROM after v1.4 exists hands every user
+  the bugs this suite just fixed.
+- **The BIOS suite depends on the emulator.** Phase 2 found two faults in
+  `6502-EMULATOR`'s joystick support (see `tests/FINDINGS.md`), and
+  `tests/probe/joy-returns-the-button-bitmask.mjs` cannot pass until they ship.
+  Later phases will lean on the emulator harder — §6.8's video probes, §6.9's
+  write watchpoints, §6.10's `--nvram` profile — so more of these are likely.
+
+**Order of operations at phase 8.** Each step has to be finished before the next
+starts, because each one's artifact is the next one's input:
+
+1. Finish phases 3–7. The emulator changes stay **uncommitted in their working
+   tree** until then, deliberately: they are part of this release, not a separate
+   drive-by, and holding them keeps the two projects' histories aligned.
+2. Bump the two BIOS version sites, update the README, `make test` green, tag
+   **v1.4** in `6502-BIOS`.
+3. Copy that `BIOS.bin` to `6502-EMULATOR/assets/roms/BIOS.bin`, and commit it in
+   the same change as the emulator's own fixes. One commit, so a bisect never
+   lands on an emulator carrying a ROM it was not tested against.
+4. Release the emulator (a patch bump — its fixes are bugfixes).
+5. **Then** delete the `xfail` from the joystick case in `6502-BIOS` and commit.
+   This lands after both releases and changes no ROM, so it needs no version
+   bump. An `xfail` that passes is reported red, so the first `make test` against
+   the new emulator will demand this anyway.
+
+**Release notes span both.** The BIOS tag lists what the suite found in the ROM;
+the emulator release lists what it found in the emulator *and* names the BIOS
+version it now bundles. A reader of either should be able to tell that the two
+went out together.
+
+**Anything the suite finds in the emulator from here follows the same rule**: fix
+it in the emulator working tree, record it in `tests/FINDINGS.md` like any other
+finding, mark the blocked case `xfail` pointing at that heading, and let it ride
+to phase 8. Do not cut an emulator release mid-build-out to unblock a test — that
+is how the two histories drift apart.
+
 ---
 
 ## 11. Open questions and risks
@@ -674,6 +731,12 @@ the BIOS version.
    local-only. **(a) is the recommendation** and needs nothing new from the
    emulator. The runner should take `SIXTY502` as an env var override, as the
    emulator's `examples/lib.sh` does, so local and CI differ by one variable.
+
+   §10.7 strengthens the case for (a): building the emulator from source in CI
+   means the suite tests against the emulator fixes *before* they are released,
+   which is the only way a case blocked on an emulator bug can go green without
+   waiting for a release. Pin the checkout to a ref rather than tracking its
+   `main`, or an unrelated emulator change can turn this repo's CI red.
 
 2. **XModem `LOAD`/`SAVE` with no filename.** Testing these means driving both
    ends of the protocol over the same serial console the test harness is using.

@@ -1,0 +1,23 @@
+name: R displays the saved registers and ; modifies any subset of them
+# README: "R — Display saved CPU registers: `PC=xxxx A=xx X=xx Y=xx SP=xx NV-BDIZC`"
+#         "; PC xxxx A xx X xx ... — Modify saved registers (any subset, any order)"
+#
+# The flag field prints a letter where the bit is set and a `-` where it is
+# clear, with the unused bit 5 always a `-`, so the eight columns read as
+# N V - B D I Z C.
+mode: monitor
+
+> R
+~ ^PC=[0-9A-F]{4} A=[0-9A-F]{2} X=[0-9A-F]{2} Y=[0-9A-F]{2} SP=[0-9A-F]{2} [NV\-][V\-]-[B\-][D\-][I\-][Z\-][C\-]$
+> ; A 42
+> R
+~ ^PC=[0-9A-F]{4} A=42
+> ; PC 1234
+> R
+~ ^PC=1234 A=42
+> ; X 07 Y 09
+> R
+~ ^PC=1234 A=42 X=07 Y=09
+> ; Y 11 PC 8000 A 55
+> R
+~ ^PC=8000 A=55 X=07 Y=11

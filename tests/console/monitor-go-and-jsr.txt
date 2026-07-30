@@ -1,0 +1,24 @@
+name: G runs planted code with the saved registers, and J calls and returns
+xfail: the released emulator (2.4.0) pushes BRK's return address one byte late
+issue: tests/FINDINGS.md#brk-pushed-the-return-address-one-byte-too-high
+# README: "G [addr] — Go — JMP to address (or saved PC); restores all registers via RTI"
+#         "J [addr] — JSR — call a subroutine; RTS returns to the monitor with
+#          register display"
+#         "BRK from BASIC — prints `BRK AT $xxxx` and the current register state"
+#
+# The planted code is deliberately tiny and hand-assembled, so what is being
+# tested is the Monitor's entry and exit rather than an assembler:
+#   A9 42     LDA #$42
+#   A2 07     LDX #$07
+#   00        BRK
+mode: monitor
+
+> > 1000 A9 42 A2 07 00
+> ; A 00 X 00
+> G 1000
+~ ^BRK AT \$1004$
+~ ^PC=1006 A=42 X=07
+> > 1100 60
+> ; A 99
+> J 1100
+~ ^PC=[0-9A-F]{4} A=99

@@ -1963,13 +1963,16 @@ MonShowRegs:
   jsr Chrout
   lda #'='
   jsr Chrout
-  ; Print PC (adjusted: BRK_PC - 2)
-  sec
+  ; Print the saved PC as it stands.  This used to subtract 2, to name the BRK
+  ; instruction rather than the address after it -- but `;` and `G` both treat
+  ; the field literally, so `; PC 1234` displayed as PC=1232 and ran from 1234.
+  ; A display that does not round-trip with the command that sets it is worse
+  ; than one that needs a second line to interpret, and the break location is
+  ; not lost: MonBrkEntry prints "BRK AT $" with its own adjustment. What R
+  ; reports now is where G will resume, which is what the saved register is.
   lda BRK_PCL
-  sbc #2
   sta MON_ADDR
   lda BRK_PCH
-  sbc #0
   sta MON_ADDR + 1
   jsr MonPrintHex4
   lda #' '

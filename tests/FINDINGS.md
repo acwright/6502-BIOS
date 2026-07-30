@@ -50,6 +50,41 @@ limitation, which costs nothing and is honest.
 Wanted before writing a case: a decision on which of those two. A case asserting
 the resume works would be asserting a feature nobody has agreed to build.
 
+## BRK pushed the return address one byte too high
+
+- **Bucket:** emulator bug
+- **Found by:** `tests/console/monitor-go-and-jsr.txt`
+- **Phase:** 3
+- **Status:** fixed in the `6502-EMULATOR` working tree, uncommitted until phase
+  8 per PLAN.md §10.7; the case stays `xfail` until that ships
+
+A `BRK` planted at `$1000` and run with `G 1000` reported `BRK AT $1001` and a
+saved `PC` of `$1003`. A 6502 pushes the address of the `BRK` plus two — `$1002`
+— so that `RTI` resumes past the one-byte signature that follows the opcode.
+
+Confirmed at the CPU rather than inferred: stepping a single `BRK` at `$1000`
+with the debug interface and reading `$01FD..$01FF` back gave `P`, then `$03`,
+then `$10`. The pushed value was `$1003`.
+
+`CPU.ts` declares `BRK` with the `IMM` addressing mode, which already advances
+the PC past the signature byte, and `BRK()` then called `incPC()` again. This is
+the same flaw the widely-copied olc6502 reference carries, so it most likely
+arrived with the lineage rather than being introduced here.
+
+The extra increment is removed from `BRK()` rather than changing the table
+entry. `IMM` is the right mode for `BRK` — it is genuinely two bytes wide, which
+is what the disassembler's opcode table and its CPU cross-check test both
+assume, and switching the mode to `IMP` broke that agreement.
+
+**Consequences beyond the Monitor.** Every `BRK`-based return address was one
+byte late, so `G` after a break would have resumed one byte past where it should
+and executed a wrong instruction. The BIOS's own `BRK AT` display was correct
+all along and only looked wrong because the value it adjusts was.
+
+The emulator's `BRK` test asserted the vector jump and the `I` flag but never
+what was pushed, which is why this survived. It now asserts the pushed address,
+the `B` flag in the pushed status, and the stack pointer.
+
 ## JOY reads $FF regardless of the stick
 
 - **Bucket:** emulator bug, plus a BIOS doc/degradation fix (done)
@@ -143,6 +178,29 @@ with CRLF between? menu on the same write or a separate one?).
 ---
 
 ## Resolved
+
+### R's PC display did not round-trip with ;
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/monitor-registers-and-semicolon.txt`
+- **Phase:** 3 (found and fixed)
+
+`; PC 1234` followed by `R` displayed `PC=1232`, and `G` then ran from `$1234`.
+Setting a register and reading it back gave a different number.
+
+`MonShowRegs` printed `BRK_PC - 2`, to name the `BRK` instruction rather than
+the address after it, while `;` and `G` both treat the field literally. The
+display and the two commands that use it disagreed about what it meant.
+
+It prints the saved PC as it stands now. The break location is not lost —
+`MonBrkEntry` prints `BRK AT $` with its own adjustment, which is where that
+information belongs — and what `R` reports is where `G` will resume, which is
+what the saved register actually is. The subtraction was also eight bytes.
+
+Worth being explicit that this changes a familiar display: after a break, `R`
+now shows the resume address rather than the `BRK`'s own address, so it reads
+two higher than the `BRK AT` line above it. That is the honest reading of "the
+saved registers", and it is the only one that lets `;` round-trip.
 
 ### F with a reversed range overwrote all of memory
 

@@ -479,6 +479,9 @@ obvious. From the current log:
 - **`F` with a reversed range overwrote all of memory** —
   `tests/console/monitor-fill.txt`. Found and fixed in phase 3; the pre-fix
   ROM wraps through `$FFFF` and never returns.
+- **`R`'s PC display did not round-trip with `;`** —
+  `tests/console/monitor-registers-and-semicolon.txt`. Found and fixed in
+  phase 3; the pre-fix ROM shows `PC=1232` after `; PC 1234`.
 - **Bare `M` restarted from `$0000`** —
   `tests/console/monitor-dump-continues-and-spans-pages.txt`. Found and fixed
   in phase 3.

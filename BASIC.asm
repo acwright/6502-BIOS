@@ -3590,15 +3590,16 @@ Rnd:
         jsr     Sign
         bmi     Lbl3F01
         bne     LblDF63
-        lda     ENTROPY
-        sta     FAC+1
-        lda     ENTROPY+4
-        sta     FAC+2
-        lda     ENTROPY+1
-        sta     FAC+3
-        lda     ENTROPY+5
-        sta     FAC+4
-        jmp     LblDF88
+        ; x = 0 repeats the last value, which is what the README documents and
+        ; what Applesoft does.  msbasic builds a value out of a free-running
+        ; entropy source here instead -- the Commodore behaviour -- and that
+        ; was what this did: RND(0) returned neither the previous result nor
+        ; anything that varied, since nothing in this machine keeps ENTROPY
+        ; moving.  Every path below ends by storing the result at RNDSEED, so
+        ; the last value is already there to hand back.
+        lda     #<RNDSEED
+        ldy     #>RNDSEED
+        jmp     LoadFacFromYa
 LblDF63:
         lda     #<RNDSEED
         ldy     #>RNDSEED
@@ -5492,13 +5493,14 @@ EvalPow:
         jsr     ChkNum
         jsr     ChrGet
         jsr     PushFac
-        jsr     EvalUnary               ; right-assoc: recurse below
-        ; Actually right-assoc means: evaluate the RHS at this level too.
-        ; But EvalUnary doesn't loop ^; it stops.  Re-check ^ here?  No --
-        ; for right-assoc we should recurse at the same level for the RHS.
-        ; Simpler: after EvalUnary, look for another ^ and recurse.
-        ; Implemented by jumping back to @loop (so chained ^ becomes
-        ; left-assoc in this version).  Acceptable simplification.
+        ; Right-associative, which means the right-hand side is evaluated at
+        ; this level rather than the one below: recursing into EvalPow lets
+        ; the RHS take the rest of the chain, so 2^3^2 is 2^(3^2) = 512.
+        ; Calling EvalUnary here instead made it (2^3)^2 = 64 -- left-assoc,
+        ; contradicting this level's own heading.  EvalUnary still runs first
+        ; inside the recursion, so a term is always consumed and the recursion
+        ; is bounded by the length of the chain.
+        jsr     EvalPow
         jsr     ChkNum
         jsr     PullArg
         lda     BAS_LVTYP
@@ -5524,7 +5526,12 @@ EvalUnary:
         jmp     EvalAtom
 @neg:
         jsr     ChrGet
-        jsr     EvalUnary
+        ; Evaluate the operand at the power level, not this one: the README
+        ; puts `^` above unary `-`, so -2^2 is -(2^2) = -4.  Recursing into
+        ; EvalUnary here bound the minus to the atom first and gave (-2)^2 = 4.
+        ; The '-' is consumed above, so a term is always taken before this
+        ; recurses and the depth is bounded by the run of signs.
+        jsr     EvalPow
         jsr     ChkNum
         ; Negate FAC: flip FACSIGN bit 7.
         lda     FACSIGN

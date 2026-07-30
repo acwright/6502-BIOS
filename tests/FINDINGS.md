@@ -54,6 +54,52 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### `^` associated the wrong way and lost to unary minus
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/basic/power-associativity-and-unary-minus.bas`
+- **Phase:** 2 (found and fixed)
+
+`2^3^2` gave 64 and `-2^2` gave 4. Both should be the other reading: 512 and -4.
+
+**Associativity.** `EvalPow` evaluated its right-hand side by calling
+`EvalUnary`, one level below, which makes a chain of `^` reduce left to right.
+The level's own heading in the source said `(right-associative)` and a comment
+underneath admitted the implementation was not, calling it an acceptable
+simplification. It evaluates the RHS at its own level now, so the RHS takes the
+rest of the chain. `EvalUnary` still runs first inside the recursion, so a term
+is always consumed and the depth is bounded by the length of the chain.
+
+**Unary minus.** The README's precedence table puts Power above Unary, but
+`EvalUnary`'s negate path evaluated its operand by recursing into itself, which
+binds the sign to the atom before `^` is looked at. It evaluates the operand at
+the power level now. This had never actually run before: the case asserting it
+sat on the line after the associativity assertion, which was failing first.
+
+Both fixes are a single changed jump target apiece and cost nothing in space.
+
+`2^3^2` is compared against a tolerance, not for equality: `^` goes through
+exp/log, so the ROM gives 512.000002. That is the six-digit format working as
+designed, and 64 and 512 are far enough apart that no tolerance this small
+could confuse the two associativities.
+
+### RND(0) returned neither the last value nor a varying one
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/basic/rnd-range-repeat-and-reseed.bas`
+- **Phase:** 2 (found and fixed)
+
+The README says `RND(0)` "repeats last value", which is Applesoft's behaviour.
+`Rnd` is msbasic's routine verbatim, and its zero path builds a value out of a
+free-running entropy source instead — the Commodore behaviour. So `RND(0)`
+returned something unrelated to the previous result, and, since nothing in this
+machine keeps `ENTROPY` moving, the same unrelated value every time. Neither
+documented behaviour, and not useful as either.
+
+Every path through `Rnd` ends by storing its result at `RNDSEED`, so the last
+value was already there to hand back. The zero path now loads it and returns.
+That is about 12 bytes smaller than the entropy block it replaces.
+
 ### String comparison and VAL leaked temp descriptors
 
 - **Bucket:** BIOS bug — code wrong, docs right

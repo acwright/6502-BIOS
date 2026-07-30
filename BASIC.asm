@@ -5837,11 +5837,14 @@ FnFre:
         jmp     GivAyf
 
 ; ---------------------------------------------------------------------------
-; FnPos -- POS(n): not yet maintained; returns 0.
+; FnPos -- POS(n): current print column.  Argument is parsed and ignored.
 ; ---------------------------------------------------------------------------
 FnPos:
         jsr     ParenNum
-        ldy     #0
+        ; BAS_POSX is the live column PrintCh maintains and TAB and the comma
+        ; zones already read.  This returned a hardcoded 0 -- the column was
+        ; being tracked all along, POS just never looked at it.
+        ldy     BAS_POSX
         jmp     SngFlt
 
 ; ---------------------------------------------------------------------------

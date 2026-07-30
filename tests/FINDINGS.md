@@ -54,6 +54,24 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### POS always returned 0
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/basic/pos-reports-the-print-column.bas`
+- **Phase:** 2 (found and fixed)
+
+The README documents `POS(x)` as the current print column. `FnPos` returned a
+hardcoded 0, with a comment saying the column was "not yet maintained".
+
+It is maintained: `BAS_POSX` is updated by `PrintCh` on every character and
+reset on CR, and both `TAB` and the comma print zones already read it — those
+work, which is what makes the stub easy to miss. `POS` reads it now. One byte.
+
+Spotted while reading `FnRnd`'s neighbours rather than by a failing test, which
+is worth noting: nothing in §6.5's inventory would have caught a documented
+function quietly returning a constant if the case for it had been written to
+match the ROM instead of the README.
+
 ### `^` associated the wrong way and lost to unary minus
 
 - **Bucket:** BIOS bug — code wrong, docs right

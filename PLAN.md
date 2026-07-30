@@ -464,6 +464,8 @@ obvious. From the current log:
   phase 2; the pre-fix ROM gives 64 for `2^3^2` and 4 for `-2^2`.
 - **`RND(0)` did not repeat the last value** —
   `tests/basic/rnd-range-repeat-and-reseed.bas`. Found and fixed in phase 2.
+- **`POS` always returned 0** — `tests/basic/pos-reports-the-print-column.bas`.
+  Found and fixed in phase 2.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

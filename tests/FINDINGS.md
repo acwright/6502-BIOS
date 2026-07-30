@@ -50,6 +50,55 @@ limitation, which costs nothing and is honest.
 Wanted before writing a case: a decision on which of those two. A case asserting
 the resume works would be asserting a feature nobody has agreed to build.
 
+## WAI and STP are decoded but not implemented
+
+- **Bucket:** emulator bug
+- **Found by:** double-checking the emulator after changing `.setcpu` to
+  `W65C02` — not by a failing case
+- **Phase:** 3
+- **Status:** **open, unfixed, and blocking nothing.** No BIOS test is `xfail`
+  for it, because the BIOS does not use either instruction. Recorded so that it
+  is a known quantity before anything starts to.
+
+The BIOS now targets the WDC 65C02S and can emit `WAI` and `STP`. The emulator
+decodes both correctly — `$CB` and `$DB`, one byte each, and
+`src/tests/W65C02S.test.ts` pins the opcode table — but neither *executes*.
+Both handlers set `cyclesRem = 0xFF` and return, which is a 255-cycle no-op:
+
+```ts
+private STP(): number {
+  this.cyclesRem = 0xFF // Set a large cycle count to effectively halt
+  return 0
+}
+```
+
+Confirmed by running them rather than by reading the source:
+
+| Probe | Real W65C02S | Emulator today |
+|---|---|---|
+| `STP` then `LDA #$42` | never reached without a reset | runs it; `A = $42` |
+| `WAI` then `LDA #$42`, no interrupt ever asserted | waits forever | runs it; `A = $42` |
+| Cycles for one `WAI` | — | 255 ticks spent, **3** counted |
+
+So `STP` does not stop and `WAI` does not wait; both resume on their own after
+255 cycles. The third row is a separate accounting bug in the same two lines:
+`cyclesRem` is set directly without a matching `this.cycles +=`, so the counter
+the harness meters emulated time with under-reports by 252 per instruction.
+
+**Why it is not fixed here.** A correct implementation needs a halted/waiting
+state on the CPU, which is not a two-line change: `step()` loops
+`do { tick() } while (cyclesRem > 0)` and would hang outright on a stopped CPU,
+the state has to join `getState`/`setState` or snapshots restore a running CPU
+over a halted one, and `WAI` has to interact with `irqLine`/`nmi` including the
+case where `I` is set and the interrupt is not serviced. That is a design
+decision about the emulator, not a defect blocking this suite.
+
+**A trap for whoever does fix it.** `src/tests/CPU.test.ts` currently asserts
+the stub — `expect(cpu.pc).toBe(0x8001)` under a comment reading "STP executes
+and consumes cycles (instruction completes)". Those tests encode the bug and
+will resist a correct implementation, exactly the failure mode PLAN.md §10.4
+warns about. They have to be rewritten as part of the fix, not made to pass.
+
 ## BRK pushed the return address one byte too high
 
 - **Bucket:** emulator bug

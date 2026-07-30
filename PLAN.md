@@ -469,6 +469,10 @@ obvious. From the current log:
 - **`NEXT` without a `FOR` ran off a garbage stack frame** —
   `tests/console/error-control-flow.txt`. Found and fixed in phase 2; the
   pre-fix ROM prints `?SYNTAX ERROR IN 0`.
+- **`JOY()` reported everything held with no VIA fitted** —
+  `tests/probe/joy-without-a-via-reads-released.mjs`. Found and fixed in
+  phase 2; the ports are active low, so the pre-fix 0 meant every direction
+  and button pressed.
 - **`PRINT HEX()` rejected values above 32767** —
   `tests/console/hex-in-print-and-in-an-expression.txt`. Found and fixed in
   phase 2; the pre-fix ROM raises `?ILLEGAL QUANTITY` for `$8000` upwards.

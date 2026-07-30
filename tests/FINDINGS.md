@@ -52,43 +52,50 @@ the resume works would be asserting a feature nobody has agreed to build.
 
 ## JOY reads $FF regardless of the stick
 
-- **Bucket:** undecided — may be BIOS, may be the emulator
+- **Bucket:** emulator bug, plus a BIOS doc/degradation fix (done)
 - **Found by:** `tests/probe/joy-returns-the-button-bitmask.mjs`
 - **Phase:** 2
-- **Status:** open, `xfail`
+- **Status:** cause found and fixed in the emulator working tree; the case stays
+  `xfail` until that ships, because the released 2.4.0 still fails it
 
-`JOY(1)` and `JOY(2)` return 255 at rest and 255 with any combination of
-directions and buttons held through `input.joystick`. The injected state never
-reaches BASIC.
+`JOY(1)` and `JOY(2)` returned 255 whatever was held through `input.joystick`.
+The BIOS was not at fault: `ReadJoystick1Impl` reads `GPIO_PORTB` raw and
+`ReadJoystick2Impl` reads Port A, which is correct.
 
-`ReadJoystick1Impl` (Kernal.asm) drops CB2 to disable the matrix encoder and
-reads `GPIO_PORTB` raw; `ReadJoystick2Impl` does the same on Port A. 255 is what
-an unwired active-low port with pull-ups reads, so the value is consistent with
-the port simply never being driven.
+**Two emulator faults, both in `6502-EMULATOR`:**
 
-**Two separate questions, and the first has to be answered first.**
+1. **Port A was never driven.** `Machine.ts` built both attachments with
+   `new JoystickAttachment(false, 100)`. That first argument is *which port the
+   attachment sits on*, so the Port A instance took `readPortA`'s "not mine"
+   branch and returned `0xFF` forever — `JOY(2)` could never see an input. The
+   attachment's own unit tests pass `true` for a Port A instance, so this was a
+   wiring slip in `Machine.ts` alone.
 
-1. **Does the emulator wire `input.joystick` to the VIA ports the BIOS reads?**
-   Unknown from this side. PLAN.md §2 already records that VIA registers read
-   back as `$00` through the debug memory interface, so the VIA is modelled at
-   least partly; whether the joystick input feeds Port A/B, and whether it
-   honours the CB2 encoder-disable the BIOS asserts first, is not established.
-   Check the emulator's VIA and `input.joystick` implementation before touching
-   the Kernal. If the port is never driven, there is nothing wrong here to fix.
+2. **The bits were numbered for a different controller.** The emulator had
+   `UP=0x01 DOWN=0x02 LEFT=0x04 RIGHT=0x08 A=0x10 B=0x20 SELECT=0x40
+   START=0x80`. The schematic wires the DB9 `P7` RIGHT, `P6` LEFT, `P5` DOWN,
+   `P4` UP, `P3` Y, `P2` X, `P1` B, `P0` A/FIRE — the README's R-L-D-U-Y-X-B-A,
+   exactly. The constants were renumbered to match and `SELECT`/`START` renamed
+   to `X`/`Y`, since that is what this controller has.
 
-2. **Polarity, which is a real documentation inconsistency either way.** A raw
-   active-low port reads 255 with nothing held. But the README's degradation
-   table says `JOY()` returns 0 when the VIA is absent — so "no VIA" and "stick
-   at rest" report opposite values, and 0 means *everything held* on a machine
-   that has the hardware. One of the two has to move: either `ReadJoystick`
-   inverts, so a set bit means held and rest is 0 and the two agree, or the
-   degradation row changes to 255. Inverting is what makes both README
-   sentences true at once, and matches what `IF JOY(1) AND 16` reads like.
+One crossover worth remembering, because getting it backwards looks exactly like
+a dead port: `input.joystick` side `a` is VIA port A, which the BIOS reads as
+**`JOY(2)`**; side `b` is port B and `JOY(1)`.
 
-The case asserts the inverting reading — set bit means held — because that is
-the one the README supports as a whole. It stays `xfail` until question 1 is
-answered, since a case cannot distinguish a BIOS polarity bug from an emulator
-that never drives the pins.
+**Polarity, decided.** The ports are active low — each line pulled up through 1K
+and grounded by its switch — and `JOY` returns the port raw, so a held button is
+a `0` bit and an untouched stick reads `$FF`. That stays as it is: it costs
+nothing and matches what a machine-code caller reading the port sees. What was
+wrong was the README's degradation row promising `JOY()` returns 0 with no VIA,
+which under active low means *everything held*. `FnJoy`'s absent path returns
+`$FF` now, and the README says the polarity outright rather than leaving it to
+be inferred. Pinned by `tests/probe/joy-without-a-via-reads-released.mjs`.
+
+**To close this out:** release an emulator containing the two fixes, then delete
+the `xfail` from the bitmask case. It passes against a build of the current
+`6502-EMULATOR` working tree — `SIXTY502="node …/out/cli/index.js" make test` —
+and fails against 2.4.0, which is why the marker is still there. An `xfail` that
+passes is reported red, so the first run against a fixed emulator will say so.
 
 ## The splash and boot menu are never shown on a serial console
 

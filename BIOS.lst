@@ -10182,7 +10182,13 @@ Current file: BIOS.asm
 001C1Fr 2  4C rr rr             jmp     SngFlt
 001C22r 2               @absent:
 001C22r 2  68                   pla
-001C23r 2  A0 00                ldy     #0
+001C23r 2                       ; $FF, not 0.  The ports are active low -- pulled high through 1K, and
+001C23r 2                       ; the stick's switches ground them -- so JOY returns the port raw and 0
+001C23r 2                       ; means every direction and button is held at once.  Reporting 0 for a
+001C23r 2                       ; machine with no VIA fitted told the caller exactly that; $FF is what
+001C23r 2                       ; an untouched stick reads, and so the honest answer for one that is
+001C23r 2                       ; not there at all.
+001C23r 2  A0 FF                ldy     #$FF
 001C25r 2  4C rr rr             jmp     SngFlt
 001C28r 2               
 001C28r 2               ; ---------------------------------------------------------------------------

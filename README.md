@@ -51,7 +51,7 @@ All hardware-dependent operations are guarded at every level — Kernal, BASIC, 
 
 - **CompactFlash absent** — `LOAD`, `SAVE`, `DIR` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` times out instead of hanging
 - **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE` return an error
-- **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns 0; keyboard IRQ check is skipped
+- **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence` silently return
 - **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); console auto-switches to serial
 - **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, and `NVRAM` (write) in BASIC print `NO DEVICE`; `NVRAM()` (read) returns 0
@@ -198,7 +198,7 @@ Two rules for `.prg` files:
 | `TAB(n)` | In `PRINT`, advance cursor to column `n` (no-op if already past) |
 | `SPC(n)` | In `PRINT`, emit `n` spaces |
 | `INKEY` | Non-blocking key read: ASCII code or `0`. No parentheses |
-| `JOY(1)` / `JOY(2)` | Joystick port 1 or 2 bitmask (R-L-D-U-Y-X-B-A) |
+| `JOY(1)` / `JOY(2)` | Joystick port 1 or 2 bitmask (R-L-D-U-Y-X-B-A). The port is **active low** — each line is pulled up and grounded by its switch — and the value is the port read raw, so a held button is a `0` bit and an untouched stick reads `$FF`. Test a direction with `IF (JOY(1) AND 16) = 0` |
 | `NVRAM(addr)` | Read byte from RTC NVRAM (returns 0 if RTC absent) |
 | `HEX(n)` | In `PRINT`, output `n` as `$xxxx` hex; in expressions, returns `n` unchanged |
 | `MIN(a,b)` / `MAX(a,b)` | Smaller / larger of `a` and `b` |

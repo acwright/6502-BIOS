@@ -5893,7 +5893,13 @@ FnJoy:
         jmp     SngFlt
 @absent:
         pla
-        ldy     #0
+        ; $FF, not 0.  The ports are active low -- pulled high through 1K, and
+        ; the stick's switches ground them -- so JOY returns the port raw and 0
+        ; means every direction and button is held at once.  Reporting 0 for a
+        ; machine with no VIA fitted told the caller exactly that; $FF is what
+        ; an untouched stick reads, and so the honest answer for one that is
+        ; not there at all.
+        ldy     #$FF
         jmp     SngFlt
 
 ; ---------------------------------------------------------------------------

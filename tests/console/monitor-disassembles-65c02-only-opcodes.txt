@@ -1,0 +1,55 @@
+name: D renders the 65C02 and Rockwell opcodes, and an undefined byte
+# README: "D ... supports the full WDC 65C02 + Rockwell instruction set"
+#
+# The NMOS 6502 subset is well covered by any disassembler that gets its table
+# roughly right. What distinguishes a 65C02 one is this set: the stack
+# instructions the NMOS part lacks, STZ/TRB/TSB, the accumulator forms of
+# INC/DEC, WAI/STP, and Rockwell's bit-addressed RMB/SMB/BBR/BBS — whose bit
+# number lives in the opcode's upper nibble rather than in an operand byte.
+#
+# RMB0/RMB7 and SMB0/SMB7 are both here on purpose: one of each proves the
+# mnemonic, both prove the nibble is actually decoded rather than a constant.
+#
+# The blob is only ever disassembled, never executed — WAI and STP would stop
+# the processor if it were.
+mode: monitor
+
+> > 1000 80 02 DA 5A FA 7A 64 10 9C 34 12 14 10 04 10
+> > 100F 1A 3A 07 10 77 10 87 10 F7 10 8F 10 FD CB DB 03
+> D 1000 101E
+
+# Branch and the four stack instructions the NMOS 6502 has no encoding for.
+~ ^\.,1000  80 02     BRA \$1004$
+~ ^\.,1002  DA        PHX $
+~ ^\.,1003  5A        PHY $
+~ ^\.,1004  FA        PLX $
+~ ^\.,1005  7A        PLY $
+
+# Store-zero and the test-and-modify pair.
+~ ^\.,1006  64 10     STZ \$10$
+~ ^\.,1008  9C 34 12  STZ \$1234$
+~ ^\.,100B  14 10     TRB \$10$
+~ ^\.,100D  04 10     TSB \$10$
+
+# INC and DEC on the accumulator — 65C02-only, and easy to render as a bare
+# INC with the operand silently dropped.
+~ ^\.,100F  1A        INC A$
+~ ^\.,1010  3A        DEC A$
+
+# Rockwell bit instructions. The digit comes from the opcode's upper nibble,
+# so 0 and 7 of each pair have to differ.
+~ ^\.,1011  07 10     RMB0 \$10$
+~ ^\.,1013  77 10     RMB7 \$10$
+~ ^\.,1015  87 10     SMB0 \$10$
+~ ^\.,1017  F7 10     SMB7 \$10$
+~ ^\.,1019  8F 10 FD  BBS0 \$10,\$1019$
+
+# The two that stop the processor.
+~ ^\.,101C  CB        WAI $
+~ ^\.,101D  DB        STP $
+
+# An opcode with no meaning renders as ??? and consumes exactly one byte —
+# a disassembler that guessed a length here would desynchronise everything
+# after it, so the closing prompt and the absent next line are the assertion.
+~ ^\.,101E  03        \?\?\? $
+! ^\.,101F

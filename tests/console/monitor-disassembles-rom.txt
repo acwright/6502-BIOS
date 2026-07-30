@@ -1,0 +1,19 @@
+name: D reads ROM, and the Kernal jump table disassembles as JMPs
+# README: "$A000–$A0FF — Kernal jump table (public API)"
+#         "Kernal jump table ($A000–$A0FF) — all entries remain stable across
+#          BIOS versions"
+#
+# The fixture cases plant their bytes in RAM, which leaves one thing untested:
+# that D reads through ROM at all. This does that against the one ROM region
+# whose shape is a documented promise rather than an implementation detail —
+# a table of three-byte JMPs on a three-byte stride.
+#
+# Only the structure is asserted, never the targets. Those are wherever the
+# linker put them and will move; pinning them here would turn an unrelated
+# Kernal edit into a disassembler failure.
+mode: monitor
+
+> D A000 A008
+~ ^\.,A000  4C [0-9A-F]{2} [0-9A-F]{2}  JMP \$[0-9A-F]{4}$
+~ ^\.,A003  4C [0-9A-F]{2} [0-9A-F]{2}  JMP \$[0-9A-F]{4}$
+~ ^\.,A006  4C [0-9A-F]{2} [0-9A-F]{2}  JMP \$[0-9A-F]{4}$

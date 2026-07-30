@@ -1,0 +1,14 @@
+name: D with one address disassembles exactly twenty lines
+# README: "D [addr] [addr] — Disassemble 65C02 instructions (20 lines default)"
+#
+# Filling the region with one-byte NOPs makes the line count directly readable
+# as an address: twenty lines from $1000 ends on $1013, and a twenty-first
+# would be $1014. The fill runs past $1013 so that stopping there is a decision
+# the command made rather than the end of the planted bytes.
+mode: monitor
+
+> F 1000 1030 EA
+> D 1000
+~ ^\.,1000  EA        NOP $
+~ ^\.,1013  EA        NOP $
+! ^\.,1014

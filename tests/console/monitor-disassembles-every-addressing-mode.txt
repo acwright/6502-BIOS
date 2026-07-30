@@ -1,0 +1,59 @@
+name: D renders all sixteen addressing modes
+# README: "D [addr] [addr] — Disassemble 65C02 instructions (20 lines default);
+#          supports the full WDC 65C02 + Rockwell instruction set"
+#
+# A fixture blob rather than a ROM region: disassembling real ROM only exercises
+# whichever modes that ROM happens to use, and re-pins the ROM's contents into a
+# test about the disassembler. Planting the bytes means every mode appears once,
+# chosen to be the *same* operand ($10 / $1234) throughout, so the only thing
+# that differs line to line is the syntax under test.
+#
+# Expected text is 65C02 assembler syntax, not something read back off the ROM.
+# The column layout is the Monitor's own and is pinned here: ".,ADDR", two
+# spaces, three byte-columns (blank-padded for short instructions), two spaces,
+# mnemonic, space, operand.
+#
+# The two relative modes both encode a branch to their own address — offset -2
+# for REL (which reckons from addr+2) and -3 for ZPR (from addr+3). An operand
+# printer that reckoned from the wrong base would land somewhere else, and both
+# use the same $10 zero-page byte so a swapped operand order shows up too.
+mode: monitor
+
+> > 1000 EA 0A A9 42 A5 10 B5 10 B6 10
+> > 100A AD 34 12 BD 34 12 B9 34 12 6C 34 12
+> > 1016 A1 10 B1 10 B2 10 D0 FE 0F 10 FD 7C 34 12
+> D 1000 1023
+
+# Implied and accumulator — no operand, and the one-byte forms pad their
+# byte columns rather than shifting the mnemonic left.
+~ ^\.,1000  EA        NOP $
+~ ^\.,1001  0A        ASL A$
+
+# Immediate and the three zero-page forms.
+~ ^\.,1002  A9 42     LDA #\$42$
+~ ^\.,1004  A5 10     LDA \$10$
+~ ^\.,1006  B5 10     LDA \$10,X$
+~ ^\.,1008  B6 10     LDX \$10,Y$
+
+# Absolute and its indexed forms — operand bytes are little-endian in memory
+# and big-endian on screen, which is the swap worth asserting.
+~ ^\.,100A  AD 34 12  LDA \$1234$
+~ ^\.,100D  BD 34 12  LDA \$1234,X$
+~ ^\.,1010  B9 34 12  LDA \$1234,Y$
+~ ^\.,1013  6C 34 12  JMP \(\$1234\)$
+
+# The indirect zero-page family. ($10,X) and ($10),Y differ only in where the
+# bracket closes, which is exactly the kind of thing that gets transposed.
+~ ^\.,1016  A1 10     LDA \(\$10,X\)$
+~ ^\.,1018  B1 10     LDA \(\$10\),Y$
+~ ^\.,101A  B2 10     LDA \(\$10\)$
+
+# Relative and zero-page-relative, each branching to itself.
+~ ^\.,101C  D0 FE     BNE \$101C$
+~ ^\.,101E  0F 10 FD  BBR0 \$10,\$101E$
+
+# Absolute indexed indirect — 65C02-only, and the last mode.
+~ ^\.,1021  7C 34 12  JMP \(\$1234,X\)$
+
+# The range ends where it was told to, rather than running on.
+! ^\.,1024

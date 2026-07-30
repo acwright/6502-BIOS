@@ -1,0 +1,15 @@
+name: BRK drops into the Monitor and X returns to BASIC with the program intact
+# README: "BRK — Drop into the machine-code monitor. Return to BASIC with `X`"
+#         "X — Exit to BASIC"
+#
+# The round trip is the assertion. Getting into the Monitor is easy; coming
+# back with the program still there is the part the README promises and the
+# part that would break silently.
+mode: basic
+
+> 10 PRINT "STILL HERE"
+> BRK
+~ BRK AT \$[0-9A-F]{4}
+> X
+> RUN
+~ ^STILL HERE$

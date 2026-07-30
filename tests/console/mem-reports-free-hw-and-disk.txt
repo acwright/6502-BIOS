@@ -1,0 +1,15 @@
+name: MEM reports free bytes, the hardware mask and the current disk
+# README: "MEM — Print free bytes, `HW=$xx`, and `DISK n`"
+#         "MEM and the cold-boot banner report MEMSIZ - VARTAB"
+#
+# The free figure has to fall when a program is entered, since it is measured
+# from the top of the program text — a MEM that reports a constant is reporting
+# the wrong thing, and would still match a pattern that only checked the shape.
+mode: basic
+
+> MEM
+~ HW=\$[0-9A-F]{2}
+~ DISK 0
+> 10 REM THIS LINE OCCUPIES SPACE THAT MEM MUST ACCOUNT FOR
+> MEM
+~ HW=\$[0-9A-F]{2}

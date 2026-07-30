@@ -1,0 +1,16 @@
+name: M splits at 8 bytes a line, continues bare, and crosses a page boundary
+# README: "M [addr] [addr] — Hex + ASCII memory dump (8 bytes/line); bare `M`
+#          continues from last address"
+mode: monitor
+
+> F 10F8 1107 EE
+> M 10F8 1107
+~ ^\.:10F8 EE EE EE EE EE EE EE EE
+~ ^\.:1100 EE EE EE EE EE EE EE EE
+! ^\.:1108
+> F 1200 121F 11
+> M 1200 1207
+~ ^\.:1200 11 11 11 11 11 11 11 11 \.{8}$
+! ^\.:1208
+> M
+~ ^\.:1208 11 11 11 11 11 11 11 11

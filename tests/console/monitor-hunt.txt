@@ -1,0 +1,14 @@
+name: H reports every address where a pattern occurs, and nothing when it does not
+# README: "H addr addr byte [byte...] — Hunt (search) for a byte pattern in a range"
+mode: monitor
+
+> F 1000 10FF 00
+> > 1010 DE AD BE EF
+> > 1080 DE AD BE EF
+> H 1000 10FF DE AD BE EF
+~ ^1010$
+~ ^1080$
+> H 1000 10FF DE
+~ ^1010$
+> H 1000 10FF 12 34 56
+! ^[0-9A-F]{4}$

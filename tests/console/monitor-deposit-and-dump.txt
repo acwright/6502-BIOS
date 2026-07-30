@@ -1,0 +1,18 @@
+name: > deposits bytes and M dumps them in hex and ASCII
+# README: "> addr byte [byte...] — Deposit (write) bytes starting at address"
+#         "M [addr] [addr] — Hex + ASCII memory dump (8 bytes/line)"
+#
+# The layout itself is not in the README, so it is pinned here from the ROM:
+# `.:ADDR` then eight hex bytes then the ASCII column. The leading `.` is the
+# Supermon convention that lets a dump line be edited on screen and re-entered.
+mode: monitor
+
+> > 1000 41 42 43 44 45 46 47 48
+> M 1000 1007
+~ ^\.:1000 41 42 43 44 45 46 47 48 ABCDEFGH$
+> > 1008 5A
+> M 1008 100F
+~ ^\.:1008 5A
+> > 0080 AA BB
+> M 0080 0087
+~ ^\.:0080 AA BB

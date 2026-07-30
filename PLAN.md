@@ -476,6 +476,12 @@ obvious. From the current log:
 - **`NEXT` without a `FOR` ran off a garbage stack frame** —
   `tests/console/error-control-flow.txt`. Found and fixed in phase 2; the
   pre-fix ROM prints `?SYNTAX ERROR IN 0`.
+- **`F` with a reversed range overwrote all of memory** —
+  `tests/console/monitor-fill.txt`. Found and fixed in phase 3; the pre-fix
+  ROM wraps through `$FFFF` and never returns.
+- **Bare `M` restarted from `$0000`** —
+  `tests/console/monitor-dump-continues-and-spans-pages.txt`. Found and fixed
+  in phase 3.
 - **`JOY()` reported everything held with no VIA fitted** —
   `tests/probe/joy-without-a-via-reads-released.mjs`. Found and fixed in
   phase 2; the ports are active low, so the pre-fix 0 meant every direction

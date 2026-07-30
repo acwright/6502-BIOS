@@ -1,0 +1,21 @@
+name: F fills a range, including a single byte, and does not run away backwards
+# README: "F addr addr byte — Fill memory range with a byte value"
+#
+# The reversed range is the one worth writing down. `F 1010 1000 CC` asks to
+# fill from a higher address to a lower one, which is not a range at all. What
+# it must not do is walk forward from 1010 until the address wraps — the
+# guard bytes on either side are there to catch exactly that.
+mode: monitor
+
+> F 1000 1007 CC
+> M 1000 1007
+~ ^\.:1000 CC CC CC CC CC CC CC CC \.{8}$
+> F 1100 1100 DD
+> M 1100 1107
+~ ^\.:1100 DD 00
+> > 1200 01 02 03 04 05 06 07 08
+> F 1207 1200 EE
+> M 1200 1207
+! ^\.:1200 EE EE EE EE EE EE EE EE
+> M 1240 1247
+! ^\.:1240 EE EE EE EE

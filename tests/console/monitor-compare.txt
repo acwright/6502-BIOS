@@ -1,0 +1,17 @@
+name: C prints the addresses where two regions differ, and nothing when they match
+# README: "C addr addr addr — Compare two memory regions; prints differing addresses"
+mode: monitor
+
+> F 1000 100F 77
+> F 1100 110F 77
+> C 1000 100F 1100
+! ^[0-9A-F]{4}$
+> > 1104 99
+> C 1000 100F 1100
+~ ^1004$
+> > 1100 88
+> > 110F 66
+> C 1000 100F 1100
+~ ^1000$
+~ ^1004$
+~ ^100F$

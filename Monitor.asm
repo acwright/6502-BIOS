@@ -379,6 +379,20 @@ MonCmdFill:
   jsr MonParseHex2              ; Parse fill byte → A
   bcc @FillError
   ; A = fill byte, MON_ADDR = start, MON_END = end (inclusive)
+  ; Refuse a reversed range.  The loop below stops only on start == end, so a
+  ; start above the end never matches: it walks up through $FFFF, wraps to
+  ; $0000 and comes back round, having overwritten the whole address space --
+  ; the ROM's own vectors and this monitor included.  Equal addresses are a
+  ; legitimate one-byte fill and must still go through.
+  ldx MON_ADDR+1
+  cpx MON_END+1
+  bcc @FillRange
+  bne @FillDone
+  ldx MON_ADDR
+  cpx MON_END
+  bcc @FillRange
+  bne @FillDone                 ; carry set and not equal -> start > end
+@FillRange:
   ldy #0
 @FillLoop:
   sta (MON_ADDR),y
@@ -1425,9 +1439,17 @@ MonCmdSave:
 ; ============================================================================
 
 MonCmdM:
+  ; Preserve the continuation address across the parse attempt.  MonParseHex4
+  ; opens with `stz MON_ADDR`, so it zeroes the address whether or not it finds
+  ; any digits -- a bare M had therefore already lost the position it was meant
+  ; to resume from and dumped from $0000 every time.  @StartOnly restores this.
+  lda MON_ADDR
+  sta MON_TMP
+  lda MON_ADDR+1
+  sta MON_TMP+1
   jsr MonSkipSpaces
   jsr MonParseHex4
-  bcc @UseDefault               ; No address given — use current MON_ADDR
+  bcc @StartOnly                ; No address given — resume where we left off
   ; Got first address in MON_ADDR — save it
   lda MON_ADDR
   sta MON_TMP

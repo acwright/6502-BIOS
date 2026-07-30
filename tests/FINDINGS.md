@@ -144,6 +144,49 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### F with a reversed range overwrote all of memory
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/monitor-fill.txt`
+- **Phase:** 3 (found and fixed)
+
+`F 1207 1200 EE` — a fill whose start is above its end — wrote `$EE` over the
+entire address space. The console filled with `î` as the fill marched through
+the ROM's own workspace, and the machine did not come back.
+
+`MonCmdFill`'s loop stops only on `MON_ADDR == MON_END`. With the start above
+the end that equality is never reached on the way up: the address walks to
+`$FFFF`, wraps to `$0000`, and comes round again to meet `MON_END` from below,
+by which point it has overwritten everything including the monitor running it.
+
+It now compares the two before the first store and returns without writing when
+the start is above the end. Equal addresses still fill one byte, which is the
+case the check has to be careful not to swallow.
+
+The suite caught this only because the case was written from the plan's
+"reversed range (addr2 < addr1) does not run away", ahead of knowing whether the
+ROM handled it. A case written by observing the ROM would have hung and been
+quietly rewritten to something friendlier.
+
+### Bare M restarted from $0000 instead of continuing
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/monitor-dump-continues-and-spans-pages.txt`
+- **Phase:** 3 (found and fixed)
+
+The README says bare `M` "continues from last address". It dumped from `$0000`
+every time.
+
+`MonCmdM` was written for this — its no-address branch is commented "use current
+MON_ADDR" — but `MonParseHex4` opens with `stz MON_ADDR` / `stz MON_ADDR+1`, so
+it zeroes the address before discovering there are no digits to parse. The
+continuation address was destroyed by the attempt to read one.
+
+`MonCmdM` now copies `MON_ADDR` into `MON_TMP` before parsing, and its
+no-address branch goes to `@StartOnly`, which already restores from `MON_TMP` for
+the one-address form. Eight bytes, and no change to `MonParseHex4` — other
+callers pass an address and are unaffected by its zeroing.
+
 ### NEXT without a FOR ran off a garbage stack frame
 
 - **Bucket:** BIOS bug — code wrong, docs right

@@ -14,6 +14,42 @@ under PLAN.md §6.12 on the way out.
 
 ---
 
+## CONT cannot resume inside a FOR loop
+
+- **Bucket:** undecided — the README does not say either way
+- **Found by:** writing `tests/console/ctrl-c-breaks-and-cont-resumes.txt`
+- **Phase:** 2
+- **Status:** open, no test written
+
+Breaking inside a `FOR` loop and typing `CONT` resumes at the right line and
+then fails on the `NEXT`:
+
+```basic
+10 FOR I = 1 TO 5
+20 IF I = 3 THEN STOP
+30 NEXT I
+RUN
+BREAK IN 20
+CONT
+?NEXT WITHOUT FOR ERROR IN 30
+```
+
+It is not the Ctrl+C path — `STOP` does the same, which is what rules out the
+break handler and points at the resume. `FOR` frames live on the 6502 hardware
+stack, and the return to the prompt resets the stack pointer, so by the time
+`CONT` restores `TXTPTR` and `CURLIN` the frame is gone. `GOSUB` frames live in
+the same place and will have the same problem.
+
+**Why this is not filed as a bug yet.** The README promises only that `CONT`
+continues after a break; it says nothing about loop context, and the same
+limitation is inherent to where msbasic keeps its frames. Fixing it means
+saving and restoring the live part of page 1 across the break — real work, and
+space this ROM does not obviously have. The alternative is to document the
+limitation, which costs nothing and is honest.
+
+Wanted before writing a case: a decision on which of those two. A case asserting
+the resume works would be asserting a feature nobody has agreed to build.
+
 ## JOY reads $FF regardless of the stick
 
 - **Bucket:** undecided — may be BIOS, may be the emulator

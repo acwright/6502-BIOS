@@ -466,6 +466,9 @@ obvious. From the current log:
   `tests/basic/rnd-range-repeat-and-reseed.bas`. Found and fixed in phase 2.
 - **`POS` always returned 0** — `tests/basic/pos-reports-the-print-column.bas`.
   Found and fixed in phase 2.
+- **`PRINT HEX()` rejected values above 32767** —
+  `tests/console/hex-in-print-and-in-an-expression.txt`. Found and fixed in
+  phase 2; the pre-fix ROM raises `?ILLEGAL QUANTITY` for `$8000` upwards.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

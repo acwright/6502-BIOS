@@ -5698,7 +5698,12 @@ Current file: BIOS.asm
 000542r 2  20 rr rr             jsr     FrmEvl
 000545r 2  20 rr rr             jsr     ChkNum
 000548r 2  20 rr rr             jsr     ChkCls
-00054Br 2  20 rr rr             jsr     AyInt
+00054Br 2                       ; Unsigned: AyInt is the signed conversion and rejects anything at or
+00054Br 2                       ; above 32768, so PRINT HEX() of any address in the top half of the
+00054Br 2                       ; map -- $8000, the RAM bank window the README documents -- raised
+00054Br 2                       ; ILLEGAL QUANTITY. A four-digit $xxxx covers 0..65535, and FacToU16
+00054Br 2                       ; leaves its result in the same FAC+3/FAC+4 PrintHex16 reads.
+00054Br 2  20 rr rr             jsr     FacToU16
 00054Er 2  20 rr rr             jsr     PrintHex16
 000551r 2  80 6A                bra     BasPrAfter
 000553r 2               @chkTab:

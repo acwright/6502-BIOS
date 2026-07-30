@@ -1467,7 +1467,12 @@ BasPrLoop:
         jsr     FrmEvl
         jsr     ChkNum
         jsr     ChkCls
-        jsr     AyInt
+        ; Unsigned: AyInt is the signed conversion and rejects anything at or
+        ; above 32768, so PRINT HEX() of any address in the top half of the
+        ; map -- $8000, the RAM bank window the README documents -- raised
+        ; ILLEGAL QUANTITY. A four-digit $xxxx covers 0..65535, and FacToU16
+        ; leaves its result in the same FAC+3/FAC+4 PrintHex16 reads.
+        jsr     FacToU16
         jsr     PrintHex16
         bra     BasPrAfter
 @chkTab:

@@ -54,6 +54,29 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### PRINT HEX() rejected the top half of the address map
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/hex-in-print-and-in-an-expression.txt`
+- **Phase:** 2 (found and fixed)
+
+`PRINT HEX(65535)` raised `?ILLEGAL QUANTITY`, and so did `PRINT HEX(32768)`.
+
+The PRINT-context HEX branch converted with `AyInt`, msbasic's *signed* 16-bit
+conversion, which rejects anything from 32768 up. A four-digit `$xxxx` format
+covers 0..65535 by construction, and the addresses anyone reaches for HEX to
+print — `$8000`, the RAM bank window the README documents — are precisely the
+ones in the rejected half. `FacToU16` is the unsigned conversion, already used
+by `PEEK`, and it leaves its result in the same `FAC+3`/`FAC+4` that
+`PrintHex16` reads. Same instruction size.
+
+Not a bug, and asserted as such: inside `PRINT`, `HEX` is a formatting
+directive parsed by the PRINT statement itself, like `TAB` and `SPC`. It takes
+its own parenthesised argument and is not an operand, so `PRINT HEX(16) + 0` is
+a syntax error. The identity half of the README's sentence is reached by using
+`HEX` outside `PRINT`. The first draft of the case got this wrong and asserted
+` 16`; the ROM was right.
+
 ### POS always returned 0
 
 - **Bucket:** BIOS bug — code wrong, docs right

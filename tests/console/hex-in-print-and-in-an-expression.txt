@@ -1,0 +1,29 @@
+name: HEX prints $xxxx in PRINT and is the identity in an expression
+# README: "HEX(n) — In PRINT, output `n` as `$xxxx` hex; in expressions,
+#          returns `n` unchanged"
+#
+# The two halves contradict each other by design, so both need saying: the same
+# call formats in one context and does nothing in the other.
+#
+# Inside PRINT, HEX is a formatting directive parsed by the PRINT statement
+# itself, exactly like TAB and SPC — it takes its own parenthesised argument
+# and is not an operand, so `PRINT HEX(16) + 0` is a syntax error rather than
+# ` 16`. The identity half is reached by using HEX outside PRINT.
+#
+# $FFFF is the case that matters: the whole point of a four-digit format is
+# addresses, and the interesting ones live above $7FFF.
+mode: basic
+
+> PRINT HEX(255)
+~ ^\$00FF$
+> PRINT HEX(0)
+~ ^\$0000$
+> PRINT HEX(65535)
+~ ^\$FFFF$
+> PRINT HEX(32768)
+~ ^\$8000$
+> A = HEX(4095)
+> PRINT A
+~ ^ 4095$
+> PRINT HEX(-1)
+~ \?ILLEGAL QUANTITY ERROR

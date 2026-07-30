@@ -1,0 +1,25 @@
+name: J returns to the Monitor through a nested JSR
+# README: "J [addr] — JSR — call a subroutine; RTS returns to the monitor with
+#          register display"
+#
+# The flat case is already covered by monitor-go-and-jsr; what is untested is
+# that the Monitor's own return address survives a subroutine going deeper.
+# J has to leave the stack exactly as it found it, and a routine that nested
+# would be the first thing to expose it if it did not.
+#
+#   $1100  20 10 11  JSR $1110     ; go one level down
+#   $1103  A0 33     LDY #$33      ; runs only if the inner RTS came back here
+#   $1105  60        RTS           ; and this must return to the Monitor
+#   $1110  A2 77     LDX #$77
+#   $1112  60        RTS
+#
+# Both registers are asserted because each proves a different return: X that
+# the inner call ran, Y that control came back from it rather than unwinding
+# straight out to the Monitor.
+mode: monitor
+
+> > 1100 20 10 11 A0 33 60
+> > 1110 A2 77 60
+> ; X 00 Y 00
+> J 1100
+~ ^PC=[0-9A-F]{4} A=[0-9A-F]{2} X=77 Y=33

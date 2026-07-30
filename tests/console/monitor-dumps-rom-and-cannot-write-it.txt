@@ -1,0 +1,19 @@
+name: M dumps ROM, and > cannot change it
+# README: "$A000–$A0FF — Kernal jump table (public API)"
+#         "ROM ($8000–$FFFF, 32KB)"
+#
+# Every other dump case writes its own bytes first, so all of them would still
+# pass against a monitor that could only see RAM. This one reads a region
+# nothing can have written, and the jump table's three-byte JMP stride makes
+# the expected bytes readable without pinning the targets.
+#
+# Depositing into ROM is the complementary half: `>` reports nothing and
+# changes nothing. A monitor that appeared to accept the write would be
+# actively misleading, since the dump afterwards is the only feedback there is.
+mode: monitor
+
+> M A000 A007
+~ ^\.:A000 4C [0-9A-F]{2} [0-9A-F]{2} 4C [0-9A-F]{2} [0-9A-F]{2} 4C [0-9A-F]{2} L
+> > A000 00 00 00
+> M A000 A007
+~ ^\.:A000 4C [0-9A-F]{2} [0-9A-F]{2} 4C [0-9A-F]{2} [0-9A-F]{2} 4C [0-9A-F]{2} L

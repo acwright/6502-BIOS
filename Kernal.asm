@@ -944,10 +944,33 @@ ChrinImpl:
 SerialChroutImpl:
   sta SC_DATA
   pha
+  phx                           ; WriteBuffer uses X
 @ChroutWait:
   lda SC_STATUS
+  ; Reading the status register clears a pending receive interrupt. A byte that
+  ; arrives while this loop is running therefore loses its interrupt before Irq
+  ; can see it, and since the receive register stays full the ACIA will not hand
+  ; over the next one either — the console stops accepting input for good. So
+  ; the byte is collected here rather than left for a handler that will never
+  ; run. XModem is the exception: it turns the receiver interrupt off and polls
+  ; the chip itself, and those bytes belong to it.
+  bit #SC_STATUS_RDRF           ; Did a byte arrive during the poll?
+  beq @ChroutNoRx
+  pha                           ; Keep the status just read
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @ChroutRxDone             ; Receiver is somebody else's — leave it alone
+  php
+  sei                           ; WriteBuffer's pointer bump is not atomic
+  lda SC_DATA                   ; Frees the receive register
+  jsr WriteBuffer
+  plp
+@ChroutRxDone:
+  pla                           ; Back to the status
+@ChroutNoRx:
   and #SC_STATUS_TDRE           ; Check if TX buffer not empty
   beq @ChroutWait               ; Loop if TX buffer not empty
+  plx
   pla
   rts
 

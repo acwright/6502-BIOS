@@ -676,6 +676,17 @@ obvious. From the current log:
   pre-fix ROM the resume raises `?NEXT WITHOUT FOR`, and `CONT` after an error
   or a `NEW` resumes into a program that is no longer there.
 
+- **A byte arriving while the ROM echoed was lost, and took the console with
+  it** — `tests/probe/a-byte-arriving-while-chrout-echoes-is-not-lost.mjs`.
+  Found by phase 7's CI and fixed there. Reading the ACIA status register
+  clears a pending receive interrupt and the transmit loop read it once per
+  character, so a byte landing in that window was never buffered and the full
+  receive register stopped the chip delivering any after it. The pre-fix ROM
+  wedges permanently — a hundred million cycles with `RDRF` set and an empty
+  input buffer. The case builds that interleaving with `SEI`, a delay and a
+  `JSR SerialChrout` rather than waiting for it, so it fails every run rather
+  than one in a few hundred.
+
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.
 

@@ -231,6 +231,7 @@ SC_STATUS_RDRF      := %00001000         ; RX Data Register Full
 SC_STATUS_OVR       := %00000100         ; Overrun
 SC_STATUS_FRME      := %00000010         ; Framing Error
 SC_STATUS_PARE      := %00000001         ; Parity Error
+SC_CMD_RXIRQ_OFF    := %00000010         ; Receiver interrupt disabled
 
 ; GPIO Card / Input Board (65C22) | IO 6 | $9400-$940F
 GPIO_PORTB          := $9400

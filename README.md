@@ -223,7 +223,7 @@ Two rules for `.prg` files:
 | Logical AND | `AND` |
 | Logical OR | `OR` |
 
-> **Stack limits:** GOSUB supports up to 64 nested levels; FOR/NEXT supports up to 8 nested loops. Exceeding either limit produces an `OUT OF MEMORY` error.
+> **Stack limits:** GOSUB and FOR/NEXT frames both live on the 6502 stack, which they share with the interpreter's own working space. At least 20 GOSUB levels are available whatever the subroutine does, and about 27 for a simple one; FOR/NEXT supports up to 8 nested loops. Exceeding either limit produces an `OUT OF MEMORY` error.
 
 > **Memory layout:** Programs grow up from `$0800`. Numeric/string scalar variables follow the program, then arrays, then the string heap which grows down from `$8000`. `MEM` and the cold-boot banner report `MEMSIZ - VARTAB` (free bytes for variables, arrays, and strings combined).
 

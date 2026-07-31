@@ -1068,9 +1068,19 @@ Current file: BIOS.asm
 00045Dr 2  80 FE          bra @Halt
 00045Fr 2               
 00045Fr 2               @HasConsole:
-00045Fr 2  20 rr rr       jsr Splash                    ; Draw the splash screen (guarded — skips if no video)
-000462r 2               
-000462r 2  58             cli                           ; Enable interrupts
+00045Fr 2  58             cli                           ; Enable interrupts before anything is printed:
+000460r 2                                               ;   reading the ACIA's status register clears a
+000460r 2                                               ;   pending receive interrupt (6551 datasheet),
+000460r 2                                               ;   and the transmit loop reads it on every
+000460r 2                                               ;   character — so a key pressed while the
+000460r 2                                               ;   splash prints would be sitting in the
+000460r 2                                               ;   receive register with nothing left to tell
+000460r 2                                               ;   the handler about it.  With interrupts on,
+000460r 2                                               ;   it is in the input buffer before the menu
+000460r 2                                               ;   asks.
+000460r 2               
+000460r 2  20 rr rr       jsr Splash                    ; Draw the splash screen on whichever console
+000463r 2                                               ;   this machine has
 000463r 2               
 000463r 2                 ; Boot menu — wait for keypress with ~5-second timeout
 000463r 2                 ; Each iteration delays 100ms then checks for a key. 50 iterations = 5 seconds.
@@ -3333,129 +3343,140 @@ Current file: BIOS.asm
 0010AAr 2  45 4D 20 54  
 0010AEr 2  58 20 52 45  
 0010B8r 2               
-0010B8r 2               ; Draw the splash screen
-0010B8r 2               ; Uses video output to display centered title and boot menu
-0010B8r 2               ; Skips if video card is absent
+0010B8r 2               ; Draw the splash screen on whichever console this machine has
+0010B8r 2               ; Video: the two lines centred on the 40-column screen.  Serial: the same two
+0010B8r 2               ; lines as plain text through Chrout — a terminal's width is the user's to
+0010B8r 2               ; choose, so there is no column to centre on and the video path's cursor
+0010B8r 2               ; placement has no equivalent.  The boot menu runs either way; without this a
+0010B8r 2               ; serial user sat through five silent seconds never told ESC was an option.
 0010B8r 2               ; Modifies: Flags, A, X, Y
 0010B8r 2               Splash:
 0010B8r 2  AD 0D 03       lda HW_PRESENT
 0010BBr 2  29 80          and #HW_VID
-0010BDr 2  D0 01          bne @SplashStart
-0010BFr 2  60             rts                           ; No video — skip
-0010C0r 2               @SplashStart:
-0010C0r 2  20 rr rr       jsr VideoClear                ; Clear the video screen
-0010C3r 2                 ; Position cursor at row 10, col 10 for title
-0010C3r 2  A2 0A          ldx #10
-0010C5r 2  A0 0A          ldy #10
-0010C7r 2  20 rr rr       jsr VideoSetCursor
-0010CAr 2  A9 rr          lda #<@SplashTitle
-0010CCr 2  85 02          sta STR_PTR
-0010CEr 2  A9 rr          lda #>@SplashTitle
-0010D0r 2  85 03          sta STR_PTR + 1
-0010D2r 2  20 rr rr       jsr VideoPrintStrImpl
-0010D5r 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
-0010D5r 2  A2 08          ldx #8
-0010D7r 2  A0 0C          ldy #12
-0010D9r 2  20 rr rr       jsr VideoSetCursor
-0010DCr 2  A9 rr          lda #<@SplashMenu
-0010DEr 2  85 02          sta STR_PTR
-0010E0r 2  A9 rr          lda #>@SplashMenu
-0010E2r 2  85 03          sta STR_PTR + 1
-0010E4r 2  20 rr rr       jsr VideoPrintStrImpl
-0010E7r 2  60             rts
-0010E8r 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.3 --"
-0010ECr 2  35 30 32 20  
-0010F0r 2  42 49 4F 53  
-0010FDr 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
-001101r 2  52 3D 42 41  
-001105r 2  53 49 43 20  
-001116r 2               
-001116r 2               ; NMI Handler
-001116r 2               Nmi:
-001116r 2  40             rti
-001117r 2               
-001117r 2               ; BRK Handler — saves full CPU state and enters monitor
-001117r 2               ; On entry from @IrqBrk: A/X/Y are the user's original values (restored by IRQ handler).
-001117r 2               ; The CPU's hardware push left P/PCL/PCH on the stack.
-001117r 2               Break:
-001117r 2  8D 13 03       sta BRK_A                     ; Save user's A register
-00111Ar 2  8E 14 03       stx BRK_X                     ; Save user's X register
-00111Dr 2  8C 15 03       sty BRK_Y                     ; Save user's Y register
-001120r 2  BA             tsx                           ; Get current SP
-001121r 2  8E 16 03       stx BRK_SP                   ; Save SP (points below P/PCL/PCH on stack)
-001124r 2  68             pla                           ; Pull saved P
-001125r 2  8D 10 03       sta BRK_P
-001128r 2  68             pla                           ; Pull saved PCL (PC+2)
-001129r 2  8D 11 03       sta BRK_PCL
-00112Cr 2  68             pla                           ; Pull saved PCH
-00112Dr 2  8D 12 03       sta BRK_PCH
-001130r 2  4C rr rr       jmp MonitorBrkEntry
-001133r 2               
-001133r 2               ; IRQ Handler
-001133r 2               Irq:
-001133r 2  48             pha
-001134r 2  5A             phy
-001135r 2  DA             phx
-001136r 2  BA             tsx                           ; Get stack pointer to check saved status register
-001137r 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
-00113Ar 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
-00113Cr 2  D0 47          bne @IrqBrk                   ; Branch if this was a BRK instruction
-00113Er 2               @IrqSc:
-00113Er 2  AD 0D 03       lda HW_PRESENT
-001141r 2  29 10          and #HW_SC
-001143r 2  F0 19          beq @IrqCheckKB               ; Serial not present — skip
-001145r 2  AD 01 90       lda SC_STATUS
-001148r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-00114Ar 2  F0 12          beq @IrqCheckKB               ; If not, check keyboard
-00114Cr 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
-00114Fr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-001152r 2  20 rr rr       jsr BufferSize
-001155r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-001157r 2  90 05          bcc @IrqCheckKB               ; If not, also check keyboard
-001159r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-00115Br 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-00115Er 2                                               ; Fall through to check keyboard — always clear VIA flags
-00115Er 2               @IrqCheckKB:
-00115Er 2  AD 0D 03       lda HW_PRESENT
-001161r 2  29 20          and #HW_GPIO
-001163r 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
-001165r 2  AD 0D 94       lda GPIO_IFR
-001168r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
-00116Ar 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
-00116Cr 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
-00116Fr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-001172r 2  80 0D          bra @IrqExit
-001174r 2               @IrqCheckPS2:
-001174r 2  AD 0D 94       lda GPIO_IFR
-001177r 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
-001179r 2  F0 06          beq @IrqExit                  ; If not, exit
-00117Br 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
-00117Er 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-001181r 2               @IrqExit:
-001181r 2  FA             plx
-001182r 2  7A             ply
-001183r 2  68             pla
-001184r 2  40             rti
-001185r 2               @IrqBrk:
-001185r 2  FA             plx                           ; Restore saved registers
-001186r 2  7A             ply
-001187r 2  68             pla
-001188r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
-001189r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
-00118Cr 2               
-00118Cr 2               ; NMI Vector
-00118Cr 2               NmiVec:
-00118Cr 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
-00118Fr 2               
-00118Fr 2               ; Reset Vector
-00118Fr 2               ResetVec:
-00118Fr 2  4C rr rr       jmp Reset                     ; Initialize the system
-001192r 2               
-001192r 2               ; IRQ Vector
-001192r 2               IrqVec:
-001192r 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
-001195r 2               
-001195r 1               .segment "CHARS"
+0010BDr 2  D0 14          bne @SplashStart
+0010BFr 2                 ; No video — plain text on the serial console
+0010BFr 2  A9 rr          lda #<@SplashTitle
+0010C1r 2  A0 rr          ldy #>@SplashTitle
+0010C3r 2  20 rr rr       jsr PrintStr
+0010C6r 2  20 rr rr       jsr PrintCRLF
+0010C9r 2  A9 rr          lda #<@SplashMenu
+0010CBr 2  A0 rr          ldy #>@SplashMenu
+0010CDr 2  20 rr rr       jsr PrintStr
+0010D0r 2  4C rr rr       jmp PrintCRLF
+0010D3r 2               @SplashStart:
+0010D3r 2  20 rr rr       jsr VideoClear                ; Clear the video screen
+0010D6r 2                 ; Position cursor at row 10, col 10 for title
+0010D6r 2  A2 0A          ldx #10
+0010D8r 2  A0 0A          ldy #10
+0010DAr 2  20 rr rr       jsr VideoSetCursor
+0010DDr 2  A9 rr          lda #<@SplashTitle
+0010DFr 2  85 02          sta STR_PTR
+0010E1r 2  A9 rr          lda #>@SplashTitle
+0010E3r 2  85 03          sta STR_PTR + 1
+0010E5r 2  20 rr rr       jsr VideoPrintStrImpl
+0010E8r 2                 ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
+0010E8r 2  A2 08          ldx #8
+0010EAr 2  A0 0C          ldy #12
+0010ECr 2  20 rr rr       jsr VideoSetCursor
+0010EFr 2  A9 rr          lda #<@SplashMenu
+0010F1r 2  85 02          sta STR_PTR
+0010F3r 2  A9 rr          lda #>@SplashMenu
+0010F5r 2  85 03          sta STR_PTR + 1
+0010F7r 2  20 rr rr       jsr VideoPrintStrImpl
+0010FAr 2  60             rts
+0010FBr 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.3 --"
+0010FFr 2  35 30 32 20  
+001103r 2  42 49 4F 53  
+001110r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
+001114r 2  52 3D 42 41  
+001118r 2  53 49 43 20  
+001129r 2               
+001129r 2               ; NMI Handler
+001129r 2               Nmi:
+001129r 2  40             rti
+00112Ar 2               
+00112Ar 2               ; BRK Handler — saves full CPU state and enters monitor
+00112Ar 2               ; On entry from @IrqBrk: A/X/Y are the user's original values (restored by IRQ handler).
+00112Ar 2               ; The CPU's hardware push left P/PCL/PCH on the stack.
+00112Ar 2               Break:
+00112Ar 2  8D 13 03       sta BRK_A                     ; Save user's A register
+00112Dr 2  8E 14 03       stx BRK_X                     ; Save user's X register
+001130r 2  8C 15 03       sty BRK_Y                     ; Save user's Y register
+001133r 2  BA             tsx                           ; Get current SP
+001134r 2  8E 16 03       stx BRK_SP                   ; Save SP (points below P/PCL/PCH on stack)
+001137r 2  68             pla                           ; Pull saved P
+001138r 2  8D 10 03       sta BRK_P
+00113Br 2  68             pla                           ; Pull saved PCL (PC+2)
+00113Cr 2  8D 11 03       sta BRK_PCL
+00113Fr 2  68             pla                           ; Pull saved PCH
+001140r 2  8D 12 03       sta BRK_PCH
+001143r 2  4C rr rr       jmp MonitorBrkEntry
+001146r 2               
+001146r 2               ; IRQ Handler
+001146r 2               Irq:
+001146r 2  48             pha
+001147r 2  5A             phy
+001148r 2  DA             phx
+001149r 2  BA             tsx                           ; Get stack pointer to check saved status register
+00114Ar 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
+00114Dr 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
+00114Fr 2  D0 47          bne @IrqBrk                   ; Branch if this was a BRK instruction
+001151r 2               @IrqSc:
+001151r 2  AD 0D 03       lda HW_PRESENT
+001154r 2  29 10          and #HW_SC
+001156r 2  F0 19          beq @IrqCheckKB               ; Serial not present — skip
+001158r 2  AD 01 90       lda SC_STATUS
+00115Br 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+00115Dr 2  F0 12          beq @IrqCheckKB               ; If not, check keyboard
+00115Fr 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
+001162r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+001165r 2  20 rr rr       jsr BufferSize
+001168r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
+00116Ar 2  90 05          bcc @IrqCheckKB               ; If not, also check keyboard
+00116Cr 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+00116Er 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+001171r 2                                               ; Fall through to check keyboard — always clear VIA flags
+001171r 2               @IrqCheckKB:
+001171r 2  AD 0D 03       lda HW_PRESENT
+001174r 2  29 20          and #HW_GPIO
+001176r 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
+001178r 2  AD 0D 94       lda GPIO_IFR
+00117Br 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
+00117Dr 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
+00117Fr 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
+001182r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+001185r 2  80 0D          bra @IrqExit
+001187r 2               @IrqCheckPS2:
+001187r 2  AD 0D 94       lda GPIO_IFR
+00118Ar 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
+00118Cr 2  F0 06          beq @IrqExit                  ; If not, exit
+00118Er 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
+001191r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+001194r 2               @IrqExit:
+001194r 2  FA             plx
+001195r 2  7A             ply
+001196r 2  68             pla
+001197r 2  40             rti
+001198r 2               @IrqBrk:
+001198r 2  FA             plx                           ; Restore saved registers
+001199r 2  7A             ply
+00119Ar 2  68             pla
+00119Br 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
+00119Cr 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+00119Fr 2               
+00119Fr 2               ; NMI Vector
+00119Fr 2               NmiVec:
+00119Fr 2  6C 04 03       jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
+0011A2r 2               
+0011A2r 2               ; Reset Vector
+0011A2r 2               ResetVec:
+0011A2r 2  4C rr rr       jmp Reset                     ; Initialize the system
+0011A5r 2               
+0011A5r 2               ; IRQ Vector
+0011A5r 2               IrqVec:
+0011A5r 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+0011A8r 2               
+0011A8r 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; =============================================================================
 000000r 2               ; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)

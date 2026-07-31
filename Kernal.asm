@@ -720,9 +720,19 @@ Reset:
   bra @Halt
 
 @HasConsole:
-  jsr Splash                    ; Draw the splash screen (guarded — skips if no video)
+  cli                           ; Enable interrupts before anything is printed:
+                                ;   reading the ACIA's status register clears a
+                                ;   pending receive interrupt (6551 datasheet),
+                                ;   and the transmit loop reads it on every
+                                ;   character — so a key pressed while the
+                                ;   splash prints would be sitting in the
+                                ;   receive register with nothing left to tell
+                                ;   the handler about it.  With interrupts on,
+                                ;   it is in the input buffer before the menu
+                                ;   asks.
 
-  cli                           ; Enable interrupts
+  jsr Splash                    ; Draw the splash screen on whichever console
+                                ;   this machine has
 
   ; Boot menu — wait for keypress with ~5-second timeout
   ; Each iteration delays 100ms then checks for a key. 50 iterations = 5 seconds.
@@ -2976,15 +2986,26 @@ XModemStrReceive:
 XModemStrSend:
   .byte "XMODEM TX READY", $0D, $0A, 0
 
-; Draw the splash screen
-; Uses video output to display centered title and boot menu
-; Skips if video card is absent
+; Draw the splash screen on whichever console this machine has
+; Video: the two lines centred on the 40-column screen.  Serial: the same two
+; lines as plain text through Chrout — a terminal's width is the user's to
+; choose, so there is no column to centre on and the video path's cursor
+; placement has no equivalent.  The boot menu runs either way; without this a
+; serial user sat through five silent seconds never told ESC was an option.
 ; Modifies: Flags, A, X, Y
 Splash:
   lda HW_PRESENT
   and #HW_VID
   bne @SplashStart
-  rts                           ; No video — skip
+  ; No video — plain text on the serial console
+  lda #<@SplashTitle
+  ldy #>@SplashTitle
+  jsr PrintStr
+  jsr PrintCRLF
+  lda #<@SplashMenu
+  ldy #>@SplashMenu
+  jsr PrintStr
+  jmp PrintCRLF
 @SplashStart:
   jsr VideoClear                ; Clear the video screen
   ; Position cursor at row 10, col 10 for title

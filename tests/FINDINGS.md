@@ -188,45 +188,45 @@ delete the `xfail` and commit; that changes no ROM and needs no version bump. An
 `xfail` that passes is reported red, so the first run against the new emulator
 will demand it.
 
-## The splash and boot menu are never shown on a serial console
-
-- **Bucket:** BIOS bug — code wrong, docs right
-- **Decided:** 2026-07-30
-- **Found by:** writing `tests/probe/splash-renders-on-video.mjs`
-- **Phase:** 1 (found) / not yet scheduled (fix)
-- **Status:** decided, not implemented — do not work this until a phase picks
-  it up explicitly
-
-README step 8 says the splash is "displayed on the active console", and step 9
-describes the ENTER/ESC menu that follows. On a serial-only machine neither
-appears: `Splash` (Kernal.asm:2920) tests `HW_VID` and returns immediately if
-there is no video card. The menu itself *is* running — ESC at the right moment
-does enter the Monitor, and the ~5 s timeout does auto-boot BASIC — but a serial
-user sees five seconds of nothing and is never told ESC is an option.
-
-**Decision:** the serial console should show the splash and boot menu too. It
-diverges from the video rendering rather than duplicating it: video centres the
-title and menu on a 40-column screen (`VideoSetCursor` to row/col, per
-`Splash` in Kernal.asm), which has no serial equivalent. Serial output should be
-the same two lines as plain text through `Chrout`, presumably at cursor home
-(i.e. right after boot, before anything else has been printed) rather than
-reproducing the centring math. `Splash` needs a serial-only branch, or a
-console-agnostic text path shared with the video one — implementation is open.
-
-**Possibly touches the emulator.** It isn't established what `--headless`
-(serial profile) currently assumes about what the BIOS prints before the `OK`
-banner, or whether `wait.for {serial}` / the examples' boot detection depend on
-the console being silent until BASIC starts. Check the emulator side — probably
-`6502-EMULATOR/docs/AGENTS.md` and the `run --headless` boot-detection path —
-before assuming this is BIOS-only.
-
-No test written yet, and none should be until this is scheduled: a case would
-need to assert the exact serial rendering, which isn't decided (plain two lines?
-with CRLF between? menu on the same write or a separate one?).
-
 ---
 
 ## Resolved
+
+### The splash and boot menu were never shown on a serial console
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** writing `tests/probe/splash-renders-on-video.mjs`
+- **Phase:** 1 (found), decided 2026-07-30, fixed 2026-07-31
+
+README step 8 says the splash is "displayed on the active console", and step 9
+describes the ENTER/ESC menu that follows. On a serial-only machine neither
+appeared: `Splash` tested `HW_VID` and returned immediately with no video card.
+The menu itself *was* running — ESC at the right moment did enter the Monitor,
+and the ~5 s timeout did auto-boot BASIC — but the user was never told there was
+a choice to make, and that is the console most machines built from this BIOS
+actually have.
+
+**The serial rendering is plain text, left aligned.** The video path centres
+both lines by placing the cursor, and a terminal has no width to centre on — it
+is whatever the user chose. So the same two strings go out through `Chrout` with
+a CRLF after each, and `tests/probe/splash-prints-on-a-serial-console.mjs`
+anchors its match to the line start, so the video path's eight spaces cannot
+quietly turn up on a console that cannot promise a width.
+
+**It was not emulator-side after all.** Nothing in `--headless` assumes the
+console is silent before the BASIC banner: the input gate is an explicit
+`inputAfter` regex the caller supplies, and the `.prg` preload watches BASIC's
+zero-page pointers rather than its output.
+
+**What it cost: one `cli`, moved.** With the splash printing, ESC at the boot
+menu stopped working. Reading the ACIA's status register clears a pending
+receive interrupt — that is the 6551 datasheet, and the emulator implements it —
+and the transmit loop reads that register for every character it sends. So a key
+pressed while the splash printed sat in the receive register with nothing left
+to tell the handler it was there, and the menu never saw it. Interrupts are now
+enabled *before* anything is printed rather than after, so the keystroke is in
+the input buffer by the time the menu asks. That is a real-hardware bug, not an
+emulator artifact, and it would have bitten any output added to the boot path.
 
 ### ?NO DEVICE stopped a program for a screen or a speaker it did not need
 

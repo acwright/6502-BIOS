@@ -235,15 +235,13 @@ below each heading is what actually has to be satisfied.
   not the bare banner the README describes. The test encodes the real behaviour;
   the README line is a doc fix to file separately.
 - A non-menu key at the splash is swallowed and the countdown continues.
-- **Serial splash — currently a known bug, not yet a case.** `Splash`
-  (Kernal.asm:2920) is video-only: a serial-only machine shows nothing for the
-  whole boot menu window, so a serial user is never told ESC is an option even
-  though it works. See `tests/FINDINGS.md#the-splash-and-boot-menu-are-never-shown-on-a-serial-console`
-  for the decision (BIOS bug — serial should get the same two lines as plain
-  text via `Chrout`, not the video's centred rendering) and what's still open
-  (exact rendering, whether the emulator's headless boot detection assumes a
-  silent console before `OK`). **Do not write this case until that fix is
-  scheduled** — the rendering isn't decided yet, so there's nothing to assert.
+- **The splash and menu print on a serial console too** — plain text through
+  `Chrout`, left aligned, since a terminal has no width to centre on
+  (`tests/probe/splash-prints-on-a-serial-console.mjs`). Found in phase 1 as a
+  BIOS bug and fixed after phase 6, once the rendering was decided. It cost one
+  `cli`, moved: reading the ACIA status register clears a pending receive
+  interrupt, and the transmit loop reads it per character, so printing before
+  interrupts were enabled swallowed ESC at the menu.
 - `HW_PRESENT` (`$030D`) = `$7F` on the serial profile, `$FF` on the video
   profile. Each bit asserted individually against the README's table.
 - `IO_MODE` (`$0306`) = 1 (serial) with no video card, 0 (video) with one.
@@ -257,8 +255,8 @@ below each heading is what actually has to be satisfied.
   cartridge could do.
 - Cold boot leaves `CF_DISK` (`$030F`) at 0.
 
-**What §6.1 handed on.** Everything above is covered except the serial splash,
-still deliberately unwritten. ENTER, a stray key and the timeout all produce
+**What §6.1 handed on.** Everything above is covered. ENTER, a stray key and
+the timeout all produce
 identical console output, so the three cases assert emulated *cycles* — which
 is also what makes them prove each other: if the count were constant, the
 "waited" and "did not wait" cases could not both pass.
@@ -456,8 +454,8 @@ not:
   CP437 data at ROM `$B800`, in full.
 - The splash renders correctly on video — done in phase 1
   (`tests/probe/splash-renders-on-video.mjs`), centred title and menu on the
-  40-column screen. The serial side is a separate, currently-unfixed case: see
-  §6.1's note and `tests/FINDINGS.md`.
+  40-column screen. The serial side is its own case, added after phase 6 when
+  the rendering was decided — see §6.1.
 
 **What §6.8 handed on.** `tests/lib/video.mjs` is the driver: there is no serial
 stream on this profile, so every wait is a bounded advance of emulated time with
@@ -968,16 +966,10 @@ is how the two histories drift apart.
    process spawns, not fewer tests — which is why the runner holds one
    connection rather than shelling out per call.
 
-7. **The serial console never shows the boot splash or menu — decided a BIOS
-   bug, not yet fixed.** Found in phase 1 (`tests/FINDINGS.md`); intentionally
-   left unfixed until a phase picks it up. `Splash` (Kernal.asm:2920) is gated on
-   `HW_VID` and returns immediately without a video card, so a serial user gets
-   five silent seconds at boot and no indication ESC is available, even though
-   ESC does work. The fix is plain text through `Chrout` — the same two lines,
-   not the video path's centred `VideoSetCursor` positioning — presumably at
-   cursor home right after boot. **May also touch the emulator**: it isn't known
-   whether `--headless`'s boot detection (or `wait.for {serial}` as the examples
-   use it) assumes the console is silent until the BASIC banner. Check the
-   emulator's own docs/behaviour before assuming this is BIOS-only. No case
-   exists for this yet — write one only once the exact serial rendering is
-   decided, so the assertion doesn't presume the answer.
+7. **The serial console never showed the boot splash or menu — fixed.** Found in
+   phase 1, decided 2026-07-30, fixed after phase 6 once the rendering was
+   settled: the same two lines as plain text through `Chrout`, left aligned,
+   because a terminal's width is the user's to choose. It was not emulator-side
+   — `--headless` assumes nothing about the console being silent before the
+   BASIC banner. `tests/probe/splash-prints-on-a-serial-console.mjs`, and
+   `tests/FINDINGS.md` for the `cli` that had to move with it.

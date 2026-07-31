@@ -27,6 +27,8 @@ The probe-and-boot sequence is:
 ENTER=BASIC  ESC=MONITOR
 ```
 
+   On video the two lines are centred on the 40-column screen, as above. On a serial console they are printed as plain text, left aligned — a terminal's width is the user's to choose, so there is no column to centre on.
+
 9. **Boot menu with timeout** — waits ~5 seconds for a keypress, then auto-boots BASIC
 
 - **ENTER** (or timeout) — launches the BASIC interpreter

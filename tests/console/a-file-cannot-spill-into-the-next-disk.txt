@@ -1,0 +1,38 @@
+name: a save that would run past the end of a disk is refused, not spilled
+# README: "The filesystem prevents a file on one disk from spilling into the
+#          next disk's region"
+#         "The card is divided into up to 256 disk banks of 1 MB each (2048
+#          sectors x 512 bytes)"
+#
+# Disk 2 of the fixture card is deliberately full: TAIL.BIN claims the last
+# eight sectors, so the next free sector is 2048 — one past the disk — and
+# there is nowhere for another file to go. Without the guard the write would
+# land on disk 3's directory sector, destroying a directory the user never
+# touched.
+#
+# The failure has to leave the disk as it was, which is the second half here:
+# the two entries that were there still are, and still load.
+profile: cf
+mode: basic
+
+> DISK 2
+> DIR
+~ ^DISK 2$
+~ ^KEEP    \.BIN 4$
+~ ^TAIL    \.BIN 4096$
+
+> 10 PRINT "X"
+> SAVE "NOROOM"
+~ ^\?SAVE ERROR$
+
+> DIR
+~ ^KEEP    \.BIN 4$
+~ ^TAIL    \.BIN 4096$
+! ^NOROOM
+
+# Sector 2048 of disk 2 is sector 0 of disk 3 — its directory. That is what
+# the refused write was aimed at, so this is where the damage would show.
+> DISK 3
+> DIR
+~ ^DISK 3$
+~ ^NEXTDISK\.BIN 2$

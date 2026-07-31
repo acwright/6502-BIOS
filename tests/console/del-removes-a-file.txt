@@ -1,0 +1,25 @@
+name: DEL removes an entry, and DEL or LOAD of a name that is gone reports it
+# README: "DEL "name" — Delete a named file from the current disk"
+#
+# The delete has to be visible from both sides: gone from the listing, and gone
+# to LOAD. An entry cleared in the buffer but never written back to the card
+# would satisfy only the first.
+mode: basic
+
+> 10 PRINT "X"
+> SAVE "T"
+> DIR
+~ ^T       \.    12$
+
+> DEL "T"
+> DIR
+~ ^DISK 0$
+! ^T       \.
+
+> NEW
+> LOAD "T"
+~ ^\?LOAD ERROR$
+
+# And deleting what is not there says so rather than reporting success.
+> DEL "T"
+~ ^\?DEL ERROR$

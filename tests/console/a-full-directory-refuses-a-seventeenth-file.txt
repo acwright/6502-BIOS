@@ -1,0 +1,40 @@
+name: a full 16-entry directory refuses a seventeenth file
+# README: "the directory lives at the first sector ... and holds up to 16
+#          entries (8.3 filenames)"
+#
+# Sixteen is the whole directory sector, so the seventeenth save is the case
+# where the filesystem has to decline rather than write past the sector it was
+# given. It reports the failure and leaves the sixteen alone.
+timeout: 40000
+mode: basic
+
+> 10 PRINT "X"
+> SAVE "F01"
+> SAVE "F02"
+> SAVE "F03"
+> SAVE "F04"
+> SAVE "F05"
+> SAVE "F06"
+> SAVE "F07"
+> SAVE "F08"
+> SAVE "F09"
+> SAVE "F10"
+> SAVE "F11"
+> SAVE "F12"
+> SAVE "F13"
+> SAVE "F14"
+> SAVE "F15"
+> SAVE "F16"
+
+> SAVE "F17"
+~ ^\?SAVE ERROR$
+
+> DIR
+~ ^F16     \.    12$
+! ^F17     \.
+
+# The card is full, not broken: the sixteen that fit still load.
+> NEW
+> LOAD "F01"
+> RUN
+~ ^X$

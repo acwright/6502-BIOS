@@ -1,0 +1,39 @@
+name: DISK n switches banks, and a file on one is invisible from another
+# README: "DISK <n> — Select CF disk bank n (0-255); resets to 0 on boot"
+#         "LOAD/SAVE/DIR/DEL in BASIC ... all operate on the currently selected
+#          disk bank"
+#
+# Two files with the same name on two banks is the case that matters: it proves
+# the bank reaches the directory sector, not just the DISK header the listing
+# prints. If the selection were cosmetic, the second SAVE would overwrite the
+# first and both LOADs would run the same program.
+mode: basic
+
+> 10 PRINT "ZERO"
+> SAVE "P"
+
+> DISK 1
+> DIR
+~ ^DISK 1$
+! ^P       \.
+
+> 10 PRINT "ONE"
+> SAVE "P"
+> DIR
+~ ^P       \.    14$
+
+> DISK 0
+> DIR
+~ ^DISK 0$
+~ ^P       \.    15$
+
+> NEW
+> LOAD "P"
+> RUN
+~ ^ZERO$
+
+> DISK 1
+> NEW
+> LOAD "P"
+> RUN
+~ ^ONE$

@@ -1,0 +1,26 @@
+name: SAVE onto a name that exists replaces the file rather than adding a second
+# README: "SAVE "name" — Save the current program to CompactFlash", and a
+#         directory of "up to 16 entries" — a name that could appear twice
+#         would spend the card's entries twice over and leave LOAD picking
+#         whichever came first.
+#
+# Sizes tell the two apart without needing to count directory lines: the first
+# program is 16 bytes, the second 17, so the listing showing 17 and not 16 is
+# the old entry being gone rather than merely outranked.
+mode: basic
+
+> 10 PRINT "FIRST"
+> SAVE "T"
+> NEW
+> 10 PRINT "SECOND"
+> SAVE "T"
+
+> DIR
+~ ^T       \.    17$
+! ^T       \.    16$
+
+> NEW
+> LOAD "T"
+> RUN
+~ ^SECOND$
+! ^FIRST$

@@ -1,0 +1,33 @@
+name: SAVE writes a program to CF and LOAD reads it back
+# README: "SAVE "name" — Save the current program to CompactFlash"
+#         "LOAD "name" — Load a named file from CompactFlash to $0800"
+#         "LOAD "name" / SAVE "name" — Programs. Loads at $0800 and readies
+#          BASIC to RUN it"
+#
+# The whole round trip in one case, because each half is only meaningful with
+# the other: a SAVE that wrote nothing and a LOAD that read nothing would agree
+# with each other perfectly. NEW in the middle is what makes the program that
+# runs at the end the one that came off the card.
+#
+# The default profile's card is blank and the snapshot restore puts it back, so
+# this writes a real file to a real card and leaves nothing behind.
+mode: basic
+
+> 10 PRINT "ROUND TRIP"
+> 20 PRINT "AND BACK"
+> SAVE "RT"
+> NEW
+
+# NEW erased it: nothing to LIST, and RUN prints nothing.
+> LIST
+! ROUND TRIP
+
+> LOAD "RT"
+> RUN
+~ ^ROUND TRIP$
+~ ^AND BACK$
+
+# LOAD readies BASIC to RUN it, so the text is editable and listable too.
+> LIST
+~ ^10 PRINT "ROUND TRIP"$
+~ ^20 PRINT "AND BACK"$

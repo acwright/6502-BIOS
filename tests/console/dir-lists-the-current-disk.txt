@@ -1,0 +1,32 @@
+name: DIR prints the DISK header, then one padded 8.3 line per file
+# README: "DIR — List current disk's directory (prints DISK n header)"
+#         "the directory ... holds up to 16 entries (8.3 filenames)"
+#
+# The columns are asserted exactly. A listing is the only view of the card a
+# user has, and a name printed with the wrong padding — or an extension run
+# into the size — is a real defect that a pattern matching only the name would
+# not see.
+#
+# The sizes are the program's own: `10 PRINT "X"` is four bytes of link and
+# line number, the token, the space the crunch keeps, three for "X", the line's
+# terminator and the two-byte end of chain — 12. The second file's line is one
+# character longer.
+mode: basic
+
+# An empty directory is the header and nothing else.
+> DIR
+~ ^DISK 0$
+! ^[A-Z0-9]+ *\.
+
+> 10 PRINT "X"
+> SAVE "ONE"
+> DIR
+~ ^DISK 0$
+~ ^ONE     \.    12$
+
+# A second file, and an extension that has to land in its own three columns.
+> 10 PRINT "XY"
+> SAVE "TWO.BAS"
+> DIR
+~ ^ONE     \.    12$
+~ ^TWO     \.BAS 13$

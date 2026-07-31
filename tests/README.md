@@ -24,6 +24,19 @@ cleanup code at all.
 Nothing sleeps. Every wait is a bounded blocking call on the machine's own
 execution cadence, so a run lands identically however fast the host is.
 
+## Fixtures
+
+Every profile has a CompactFlash card — the emulator always fits one — but the
+default profile's is blank, which is the right machine for anything that writes
+what it reads back. The `cf` profile gets a card somebody else wrote:
+`fixtures/build.mjs` describes it, and the runner builds it on the way to the
+machine that uses it, so it can never be stale. Nothing is checked in; the
+image and the `.prg` on it are gitignored build output.
+
+A Tier 3 case imports `describeFixtures()` and asserts against the bytes and
+sizes it returns rather than repeating them, since the fixture is the source of
+truth for what is on the card.
+
 ## Writing a case
 
 Three tiers. Prefer the highest one that can express the assertion.
@@ -100,7 +113,7 @@ Set as `# key: value` in a `.bas` header, `key: value` in a `.txt` header, or an
 | | |
 |---|---|
 | `name` | what the case is called in the report (default: its path) |
-| `profile` | `serial` (default) or `video` |
+| `profile` | `serial` (default), `video`, or `cf` |
 | `mode` | `basic` (default) or `monitor` — Tier 2 |
 | `timeout` | per-step timeout in ms (default 20000) |
 | `final` | Tier 2's closing expectation; `none` to skip it |

@@ -23,6 +23,7 @@ import { Machine, EMULATOR, stripCR } from './lib/machine.mjs'
 import { AssertionError } from './lib/assert.mjs'
 import { parseBasic, runBasicCase } from './lib/basic.mjs'
 import { parseConsole, runConsoleCase, MODES } from './lib/console.mjs'
+import { buildFixtures } from './fixtures/build.mjs'
 
 const TESTS = dirname(fileURLToPath(import.meta.url))
 const REPO = dirname(TESTS)
@@ -31,10 +32,15 @@ const RTC = '2026-01-01T00:00:00'
 const CASE_TIMEOUT_MS = 20000
 
 // Machine profiles. Adding one is a table entry: the runner starts it on demand
-// and reuses it. `cf` and `nvram` arrive with their fixtures in phases 4 and 5.
+// and reuses it. `nvram` arrives with its fixture in phase 5.
+//
+// The default profile has a card too — the emulator always fits one — but a
+// blank one, which is the right machine for everything that writes what it
+// reads back. `cf` is for the cases that need a card somebody else wrote.
 const PROFILES = {
   serial: { console: 'serial', args: [] },
   video: { console: 'video', args: ['--console', 'video'] },
+  cf: { console: 'serial', args: [], fixtures: true },
 }
 
 const DIRECTIVES = new Set(['name', 'profile', 'mode', 'xfail', 'issue', 'selftest', 'final', 'timeout'])
@@ -224,11 +230,16 @@ class Pool {
 
     const spec = PROFILES[name]
     try {
+      // Built here rather than by the Makefile: a fixture that is generated on
+      // the way to the machine that uses it cannot go stale, and a run that
+      // needs no card never writes one.
+      const cf = spec.fixtures ? buildFixtures().imagePath : undefined
       const machine = await Machine.launch({
         profile: name,
         rom: this.rom,
         symbols: this.symbols,
         rtc: RTC,
+        cf,
         args: spec.args,
       })
       const entry = { name, spec, machine, ready: null, monitor: null }

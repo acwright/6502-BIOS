@@ -351,6 +351,8 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 
 All public Kernal entry points are accessed through stable 3-byte `jmp` slots. Call these addresses from your own code — the implementation behind each slot can change without breaking your program.
 
+The table is a fixed 256 bytes: the 51 published slots below, then 34 reserved slots (`$A099–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
+
 | Address | Label | Description |
 |---------|-------|-------------|
 | `$A000` | `Chrout` | Output one character (routed by `IO_MODE`) |

@@ -219,12 +219,14 @@ export class Machine {
     return this.call('mem.search', { pattern, ...options })
   }
 
-  disasm(address, count = 8) {
-    return this.call('disasm.at', { address, count })
+  // Both hand back the instruction array rather than the envelope around it —
+  // there is nothing else in the reply, and every caller wants to iterate.
+  async disasm(address, count = 8) {
+    return (await this.call('disasm.at', { address, count })).instructions
   }
 
-  disasmRange(start, end) {
-    return this.call('disasm.range', { start, end })
+  async disasmRange(start, end) {
+    return (await this.call('disasm.range', { start, end })).instructions
   }
 
   // ---- symbols -----------------------------------------------------------

@@ -154,13 +154,12 @@ will demand it.
 
 ## Typing a long line can wedge the serial input path
 
-- **Bucket:** BIOS bug, on the evidence below — but the mechanism is a
-  hypothesis, not yet confirmed at the register level
+- **Bucket:** BIOS bug — confirmed at the register level, mechanism below
 - **Found by:** phase 7's CI, by being slower than a laptop
 - **Phase:** 7
 - **Status:** **open, unfixed, and intermittent.** No case is `xfail` for it,
   because it does not fail reliably — an `xfail` would report XPASS on most
-  runs, which is worse than nothing. It is why CI is not yet dependable.
+  runs, which is worse than nothing. It is why CI is red.
 
 The first CI run failed two cases. One was a suite bug and is fixed (see
 *Resolved*). The other was `LEFT$, RIGHT$ and MID$`, timing out with its line
@@ -188,25 +187,47 @@ about 1.5× slower than an idle laptop, and it has hit this once, at the old
 20-second timeout. So the honest position is that the defect is real and the
 rate at CI's load is unmeasured.
 
-**The suspected mechanism** is the one PLAN.md §6.1 already records from phase 1:
-reading the ACIA status register clears a pending receive interrupt, and
+**The mechanism**, which is the one PLAN.md §6.1 already records from phase 1.
+Reading the ACIA status register clears a pending receive interrupt, and
 `SerialChroutImpl`'s transmit loop reads that register once per character while
-echoing. If a byte arrives during that poll, the interrupt is cleared without
-anyone reading `SC_DATA`; the byte stays in the receive register, `Irq` never
-sees `SC_STATUS_IRQ` set, and nothing more is ever buffered. A 6551 behaves this
-way for real, so this would wedge actual hardware too — anything that sends
-faster than the ROM echoes, such as pasting a line into a terminal.
+echoing. When a byte arrives during that poll the interrupt is cleared without
+anyone reading `SC_DATA`, so the byte stays in the receive register, `Irq` finds
+`SC_STATUS_IRQ` clear and skips, and the ACIA will not deliver the next byte
+because its receive register is still full. Nothing breaks the cycle.
 
-**What would fix it** is making the transmit wait loop service the receiver: when
-the status it just read shows `RDRF`, read `SC_DATA` and `WriteBuffer` it rather
-than dropping the interrupt on the floor. That is a real ROM change, so it wants
-a pinned case under PLAN.md §6.12 and it lands in v1.4.
+Caught in the act, driving `tests/basic/left-right-mid.bas` line by line under
+load — stalled 64 characters into line 60:
 
-**Before writing that fix, confirm the mechanism.** Catch a wedged machine and
-read `SC_STATUS` — `RDRF` set with the input buffer not draining is the proof.
-400 attempts in isolation failed to reproduce it, so the reproduction needs the
-whole suite's contention, and probably the overlap the runner creates by writing
-the next line while the previous one is still being consumed.
+```
+SC_STATUS=$58   IRQ=0 TDRE=1 RDRF=1 OVR=0
+SC_CMD=$09      READ_PTR=$78 WRITE_PTR=$78     (buffer empty)
+PC=$c154        I=0                            (interrupts enabled)
+after 100,000,000 more cycles: still 64/76 characters
+```
+
+A byte held in the receive register, its interrupt already cleared, an empty
+input buffer, and a hundred million cycles of no progress. A real 6551 clears
+the interrupt flag on a status read the same way, so this wedges hardware too —
+anything that sends faster than the ROM echoes, such as pasting a line into a
+terminal.
+
+**What fixes it** is making the transmit wait loop service the receiver: when the
+status it just read shows `RDRF`, read `SC_DATA` and `WriteBuffer` it rather than
+leaving a byte nobody will ever collect. Two things to get right. `WriteBuffer`
+modifies `X`, which `Chrout` currently promises not to; and it would make
+`Chrout` a second writer of `WRITE_PTR` alongside `Irq`, whose
+`ldx`/`sta`/`inc` is not atomic against an interrupt landing mid-sequence — so
+the buffering wants interrupts held off around it. Room is tight: §6.10 left 52
+bytes free.
+
+That is a real ROM change, so it wants a pinned case under PLAN.md §6.12, proved
+against the pre-fix ROM per §10.3, and it lands in v1.4.
+
+**Reproducing it.** `tests/basic/left-right-mid.bas` typed line by line, each
+line gated on its own echo, with every core busy — a couple of attempts is
+usually enough. A single line in isolation will not do it (400 attempts, no
+stall): it needs the overlap the runner creates by writing the next line while
+the previous one is still being echoed.
 
 ---
 

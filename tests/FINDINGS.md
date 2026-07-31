@@ -215,12 +215,41 @@ Day-of-month against the month — rejecting 31 April — is deliberately *not*
 asserted. It needs a table and a leap-year rule for one wrong day a year, and
 the DS1511Y does not enforce it either.
 
+## LOCATE and COLOR accept values off the screen
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/probe/locate-and-color-reject-values-off-the-screen.mjs`
+- **Phase:** 5
+- **Status:** open, case written and marked `xfail`. Blocked on space, like the
+  clock one — see the section below.
+
+The README documents `LOCATE <row>, <col>` as "row 0–23, column 0–39" and
+`COLOR <fg>, <bg>` as "0–15 each". Neither is checked, and the two failures are
+different in kind.
+
+**`LOCATE` corrupts the screen.** `LOCATE 24,0` computes a VRAM address past
+the end of the 960-byte name table, and everything printed afterwards lands
+outside the screen or wraps back into the middle of it. Observed: after
+`LOCATE 24,0 : PRINT "P";` the next lines of console output overwrote earlier
+ones at an offset — a screen reading `OKCATE 24,0 : PRINT "P";` where the
+prompt and an echo had been drawn over each other. The machine is still
+running; it just cannot be read.
+
+**`COLOR` goes quiet.** `COLOR 16,16` shifts the foreground left four and masks
+the background to four bits, so both become 0 — black on black, a blank screen,
+for what the user typed as one past the brightest. That is the same shape as
+`VOL 16` setting the volume to silence, which this phase fixed.
+
+Both should raise `?ILLEGAL QUANTITY ERROR`. The case also holds a second line:
+a rejected `LOCATE` must leave the cursor where it was rather than moving it
+somewhere impossible and complaining afterwards.
+
 ## The BASIC segment is full
 
 - **Bucket:** neither — a constraint, not a defect
 - **Found by:** paying for the `VOL`/`SOUND` range checks in phase 5
 - **Phase:** 5
-- **Status:** open, and it gates the finding above
+- **Status:** open, and it gates both findings above
 
 `BASIC` occupies `$C000-$EDFE` in a `$C000-$EDFF` memory area. **One byte
 free.** For comparison, at the same commit `KERNAL` uses `$A000-$B16D` of
@@ -231,8 +260,11 @@ The phase 5 `VOL`/`SOUND` fix needed eleven bytes and paid for them by deleting
 `jmp IqErr` between the two statements. That worked once. There is no second
 `Gse` to find.
 
-So the range checks `SETTIME` and `SETDATE` want — seven fields, and `LOCATE`
-and `COLOR` will want four more — cannot be written where the statements are.
+So the range checks the two findings above want — seven fields across `SETTIME`
+and `SETDATE`, four more across `LOCATE` and `COLOR` — cannot be written where
+the statements are. Eleven checks; the two that fit cost eleven bytes between
+them.
+
 The options, none of them free:
 
 - **Move the check into the Kernal.** `RtcWriteTime`/`RtcWriteDate` are the

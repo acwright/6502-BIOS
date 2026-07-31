@@ -122,7 +122,7 @@ small pool, starting each on demand and reusing it:
 | `serial` (default) | `--headless` | almost everything |
 | `video` | `--headless --console video` | §6.8 |
 | `cf` | `--headless --cf fixtures/test.img` | §6.7 fixtures |
-| `nvram` | `--headless --nvram fixtures/nvram.bin` | §6.10 |
+| `nvram` | `--headless --nvram fixtures/nvram.bin` | §6.10 (added in phase 5) |
 
 Each profile gets its own `--debug-port` and each client its own `--port`, since
 only one instance owns the lock file.
@@ -248,8 +248,20 @@ below each heading is what actually has to be satisfied.
   profile. Each bit asserted individually against the README's table.
 - `IO_MODE` (`$0306`) = 1 (serial) with no video card, 0 (video) with one.
 - `BOOT_VECTOR` (`$035B`) is zeroed by `KernalInit`; setting it non-zero and
-  resetting jumps there instead of showing the splash.
+  resetting jumps there instead of showing the splash. **Not reachable the way
+  that sentence describes**, and the case says why: `Reset` calls `KernalInit`,
+  which zeroes the vector, and then reads it. The only window a cartridge can
+  write it in is the one instruction between the two — `jsr Beep` — which is
+  where `the-boot-vector-takes-over-from-the-boot-menu.mjs` breaks and writes
+  it. Setting it from the prompt and resetting would assert something no
+  cartridge could do.
 - Cold boot leaves `CF_DISK` (`$030F`) at 0.
+
+**What §6.1 handed on.** Everything above is covered except the serial splash,
+still deliberately unwritten. ENTER, a stray key and the timeout all produce
+identical console output, so the three cases assert emulated *cycles* — which
+is also what makes them prove each other: if the count were constant, the
+"waited" and "did not wait" cases could not both pass.
 
 ### 6.2 Kernal jump table — ~8 cases, Tier 3
 
@@ -261,6 +273,22 @@ pins the address of each named entry against a table checked into the repo.
 Plus behavioural cases for the slots reachable without hardware: `PrintDecU16`,
 `PrintStr`, `PrintCRLF`, `KernalVersion`, `FsGetDisk`/`FsSetDisk`,
 `GetIOMode`/`SetIOMode`, `BufferSize`/`WriteBuffer`/`ReadBuffer`.
+
+**The table is 85 slots, not 51.** Found while writing the shape case. The 51
+published entries are followed by 34 reserved slots that all jump to a bare
+`rts`, and with one pad byte they fill `$A000–$A0FF` exactly. That padding is
+the mechanism behind "entries remain stable across BIOS versions" — a new entry
+point appends into it instead of pushing the table into the Kernal behind it —
+so it is asserted as carefully as the published half, including that a reserved
+slot returns cleanly, which is what a cartridge built against a later BIOS gets
+when it calls one. The README documents it now.
+
+**`jumptable.json` is checked in, not generated**, unlike every other fixture in
+§7. A pin computed from the thing it pins asserts nothing. Three witnesses —
+the ROM's symbols, the fixture, and the README's table — because each pair
+catches a different mistake, and the README pair catches the realistic one: a
+slot moves in `Kernal.asm` and the docs are updated in the same change, which is
+good practice and hides the break from every other check.
 
 ### 6.3 Monitor commands — ~55 cases, Tier 2 (Tier 3 for `G`/`J`)
 
@@ -431,16 +459,61 @@ not:
   40-column screen. The serial side is a separate, currently-unfixed case: see
   §6.1's note and `tests/FINDINGS.md`.
 
+**What §6.8 handed on.** `tests/lib/video.mjs` is the driver: there is no serial
+stream on this profile, so every wait is a bounded advance of emulated time with
+a look at the screen between steps. Two rules in it are load-bearing, and both
+first appeared as a screen with one row printed twice — which looks exactly like
+a scroll bug and comes and goes with host scheduling. **Read with the machine
+paused**, because a scroll copies the name table a row at a time and a read
+taken mid-copy is a torn frame. And **require two identical frames**, because a
+predicate like "the last row has been printed" is satisfied while the CRLF after
+it, the scroll that causes, and the prompt are all still to come.
+
+Where a claim has an invisible half — `CLS`'s cursor reset, one scroll on its
+own, a control code — it is asserted through the Kernal slot rather than the
+statement, because `call6502` stops the machine the instant the routine returns
+and BASIC's prompt has not yet moved everything.
+
+`COLOR` needs one more trick: echoing a keystroke latches a VRAM address, which
+is a write to the register under the watchpoint, so typing the statement stops
+the machine on the echo of its own first character with the key delivery still
+in flight. It is run from a program spinning on `WAIT` against a byte of free
+RAM, armed, and then released with a poke.
+
+Not covered: **`LOCATE` and `COLOR` reject nothing.** `LOCATE 24,0` points the
+cursor past the end of the name table and later output overwrites earlier lines
+at an offset; `COLOR 16,16` is black on black. Both are the `VOL 16` shape, both
+are `xfail`, and both are blocked on the BASIC segment being full — see §6.10's
+note.
+
 ### 6.9 Sound and GPIO — ~10 cases, Tier 3
 
 SID and VIA registers read back as `$00`, so these use write watchpoints — the
 approach is verified (`VOL 9` stops on a write to `$9818` with `A=$09`).
 
+`tests/lib/writes.mjs` is where that lives, and two things in it are
+load-bearing. The value is attributed by **decoding the instruction that wrote
+it**, because `STX` and `STY` set these registers as often as `STA` does and the
+`A` at the stop is then the wrong byte. And **nothing in it resumes the
+machine** — in turbo the first write has already stopped the machine before a
+host-side resume could be issued, so that resume steps straight past the write
+the case cares about and it vanishes from the trace. `body` gets the machine
+running; the recorder never touches it.
+
 - `VOL n` writes `n` to `$9818`; `VOL 16` → `ILLEGAL QUANTITY`.
 - `SOUND v,f,d` writes the frequency registers for the named voice, and silences
   it afterwards. One case per voice, asserting the correct register block.
+  **Voices are 1–3 here and 0–2 at the `SidPlayNote` slot** — deliberate, not a
+  slip: the statement follows Commodore BASIC V3.5, whose `SOUND` takes voice#
+  1–3, and the Kernal slot is an assembly API indexing the chip's own three
+  register blocks. The README used to say 0–2 for both.
 - `Beep` (`$A030`) writes voice 1.
-- `SidSilence` (`$A036`) zeroes all three control registers.
+- `SidSilence` (`$A036`) **gates off** all three control registers rather than
+  zeroing them. Zeroing the frequency stops the oscillator dead and leaves the
+  envelope decaying a DC offset — an audible thump at the end of every note —
+  which is why the ROM leaves the pitch alone, with a comment saying so. "Stop
+  all voices" is the promise and gate off is how a SID keeps it, so that is what
+  the case asserts.
 - `JOY(1)`/`JOY(2)` return the documented R-L-D-U-Y-X-B-A bitmask, driven by
   `input.joystick`.
 
@@ -454,6 +527,23 @@ approach is verified (`VOL 9` stops on a write to `$9818` with `A=$09`).
 - `NVRAM a,v` writes and `NVRAM(a)` reads; address 0 and 255; address 256 →
   `ILLEGAL QUANTITY`.
 - NVRAM survives a warm reset.
+
+**What §6.10 handed on.** The `nvram` profile boots against
+`fixtures/nvram.bin`, and that is a different assertion from every other NVRAM
+case rather than a more convenient one: writing what you read back proves the
+path works and proves nothing about the address decode, since a routine that
+latched the wrong address consistently writes the wrong byte, reads the wrong
+byte, and agrees with itself. The fixture is a permutation, so reading the wrong
+address is always visible, and the one byte that genuinely holds zero is what
+tells a real zero from the absent card that also "returns 0".
+
+**Blocked: the BASIC segment is full.** `SETTIME 24,61,61` is accepted and
+`TIME` then prints `24:61:61`; the case is written and `xfail`. `BASIC` occupies
+`$C000–$EDFE` of a `$C000–$EDFF` area — **one byte free** — where `KERNAL` has
+about 1.6 KB spare. The `VOL`/`SOUND` fix paid its eleven bytes by deleting a
+trampoline defined and called from nowhere, and there is not a second one. This
+gates eleven range checks across four statements, and every remaining phase that
+finds a BASIC bug will hit it. `tests/FINDINGS.md` sets out the three options.
 
 ### 6.11 Graceful degradation — ~18 cases, Tier 2
 
@@ -557,8 +647,14 @@ checked in as binaries, so a diff can review them:
 - `sample.prg` — the `10 SYS 2060` + machine code image for §6.7. Built in
   phase 4, and written into `test.img` as well as standing alone.
 - `opcodes.bin` — a blob exercising every 65C02 addressing mode, for `D`.
-- `nvram.bin` — 256 known bytes.
-- `jumptable.json` — the pinned `$A000` slot addresses for §6.2.
+- `nvram.bin` — 256 known bytes. Built in phase 5: a permutation, so every
+  address holds a different value and none holds its own. Exactly one byte is 0,
+  which a permutation cannot avoid and which is worth having — an absent clock
+  card also reads as 0, so that address is the case that tells the two apart.
+- `jumptable.json` — the pinned `$A000` slot addresses for §6.2. **The one
+  fixture that is checked in rather than generated**, for the reason under §6.2:
+  a pin computed from the ROM it pins asserts nothing. It is JSON, so a diff
+  reviews it as well as it reviews this file.
 
 ---
 
@@ -572,6 +668,9 @@ tests/
     assert.mjs          # assertEqual, assertMatch, assertFloat(eps)
     basic.mjs           # type a .bas in, RUN it, read the verdict
     console.mjs         # the Tier 2 send/expect transcript format
+    boot.mjs            # drive the boot menu from a reset, and count cycles
+    video.mjs           # drive and read a machine whose console is the screen
+    writes.mjs          # record what went out to a write-only register block
   basic/*.bas           # Tier 1
   console/*.txt         # Tier 2
   probe/*.mjs           # Tier 3

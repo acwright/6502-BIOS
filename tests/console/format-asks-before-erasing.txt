@@ -1,0 +1,37 @@
+name: FORMAT prompts for the disk it is about to erase, and N leaves it alone
+# README: "FORMAT — Erase the current disk's file directory (prompts
+#          ERASE DISK n? (Y/N))"
+#
+# The prompt names the disk, which is the whole point of prompting: a FORMAT
+# typed after a DISK is the command most able to lose somebody's work, and the
+# number in the question is the last chance to notice the wrong bank.
+mode: basic
+
+> 10 PRINT "X"
+> SAVE "T"
+
+> FORMAT
+~ ERASE DISK 0\? \(Y/N\)
+# One key, not a line: the prompt reads a single character and echoes it.
+< N
+> DIR
+~ ^T       \.    12$
+
+# The bank is named in the prompt, not assumed to be 0.
+> DISK 7
+> FORMAT
+~ ERASE DISK 7\? \(Y/N\)
+< N
+
+> DISK 0
+> FORMAT
+~ ERASE DISK 0\? \(Y/N\)
+< Y
+> DIR
+~ ^DISK 0$
+! ^T       \.
+
+# An erased directory is an empty one, not an unusable one.
+> SAVE "T"
+> DIR
+~ ^T       \.    12$

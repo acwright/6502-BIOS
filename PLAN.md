@@ -505,6 +505,11 @@ obvious. From the current log:
   `tests/probe/joy-without-a-via-reads-released.mjs`. Found and fixed in
   phase 2; the ports are active low, so the pre-fix 0 meant every direction
   and button pressed.
+- **`FORMAT` was unreachable because `FOR` matched first** —
+  `tests/console/format-asks-before-erasing.txt`, with
+  `tests/basic/for-still-crunches-as-for.bas` guarding the tokenizer change
+  from the other side. Found and fixed in phase 4; the pre-fix ROM raises
+  `?SYNTAX ERROR`.
 - **`PRINT HEX()` rejected values above 32767** —
   `tests/console/hex-in-print-and-in-an-expression.txt`. Found and fixed in
   phase 2; the pre-fix ROM raises `?ILLEGAL QUANTITY` for `$8000` upwards.

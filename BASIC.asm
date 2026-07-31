@@ -898,6 +898,12 @@ BasValidPunct:
 ;     uppercase) to each keyword in turn.  A keyword's last byte has bit 7
 ;     set; the byte after the table's final keyword is $00.
 ;   - Token value = TOK_BASE + (index of keyword in table).
+;   - The LONGEST match wins, not the first one found.  Taking the first would
+;     make a keyword unreachable whenever an earlier one is a prefix of it:
+;     FOR ($81) comes before FORMAT ($D4), so FORMAT crunched to FOR + "MAT"
+;     and the statement could not be typed at all.  Scanning to the end of the
+;     table costs a little time on each keyword, and buys a tokenizer whose
+;     result does not depend on the table's order.
 ; =============================================================================
 BasMatchKeyword:
         ; Save initial X for rollback on miss; preserve caller's Y (BasCrunch
@@ -913,6 +919,12 @@ BasMatchKeyword:
         sta     BAS_KWPTR+1
         lda     #TOK_BASE
         sta     BAS_TMP1                ; current candidate token
+        ; Best match so far, both zero until one is found: BAS_TMP1+1 is its
+        ; token (no token is $00) and BAS_TMP2+1 the input index just past it.
+        ; Both are the spare halves of pointers this routine only uses a byte
+        ; of, and neither outlives the call.
+        stz     BAS_TMP1+1
+        stz     BAS_TMP2+1
         ldy     #0
 @KeywordLoop:
         ; Restore X to start of input keyword.
@@ -966,12 +978,48 @@ BasMatchKeyword:
 @WholeMatch:
         ; X points at the LAST matched char in input; advance past it.
         inx
+        ; A candidate, not an answer: a keyword further down the table may match
+        ; more of the input.  Keep it only if it does, and carry on scanning.
+        cpx     BAS_TMP2+1
+        bcc     @Extendable             ; a longer match is already held
+        stx     BAS_TMP2+1
         lda     BAS_TMP1
+        sta     BAS_TMP1+1
+@Extendable:
+        ; Only a letter or '$' appears in a keyword, so unless the input
+        ; continues with one, nothing longer can match and the rest of the
+        ; table is not worth walking.  This is what keeps ordinary typing at
+        ; the speed it had when the first match won outright: at 19200 baud the
+        ; crunch of one line runs while the next is arriving, and a slower one
+        ; drops characters out of the input buffer.
+        ldx     BAS_TMP2+1
+        lda     BAS_LINBUF,x
+        cmp     #'$'
+        beq     @SkipKeyword
+        cmp     #'a'
+        bcc     @ExtAlpha
+        cmp     #'z'+1
+        bcs     @ExtAlpha
+        and     #$DF
+@ExtAlpha:
+        cmp     #'A'
+        bcc     @TakeBest
+        cmp     #'Z'+1
+        bcs     @TakeBest
+        bra     @SkipKeyword
+
+@NoMatch:
+        ; End of the table.  Anything found along the way is the longest there
+        ; is, since nothing after it matched at all.
+        lda     BAS_TMP1+1
+        beq     @NoneAtAll
+@TakeBest:
+        ldx     BAS_TMP2+1              ; input index past the longest match
+        lda     BAS_TMP1+1
         ply                             ; restore caller's Y
         sec
         rts
-
-@NoMatch:
+@NoneAtAll:
         ldx     BAS_TMP3                ; restore caller's X
         ply                             ; restore caller's Y
         lda     BAS_LINBUF,x

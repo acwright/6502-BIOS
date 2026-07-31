@@ -228,6 +228,37 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### FORMAT could not be typed, because FOR matched first
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/format-asks-before-erasing.txt`
+- **Phase:** 4 (found and fixed)
+
+`FORMAT` raised `?SYNTAX ERROR`. The statement was implemented, dispatched and
+documented; it simply could not be reached from a keyboard.
+
+`BasMatchKeyword` walked `KeywordTbl` and returned the first keyword that
+matched, and `FOR` ($81) sits 83 entries ahead of `FORMAT` ($D4). So `FORMAT`
+crunched to `FOR` followed by the variable `MAT`, and `LIST` printed it back as
+`FORMAT` — tokens are detokenized without spaces, so the listing looked
+correct. Reading `$0800` is what settled it: `81 4D 41 54`.
+
+It takes the longest match now, so the result no longer depends on the table's
+order. Reordering the table was not an option: a token's value *is* its index,
+and three dispatch tables are indexed by it.
+
+Scanning to the end of the table for every keyword turned out to cost real
+time — enough that the crunch of one line no longer finished before the next
+arrived, and the input buffer dropped characters mid-line. So the scan stops
+early unless the input continues with a letter or `$`, the only characters a
+keyword is made of: nothing longer can match, and there is no reason to look.
+Ordinary typing, where a keyword is followed by a space or a bracket, costs
+exactly what it did before. `FORJ=1TO3` is the case that pays, and
+`tests/basic/for-still-crunches-as-for.bas` holds both forms of `FOR` to it.
+
+`FOR`/`FORMAT` is the only such pair in the table today. The point of fixing it
+in the matcher rather than in the table is that the next one costs nothing.
+
 ### R's PC display did not round-trip with ;
 
 - **Bucket:** BIOS bug — code wrong, docs right

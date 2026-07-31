@@ -154,7 +154,7 @@ Two rules for `.prg` files:
 
 | Command | Effect |
 |---------|--------|
-| `SOUND <voice>, <freq>, <dur>` | Play a tone on voice 0–2 at `freq` Hz for `dur` centiseconds, then silence |
+| `SOUND <voice>, <freq>, <dur>` | Play a tone on voice 1–3 at `freq` Hz for `dur` centiseconds, then silence. Numbered from 1 as in Commodore BASIC V3.5; the `SidPlayNote` Kernal slot indexes the same three voices from 0 |
 | `VOL <n>` | Set SID master volume (0–15) |
 
 **Timing & I/O**

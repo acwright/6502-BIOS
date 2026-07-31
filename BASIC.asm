@@ -3703,7 +3703,7 @@ RndSeedInit:
 ;   Inline-ported from msbasic-master/{var,array,string,memory}.s and
 ;   misc2.s (GivAyf/SngFlt).  All MSBASIC externals are resolved here:
 ;
-;     SynErr / MemErr / IqErr / Gme / SubErr        - error trampolines
+;     SynErr / MemErr / IqErr / SubErr / Gme        - error trampolines
 ;     ChkCom / ChkCls / ChkNum / ChkStr             - parser predicates
 ;     MakInt / FrmNum / FrmEvl                      - minimal stubs (only
 ;                                                     handle literal unsigned
@@ -3735,9 +3735,6 @@ MemErr:
 SubErr:
         ldx     #ERR_BADSUBS
         jmp     BasErrorVec
-
-Gse:
-        jmp     SubErr
 
 Gme:
         jmp     MemErr
@@ -8210,8 +8207,15 @@ BasCmdVol:
         lda     #HW_SID
         jsr     ReqHw
         jsr     GetByt                  ; X = vol
-        txa
-        jmp     SidSetVolume
+        cpx     #16                     ; Documented range is 0-15.  SidSetVolume
+        bcs     BasSidRange             ;   masks to 4 bits, so an unchecked 16
+        txa                             ;   would set volume 0 — silence, for
+        jmp     SidSetVolume            ;   "louder than maximum"
+
+; Shared by VOL and SOUND below: both reject out of range, and one trampoline
+; is 3 bytes cheaper than two in a segment that has none to spare.
+BasSidRange:
+        jmp     IqErr
 
 ; SOUND voice, freq, dur (freq=Hz, dur=centisec)
 ;   Hz -> SID register: reg = Hz * 16.75 ≈ Hz<<4 + Hz - Hz/4
@@ -8219,7 +8223,9 @@ BasCmdSound:
         lda     #HW_SID
         jsr     ReqHw
         jsr     GetByt                  ; X = voice (1..3)
-        dex
+        dex                             ; 0-indexed for SidPlayNote
+        cpx     #3                      ; Voice 0 underflows to $FF, so one
+        bcs     BasSidRange             ;   unsigned test catches both ends
         phx                             ; voice (0-indexed) on stack
         jsr     ChkCom
         jsr     EvalU16                 ; freq Hz: hi=FAC+3, lo=FAC+4

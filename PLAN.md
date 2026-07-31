@@ -529,6 +529,10 @@ obvious. From the current log:
   `tests/basic/for-still-crunches-as-for.bas` guarding the tokenizer change
   from the other side. Found and fixed in phase 4; the pre-fix ROM raises
   `?SYNTAX ERROR`.
+- **`VOL 16` set the volume to zero, and `SOUND 0` played voice 1** —
+  `tests/console/sound-and-vol-reject-values-out-of-range.txt`. Found and fixed
+  in phase 5; on the pre-fix ROM both statements fold an out-of-range argument
+  into a legal one and say nothing.
 - **`PRINT HEX()` rejected values above 32767** —
   `tests/console/hex-in-print-and-in-an-expression.txt`. Found and fixed in
   phase 2; the pre-fix ROM raises `?ILLEGAL QUANTITY` for `$8000` upwards.

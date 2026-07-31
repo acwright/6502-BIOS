@@ -228,6 +228,51 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### SOUND and VOL folded an out-of-range argument into a legal one
+
+- **Bucket:** BIOS bug — code wrong, docs right (plus a separate doc fix, below)
+- **Found by:** `tests/console/sound-and-vol-reject-values-out-of-range.txt`
+- **Phase:** 5 (found and fixed)
+
+`VOL 16` set the volume to **zero**. `SidSetVolume` masks its argument to four
+bits and `BasCmdVol` did not check the range first, so the one value a user is
+most likely to try past the documented maximum was silently read as the
+minimum. `VOL 255` gave 15. Neither said anything.
+
+`SOUND` had the same shape: `BasCmdSound` decrements the voice to index
+`SidPlayNote`'s 0-based blocks, and `SidPlayNote` treats anything that is not 1
+or 2 as voice 0. So `SOUND 0` (which is what a reader of the old README typed),
+`SOUND 4` and `SOUND 255` all played the first voice without complaint.
+
+Both raise `?ILLEGAL QUANTITY ERROR` now, which is what `NVRAM` already did for
+its address and what the rest of this BASIC does with a documented range. The
+voice test is one unsigned compare after the decrement: voice 0 underflows to
+`$FF`, so `cpx #3 / bcs` catches both ends at once.
+
+The eleven bytes came from somewhere. `Gse:` — an msbasic error trampoline that
+was defined and never called from anywhere in the ROM — paid three of them, and
+VOL and SOUND share one `jmp IqErr` rather than carrying one each.
+
+### SOUND's voices are numbered from 1, and the README said 0
+
+- **Bucket:** doc bug — code right, docs wrong
+- **Found by:** the same case, while deciding what "out of range" meant
+- **Phase:** 5
+
+The README's command table said "voice 0–2" and `BasCmdSound`'s own comment
+said `X = voice (1..3)`. They cannot both be right, and the code's numbering is
+the deliberate one: `SOUND` is modelled on Commodore BASIC V3.5, whose
+`SOUND voice#, frequency control, duration` takes voice# 1-3 (verified against
+the Plus/4 Encyclopedia, not from memory). The README now says 1–3.
+
+Worth being explicit about the thing that looks like an inconsistency and is
+not: BASIC's `SOUND` counts voices from 1 and the `SidPlayNote` Kernal slot
+($A033) counts the same three from 0. That is the split between a user-facing
+statement following its model and an assembly API indexing the chip's register
+blocks. Both are documented, and `tests/probe/sound-plays-a-voice-and-then-
+silences-it.mjs` and `tests/probe/the-sid-kernal-slots-play-and-silence.mjs`
+sit next to each other holding the two conventions apart.
+
 ### The Monitor's S wrote the wrong length, and off the end of the disk
 
 - **Bucket:** BIOS bug — code wrong, docs right

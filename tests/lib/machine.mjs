@@ -322,16 +322,28 @@ export class Machine {
   // up. Going through the $A000 slot rather than the implementation is the
   // point — it exercises the published jump as well as the routine.
   async call6502(address, { A = 0, X = 0, Y = 0, scratch = SCRATCH, timeoutMs = 5000 } = {}) {
-    await this.pause()
-    await this.write(scratch, [0x20, address & 0xff, (address >> 8) & 0xff, 0xea])
-    await this.setRegs({ PC: scratch, A, X, Y })
-    const result = await this.runTo(scratch + 3, timeoutMs)
+    const returnTo = await this.plantCall(address, { A, X, Y, scratch })
+    const result = await this.runTo(returnTo, timeoutMs)
     if (result.stop?.kind !== 'breakpoint') {
       throw new AssertionError(
         `call to ${hexWord(address)} did not return: stopped on ${JSON.stringify(result.stop)}`,
       )
     }
     return result.registers
+  }
+
+  // Plant the same stub and point the CPU at it, but do not run — hand back the
+  // address the routine returns to and leave the machine paused.
+  //
+  // This is what a case needs when it wants to watch a Kernal routine *while*
+  // it runs: `call6502` finishes by running to a breakpoint, and an armed
+  // watchpoint stops the machine first, so the call would report that it never
+  // returned. Splitting the two lets the caller decide what stops it.
+  async plantCall(address, { A = 0, X = 0, Y = 0, scratch = SCRATCH } = {}) {
+    await this.pause()
+    await this.write(scratch, [0x20, address & 0xff, (address >> 8) & 0xff, 0xea])
+    await this.setRegs({ PC: scratch, A, X, Y })
+    return scratch + 3
   }
 
   // ---- video and HID -----------------------------------------------------

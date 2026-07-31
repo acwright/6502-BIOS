@@ -1,0 +1,39 @@
+name: SOUND and VOL reject a voice or a volume outside their documented range
+# README: "SOUND <voice>, <freq>, <dur> — Play a tone on voice 1-3 ..."
+#         "VOL <n> — Set SID master volume (0-15)"
+#
+# A documented range that is not enforced is not a range. Both of these took
+# whatever byte they were given and folded it into something legal — VOL by
+# masking to the low four bits, so `VOL 16` set the volume to *zero*, and SOUND
+# by letting an out-of-range voice fall through to voice 1. Neither said
+# anything, so the program ran on and the machine did the wrong thing quietly.
+#
+# NVRAM already rejects an address past its range, so this is the behaviour the
+# rest of this BASIC already has.
+mode: basic
+
+# VOL — the ends of the range are legal.
+> VOL 0
+> VOL 15
+# And past it is not. 16 is the interesting one: masked, it reads as 0, so the
+# pre-fix ROM answered "turn it all the way down" to "turn it past maximum".
+> VOL 16
+~ \?ILLEGAL QUANTITY ERROR
+> VOL 255
+~ \?ILLEGAL QUANTITY ERROR
+
+# SOUND — a one-centisecond note, so the case does not wait on the duration.
+> SOUND 1,440,1
+> SOUND 3,440,1
+# Voice 0 is the one a reader of the old README would have typed.
+> SOUND 0,440,1
+~ \?ILLEGAL QUANTITY ERROR
+> SOUND 4,440,1
+~ \?ILLEGAL QUANTITY ERROR
+> SOUND 255,440,1
+~ \?ILLEGAL QUANTITY ERROR
+
+# And the prompt is still there afterwards, rather than the machine having been
+# left mid-statement.
+> PRINT 6*7
+~ ^ 42$

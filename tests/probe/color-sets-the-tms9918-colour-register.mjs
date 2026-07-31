@@ -79,6 +79,18 @@ export async function run(m) {
     )
   }
 
+  // The pin for eed5f37, and as with POKE and WAIT the difference is only that
+  // the second argument is an expression. The foreground was parked in the
+  // zero-page BAS_TMP1 pair while the background was evaluated, and PEEK's own
+  // argument runs through the routine that uses it — so the colour that reached
+  // register 7 was half whatever the expression left behind. Literals never
+  // went near it, which is why the four pairs above passed on the broken ROM.
+  m.assertByte(
+    await colourAfter(m, 'POKE 4096,4 : COLOR 7, PEEK(4096)'),
+    0x74,
+    'COLOR 7, PEEK(4096) — the foreground has to survive the second argument',
+  )
+
   // And the slot, which takes the byte already packed. Same register, same
   // protocol, no arithmetic of its own to get wrong — and no typing, so it can
   // be called directly with the watchpoint armed.

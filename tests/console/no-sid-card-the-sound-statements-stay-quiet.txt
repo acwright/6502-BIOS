@@ -1,0 +1,41 @@
+name: with no SID card, VOL and SOUND return without an error
+# README: "SID absent — Beep, SOUND, VOL, SidPlayNote, SidSilence silently
+#          return"
+#
+# Sound is the one thing a program can lose and still be doing its job, which is
+# why this row is silence rather than NO DEVICE: a game that beeps on a hit
+# should keep playing on a machine with no sound card, not stop with an error on
+# the line that made the noise.
+#
+# As with the video row, the statement still has to eat its arguments — a SOUND
+# that returned before parsing would leave the rest of the line to be read as
+# statements. The trailing PRINT on each line is what shows it did.
+#
+# The companion probe (no-sid-card-nothing-reaches-the-sound-chip) asserts the
+# other half at the bus: quiet here means "no error", and it means "no writes"
+# there. Neither alone is the promise.
+mode: basic
+hw: -sid
+
+> VOL 9 : PRINT "AFTER VOL"
+~ ^AFTER VOL$
+> SOUND 1, 440, 1 : PRINT "AFTER SOUND"
+~ ^AFTER SOUND$
+
+# The documented ranges still hold with nothing fitted, exactly as they do for
+# LOCATE and COLOR: a program that is wrong is wrong on every machine, and
+# finding out only once a sound card is fitted is finding out too late.
+> VOL 16
+~ \?ILLEGAL QUANTITY ERROR
+> SOUND 0, 440, 1
+~ \?ILLEGAL QUANTITY ERROR
+> SOUND 4, 440, 1
+~ \?ILLEGAL QUANTITY ERROR
+
+# And a program plays its way through to the end.
+> 10 VOL 15
+> 20 SOUND 1, 440, 1
+> 30 SOUND 2, 880, 1
+> 40 PRINT "RAN"
+> RUN
+~ ^RAN$

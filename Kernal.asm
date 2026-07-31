@@ -131,8 +131,13 @@ GetIOModeImpl:
 ; === TMS9918 Video Driver ===
 
 ; VideoClear — Fill name table (960 bytes at VRAM $0000) with spaces, reset cursor to (0,0)
+; Skips silently if no video card is fitted
 ; Modifies: Flags, A, X, Y
 VideoClearImpl:
+  bit HW_PRESENT                ; Video is bit 7, so BIT tests it in N without
+  bpl @VideoClearNone           ;   disturbing A — these routines take their
+                                ;   argument there.  See the note above
+                                ;   HW_PRESENT's bit definitions in BIOS.inc.
   ; Set VRAM write address to $0000 (name table base)
   lda #$00
   sta VC_REG
@@ -159,13 +164,17 @@ VideoClearImpl:
   stz VID_CURSOR_Y
   stz VID_CURSOR_ADDR
   stz VID_CURSOR_ADDR + 1
+@VideoClearNone:
   rts
 
 ; VideoSetCursor — Set cursor position
 ; Input: X = column (0-39), Y = row (0-23)
 ; Calculates VRAM address = Y * 40 + X and stores in VID_CURSOR_ADDR
+; Skips silently if no video card is fitted
 ; Modifies: Flags, A
 VideoSetCursorImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VideoSetCursorNone
   stx VID_CURSOR_X
   sty VID_CURSOR_Y
   ; Calculate VRAM address = Y * 40 + X
@@ -211,6 +220,7 @@ VideoSetCursorImpl:
   bcc @SetCursorDone
   inc VID_CURSOR_ADDR + 1
 @SetCursorDone:
+@VideoSetCursorNone:
   rts
 
 ; VideoGetCursor — Get cursor position
@@ -934,8 +944,11 @@ SerialChroutImpl:
 ; SidPlayNote — Play a note on a SID voice
 ; Input: A = voice (0-2), X = frequency low byte, Y = frequency high byte
 ; Uses triangle waveform with standard ADSR (Attack=0, Decay=9, Sustain=A, Release=2)
+; Skips silently if no SID is fitted
 ; Modifies: Flags, A
 SidPlayNoteImpl:
+  bit HW_PRESENT                ; SID is bit 6, so BIT tests it in V and leaves
+  bvc @SidPlayNoteNone          ;   the voice number in A — see VideoClear
   cmp #$01
   beq @Voice2
   cmp #$02
@@ -969,6 +982,7 @@ SidPlayNoteImpl:
   sta SID_V3_SR
   lda #$11
   sta SID_V3_CTRL
+@SidPlayNoteNone:
   rts
 
 ; SidSilence — Silence all 3 SID voices
@@ -979,12 +993,16 @@ SidPlayNoteImpl:
 ; and leaves the envelope to decay a DC offset instead of a tone — an audible
 ; thump at the end of every note. Gate off is all the SID needs; the envelope
 ; takes the voice to zero on its own.
+; Skips silently if no SID is fitted
 ; Modifies: Flags, A
 SidSilenceImpl:
+  bit HW_PRESENT                ; SID is bit 6 — see VideoClear
+  bvc @SidSilenceNone
   lda #$10                      ; Triangle wave, Gate off
   sta SID_V1_CTRL
   sta SID_V2_CTRL
   sta SID_V3_CTRL
+@SidSilenceNone:
   rts
 
 ; Play a short beep sound
@@ -1087,19 +1105,27 @@ SysDelayImpl:
 
 ; SidSetVolume — Set SID master volume
 ; Input: A = volume (0-15); upper nibble of SID_MODE_VOL is cleared (no filter)
+; Skips silently if no SID is fitted
 ; Modifies: Flags, A
 SidSetVolumeImpl:
+  bit HW_PRESENT                ; SID is bit 6 — see VideoClear
+  bvc @SidSetVolumeNone
   and #$0F
   sta SID_MODE_VOL
+@SidSetVolumeNone:
   rts
 
 ; VideoSetColor — Set TMS9918 text color register
 ; Input: A = color byte (high nibble = fg color, low nibble = bg color)
+; Skips silently if no video card is fitted
 ; Modifies: Flags, A
 VideoSetColorImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VideoSetColorNone
   sta VC_REG                    ; Data byte
   lda #$87                      ; Register 7 | $80 (write mode flag)
   sta VC_REG
+@VideoSetColorNone:
   rts
 
 ; KBDisable — Disable both keyboard encoders for raw port access

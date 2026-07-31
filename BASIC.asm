@@ -8190,16 +8190,25 @@ GetByteLim:
 BasRangeErr:
         jmp     IqErr
 
+; The five statements below reach hardware that a machine may not have fitted,
+; and none of them raises ?NO DEVICE for it: a screen or a speaker has no answer
+; to return, so there is nothing an error could tell the program that silence
+; does not.  A game that beeps on a hit keeps playing on a machine with no sound
+; card.  The skip lives in the Kernal routine each one ends in, which is what
+; makes the same promise to a cartridge calling the slot directly; the arguments
+; are parsed and range-checked here either way, so a program is wrong or right
+; on every machine rather than on the one it was written on.
+;
+; The statements that read or write *data* — the CF and RTC ones below — do
+; raise ?NO DEVICE, and for the same reason: they have an answer to return and
+; cannot.
+
 ; CLS
 BasCmdCls:
-        lda     #HW_VID
-        jsr     ReqHw
         jmp     VideoClear
 
 ; LOCATE row, col
 BasCmdLocate:
-        lda     #HW_VID
-        jsr     ReqHw
         lda     #24                     ; rows 0-23
         jsr     GetByteLim              ; X = row
         phx
@@ -8210,8 +8219,6 @@ BasCmdLocate:
 
 ; COLOR fg, bg
 BasCmdColor:
-        lda     #HW_VID
-        jsr     ReqHw
         lda     #16                     ; colours 0-15
         jsr     GetByteLim              ; X = fg
         txa
@@ -8229,8 +8236,6 @@ BasCmdColor:
 
 ; VOL n
 BasCmdVol:
-        lda     #HW_SID
-        jsr     ReqHw
         lda     #16                     ; volume 0-15
         jsr     GetByteLim              ; X = vol
         txa
@@ -8239,8 +8244,6 @@ BasCmdVol:
 ; SOUND voice, freq, dur (freq=Hz, dur=centisec)
 ;   Hz -> SID register: reg = Hz * 16.75 ≈ Hz<<4 + Hz - Hz/4
 BasCmdSound:
-        lda     #HW_SID
-        jsr     ReqHw
         lda     #4                      ; voices 1-3, after Commodore BASIC V3.5
         jsr     GetByteLim              ; X = voice
         dex                             ; 0-indexed for SidPlayNote

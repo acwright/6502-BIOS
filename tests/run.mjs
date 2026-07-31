@@ -44,7 +44,35 @@ const PROFILES = {
   nvram: { console: 'serial', args: [], nvram: true },
 }
 
-const DIRECTIVES = new Set(['name', 'profile', 'mode', 'xfail', 'issue', 'selftest', 'final', 'timeout'])
+const DIRECTIVES = new Set(['name', 'profile', 'mode', 'hw', 'xfail', 'issue', 'selftest', 'final', 'timeout'])
+
+// The hardware the probe found, as the ROM records it. A case says which cards
+// to take away — `hw: -cf` — and the runner clears those bits after the
+// snapshot is restored and before the case runs. The emulator always fits every
+// card, so this mask is the only way to reach a machine that does not; the next
+// case's restore puts it back, so nothing needs cleaning up.
+const HW_PRESENT = 0x030d
+const HW_BITS = {
+  'ram-l': 0x01, 'ram-h': 0x02, rtc: 0x04, cf: 0x08,
+  serial: 0x10, gpio: 0x20, sid: 0x40, video: 0x80,
+}
+
+function parseHw(spec) {
+  let mask = 0
+  for (const word of spec.trim().split(/[\s,]+/).filter(Boolean)) {
+    if (!word.startsWith('-')) {
+      throw new AssertionError(`\`hw:\` takes cards to remove, each written \`-name\`, not ${JSON.stringify(word)}`)
+    }
+    const name = word.slice(1).toLowerCase()
+    if (name === 'all') { mask = 0xff; continue }
+    if (!(name in HW_BITS)) {
+      throw new AssertionError(`unknown card ${JSON.stringify(name)} — one of ${Object.keys(HW_BITS).join(', ')}, or all`)
+    }
+    mask |= HW_BITS[name]
+  }
+  if (!mask) throw new AssertionError('`hw:` names no cards')
+  return mask
+}
 
 // ---------------------------------------------------------------------------
 // Arguments
@@ -119,6 +147,7 @@ function metaOf(id, file, directives) {
     name: directives.name || id,
     profile: directives.profile || 'serial',
     mode: directives.mode || 'basic',
+    hwClear: directives.hw ? parseHw(directives.hw) : 0,
     xfail: directives.xfail || null,
     issue: directives.issue || null,
     selftest: directives.selftest || null,
@@ -182,6 +211,7 @@ function loadProbeCase(id, file) {
     name: module.name,
     profile: module.profile,
     mode: module.mode,
+    hw: module.hw,
     xfail: module.xfail,
     issue: module.issue,
     selftest: module.selftest,
@@ -325,6 +355,9 @@ async function runCase(pool, testCase) {
   try {
     const snapshot = testCase.mode === 'monitor' ? await monitorSnapshot(entry) : entry.ready
     await m.loadState(snapshot)
+    if (testCase.hwClear) {
+      await m.write(HW_PRESENT, [(await m.peek(HW_PRESENT)) & ~testCase.hwClear])
+    }
     await m.start()
     const result = await testCase.run(m)
     outcome = result?.ok === false

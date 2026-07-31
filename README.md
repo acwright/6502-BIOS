@@ -54,8 +54,10 @@ All hardware-dependent operations are guarded at every level — Kernal, BASIC, 
 - **CompactFlash absent** — `LOAD`, `SAVE`, `DIR` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` times out instead of hanging
 - **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
-- **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence` silently return
-- **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); console auto-switches to serial
+- **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence`, `SidSetVolume` silently return
+- **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
+
+The two silent rows are silent because a screen and a speaker have nothing to report back — the statement had no answer to return, so there is nothing an error could say. The rows that move *data* (CompactFlash, RTC) raise `NO DEVICE` instead, because there the program asked for something it did not get. Either way the arguments are parsed and range-checked first: `LOCATE 24,0` and `VOL 16` are `ILLEGAL QUANTITY` on a machine with no screen and no sound card, so a program is wrong or right everywhere rather than only where it was written.
 - **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, and `NVRAM` (write) in BASIC print `NO DEVICE`; `NVRAM()` (read) returns 0
 
 ### BASIC

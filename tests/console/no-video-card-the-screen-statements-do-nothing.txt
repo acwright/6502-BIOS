@@ -1,0 +1,46 @@
+name: with no video card, CLS, LOCATE and COLOR consume their arguments and do nothing
+# README: "Video absent — CLS, LOCATE, COLOR silently skip (arguments are still
+#          consumed); console auto-switches to serial"
+#
+# This is the machine most users of this BIOS actually have — the default
+# headless profile has no video card, so nothing needs masking to get here — and
+# it is the row where silence is the promise rather than an error. A serial-only
+# machine running a program written on a video one should keep going: there is
+# no answer CLS could fail to return, so there is nothing to report.
+#
+# "Arguments are still consumed" is the load-bearing half, and it is what the
+# trailing statement on each line tests. A statement that returned before
+# parsing would leave TXTPTR on its own arguments, and the interpreter would
+# read `10, 20` as the next statement — so a skipped LOCATE shows up as a syntax
+# error a few characters later rather than as a missing screen update.
+mode: basic
+hw: -video
+
+> CLS : PRINT "AFTER CLS"
+~ ^AFTER CLS$
+> LOCATE 10, 20 : PRINT "AFTER LOCATE"
+~ ^AFTER LOCATE$
+> COLOR 1, 2 : PRINT "AFTER COLOR"
+~ ^AFTER COLOR$
+
+# Consumed to the last argument, not just past the first: an expression, and
+# then a second statement on the same line.
+> A = 3
+> LOCATE A * 2, A + 1 : PRINT "PARSED ALL OF IT"
+~ ^PARSED ALL OF IT$
+
+# The arguments are still arguments, so their documented ranges still hold. A
+# program that would be rejected on the machine with a screen is rejected here
+# too, rather than passing quietly until it meets one.
+> LOCATE 24, 0
+~ \?ILLEGAL QUANTITY ERROR
+> COLOR 16, 0
+~ \?ILLEGAL QUANTITY ERROR
+
+# And a program runs through all three without stopping.
+> 10 CLS
+> 20 LOCATE 0, 0
+> 30 COLOR 1, 0
+> 40 PRINT "RAN"
+> RUN
+~ ^RAN$

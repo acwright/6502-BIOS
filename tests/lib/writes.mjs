@@ -19,6 +19,7 @@
 // read.
 
 import { AssertionError } from './assert.mjs'
+import { toWaitPattern } from './machine.mjs'
 
 const STORE_WIDTH = 3
 
@@ -140,6 +141,51 @@ export async function recordWrites(
     // writes do not turn up at the head of the next recording.
     if (settle) await m.expectFrom(cursor, settle, { timeoutMs, required: false })
     else await m.start()
+  }
+}
+
+// The opposite assertion, for the degradation rows: run `body` and require that
+// nothing at all was written to the block before the console came back to
+// `settle`.
+//
+// It is the same watchpoint, read the other way round. A write stops the
+// machine, so the prompt never arrives and the wait ends unmatched with the
+// stop that caused it — which is why the failure can name the address and the
+// value rather than only reporting a timeout. "The statement returned quietly"
+// and "the statement returned quietly *and touched nothing*" are different
+// claims, and on a machine whose registers read back as $00 the second one can
+// only be made here.
+export async function expectNoWrites(
+  m,
+  { start, end = start, body, settle = /^OK/, what = 'the statement', timeoutMs = 20000 },
+) {
+  await m.clearBreaks()
+  await m.watch(start, 'write', { end })
+  const { cursor } = await m.serialRead(0)
+  try {
+    await body()
+    const pattern = settle instanceof RegExp ? settle.source : String(settle)
+    const result = await m.waitFor({
+      serial: toWaitPattern(pattern),
+      since: cursor,
+      run: 'turbo',
+      timeoutMs,
+    })
+    if (result.matched) return
+    if (result.stop?.kind === 'watchpoint') {
+      const address = result.stop.address
+      const value = await valueWritten(m, await m.regs(), address)
+      throw new AssertionError(
+        `${what} wrote ${hex(value, 2)} to ${hex(address)} on a machine where that ` +
+          'card is not fitted',
+      )
+    }
+    throw new AssertionError(
+      `${what} never came back to /${pattern}/: ${JSON.stringify(result.stop ?? 'still running')}`,
+    )
+  } finally {
+    await m.clearBreaks()
+    await m.start()
   }
 }
 

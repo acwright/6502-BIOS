@@ -1,0 +1,35 @@
+name: with no RTC card, the clock statements report NO DEVICE and NVRAM() reads 0
+# README: "RTC absent — TIME, DATE, SETTIME, SETDATE, and NVRAM (write) in
+#          BASIC print NO DEVICE; NVRAM() (read) returns 0"
+#         "NVRAM(addr) — Read byte from RTC NVRAM (returns 0 if RTC absent)"
+#
+# The row is two promises, not one, and they point opposite ways: the five
+# statements have to fail loudly, and the function has to fail quietly with a
+# value. That split is deliberate — a statement has nowhere to put an answer, so
+# an error is all it can say, while a function is inside an expression and
+# raising there would take the whole program down for a byte nobody stored.
+mode: basic
+hw: -rtc
+
+> TIME
+~ \?NO DEVICE ERROR
+> DATE
+~ \?NO DEVICE ERROR
+> SETTIME 1, 2, 3
+~ \?NO DEVICE ERROR
+> SETDATE 20, 26, 1, 1
+~ \?NO DEVICE ERROR
+> NVRAM 0, 170
+~ \?NO DEVICE ERROR
+
+# The read side. 0 rather than an error, and 0 at both ends of the address
+# range — a routine that returned the low byte of the address, or the last
+# value latched, would pass at 0 alone.
+> PRINT NVRAM(0)
+~ ^ 0$
+> PRINT NVRAM(255)
+~ ^ 0$
+
+# It composes like any other function: no error, no wedge, just zero.
+> PRINT NVRAM(7) + 1
+~ ^ 1$

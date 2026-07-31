@@ -1,0 +1,46 @@
+name: with no CF card, every BASIC storage statement reports NO DEVICE
+# README: "CompactFlash absent — LOAD, SAVE, DIR in BASIC print NO DEVICE;
+#          Monitor L, S, @ print I/O ERROR; StWaitReady times out instead of
+#          hanging"
+#         "All hardware-dependent operations are guarded at every level —
+#          Kernal, BASIC, and Monitor"
+#
+# The emulator always fits a card, so a card-absent machine is reached the only
+# way it can be: the probe's own record of what it found, HW_PRESENT at $030D,
+# with the CF bit cleared. That is exactly what the ROM consults, so a statement
+# cannot tell this from an empty slot — and the snapshot restore puts the bit
+# back before the next case, which is why nothing here cleans up.
+#
+# DEL, BLOAD, BSAVE and FORMAT are not in the README's sentence and are asserted
+# anyway: they are storage statements on the same card, and the degradation
+# claim is about the card rather than about four particular keywords.
+#
+# The closing prompt is the other half of every row. "Prints NO DEVICE" is
+# satisfied by a ROM that prints it and then wedges on a card that will never
+# answer, and a run against one would hang here rather than fail — so each
+# statement is followed back to OK.
+mode: basic
+hw: -cf
+
+> LOAD "T"
+~ \?NO DEVICE ERROR
+> SAVE "T"
+~ \?NO DEVICE ERROR
+> DIR
+~ \?NO DEVICE ERROR
+> DEL "T"
+~ \?NO DEVICE ERROR
+> BLOAD 16384, "T"
+~ \?NO DEVICE ERROR
+> BSAVE 16384, 16, "T"
+~ \?NO DEVICE ERROR
+
+# FORMAT asks before it erases. With no card it must not get as far as the
+# question, or a user answering Y is answering about a disk that is not there.
+> FORMAT
+~ \?NO DEVICE ERROR
+! ERASE DISK
+
+# And the machine is still usable afterwards, not sitting in a storage retry.
+> PRINT 6 * 7
+~ ^ 42$

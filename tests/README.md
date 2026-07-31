@@ -115,10 +115,26 @@ Set as `# key: value` in a `.bas` header, `key: value` in a `.txt` header, or an
 | `name` | what the case is called in the report (default: its path) |
 | `profile` | `serial` (default), `video`, or `cf` |
 | `mode` | `basic` (default) or `monitor` — Tier 2 |
+| `hw` | cards to take away — `hw: -cf`, `hw: -sid -rtc`, `hw: -all` |
 | `timeout` | per-step timeout in ms (default 20000) |
 | `final` | Tier 2's closing expectation; `none` to skip it |
 | `xfail` + `issue` | see below |
 | `selftest` | `must-fail` — see below |
+
+## hw — running on a machine that is missing a card
+
+The emulator always fits every card, so a machine with an empty slot is reached
+through the only thing the ROM actually consults: `HW_PRESENT` at `$030D`, the
+record the boot probe left of what it found. `hw: -cf` clears the CF bit after
+the snapshot is restored and before the case runs, and the next case's restore
+puts it back — nothing needs cleaning up. Names are `ram-l`, `ram-h`, `rtc`,
+`cf`, `serial`, `gpio`, `sid`, `video`, and `all`.
+
+Two rows cannot be reached this way, and their cases say so in full: taking the
+**serial** card away stops the IRQ handler reading the ACIA, so nothing can be
+typed afterwards, and taking **everything** away includes it. Those cases type
+their program first and let it clear the mask on itself with a `POKE 781` — the
+output path is not gated on the probe, so the verdict still comes back.
 
 ## xfail
 

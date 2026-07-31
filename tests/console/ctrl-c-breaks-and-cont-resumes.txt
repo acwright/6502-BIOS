@@ -5,11 +5,10 @@ name: Ctrl+C breaks a running program and CONT resumes it
 # program rather than continuing it, the loop would run its full count again
 # and A would be reported from a fresh start.
 #
-# A GOTO loop rather than FOR/NEXT on purpose. Resuming inside a FOR loop does
-# not work — the frame lives on the hardware stack, which is reset on the way
-# back to the prompt — and whether that should be fixed is still open, see
-# tests/FINDINGS.md#cont-cannot-resume-inside-a-for-loop. Using FOR here would
-# tangle that undecided question into a case about Ctrl+C.
+# A GOTO loop rather than FOR/NEXT on purpose: this case is about Ctrl+C and
+# the resume, and a FOR would drag the stack frames into it. Breaking inside a
+# loop and continuing is its own case —
+# cont-resumes-inside-a-loop-and-a-subroutine.
 #
 # 3000 rather than a rounder 30000: the loop is interpreted, and the longer
 # bound does not finish inside the default 20 s step timeout. The count only

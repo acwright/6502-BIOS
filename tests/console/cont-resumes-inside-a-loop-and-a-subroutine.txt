@@ -1,0 +1,90 @@
+name: CONT resumes inside a FOR loop and inside a subroutine
+# README: "STOP — Stop and print `BREAK IN nnnn`. Resume with `CONT`"
+#         "CONT — Continue after `STOP` or Ctrl+C break (immediate mode only).
+#          Error if nothing to continue"
+#
+# Stopping to look at a variable and carrying on is what CONT is *for*, and the
+# place a program most needs looking at is inside the loop that is going wrong.
+# This is also where Microsoft 6502 BASIC — which this interpreter follows, and
+# whose V2.0 banner it prints — leaves the FOR and GOSUB frames alone across a
+# break: the frames live on the hardware stack, and only RUN, CLR and NEW (and
+# an error, which refuses to continue anyway) reset it.
+#
+# The counters are the point of each case. A CONT that restarted the program
+# would print the same words with different numbers, and a CONT that resumed
+# with the frame gone would raise ?NEXT WITHOUT FOR or ?RETURN WITHOUT GOSUB.
+mode: basic
+
+# A FOR loop: break on the second pass, continue, and let the loop finish. I
+# ends at 4 because NEXT tests the limit after incrementing, as it does in
+# Microsoft 6502 BASIC.
+> 10 FOR I = 1 TO 3
+> 20 IF I = 2 THEN STOP
+> 30 NEXT I
+> 40 PRINT "DONE";I
+> RUN
+~ ^BREAK IN 20
+> CONT
+~ ^DONE 4$
+
+# The variable really was visible in between, which is the reason to break at
+# all — and it is the same run, not a fresh one.
+> 100 FOR J = 1 TO 3
+> 110 IF J = 2 THEN STOP
+> 120 NEXT J
+> 130 PRINT "ENDED";J
+> RUN 100
+~ ^BREAK IN 110
+> PRINT J
+~ ^ 2$
+> CONT
+~ ^ENDED 4$
+
+# A subroutine: the RETURN after the break has to find its frame too.
+> NEW
+> 10 GOSUB 100
+> 20 PRINT "BACK"
+> 30 END
+> 100 STOP
+> 110 RETURN
+> RUN
+~ ^BREAK IN 100
+> CONT
+~ ^BACK$
+
+# Ctrl+C inside a loop, not just STOP: the break arrives between statements
+# either way, so the frame survives it the same.
+> NEW
+> 10 FOR I = 1 TO 30000
+> 20 NEXT I
+> 30 PRINT "FINISHED";I
+> RUN
+< \x03
+~ ^BREAK IN
+> CONT
+~ ^FINISHED 30001$
+
+# NEW is the other one. The program CONT would resume into has just been
+# erased, so the saved position points at memory that is no longer a program.
+> NEW
+> 10 A = 1
+> 20 STOP
+> 30 PRINT "RESUMED"
+> RUN
+~ ^BREAK IN 20
+> NEW
+> CONT
+~ ^\?CAN'T CONTINUE ERROR
+
+# And an error is the one break that cannot be continued from: it can happen
+# anywhere, including part-way through evaluating an expression, so the stack
+# is reset and the frames are gone. Saying so is the honest answer; resuming
+# onto a frame that is no longer there is not.
+> NEW
+> 10 FOR I = 1 TO 3
+> 20 IF I = 2 THEN PRINT 1/0
+> 30 NEXT I
+> RUN
+~ \?DIVISION BY ZERO ERROR IN 20
+> CONT
+~ ^\?CAN'T CONTINUE ERROR

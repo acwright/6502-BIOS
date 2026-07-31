@@ -368,6 +368,8 @@ GOSUB_STACK_MIN = $44
 BasEntry:
         ldx     #$FF                    ; reset stack on (re)entry
         txs
+        stx     BAS_STKBASE             ; nothing suspended: the READY loop's
+                                        ;   baseline is the empty stack
         cld
 
         lda     BAS_WARM
@@ -1384,8 +1386,13 @@ BasDispatchImmediate:
         lda     #$FF
         sta     BAS_CURLIN
         sta     BAS_CURLIN+1
-        ; Reset CPU stack so FOR / GOSUB frame scanners have a clean baseline.
-        ldx     #$FF
+        ; Re-anchor the CPU stack to the baseline, so the FOR / GOSUB frame
+        ; scanners start from a known depth and nothing a previous direct line
+        ; abandoned is still lying there.  The baseline is $FF with no program
+        ; suspended, and the broken program's statement boundary after a
+        ; STOP/END/Ctrl+C -- so its frames sit above this line's stack and are
+        ; still there when CONT hands the program back.
+        ldx     BAS_STKBASE
         txs
         jmp     BasNewstt
 
@@ -1410,7 +1417,10 @@ BasCmdNew:
         sta     BAS_FRETOP
         lda     BAS_MEMSIZ+1
         sta     BAS_FRETOP+1
-        rts
+        ; And fall into CLR, as msbasic's SCRTCH does: the program that CONT
+        ; would have resumed into has just been erased, so the saved position
+        ; and the frames behind it have to go with it.
+        jmp     BasCmdClr
 
 ; =============================================================================
 ;   B a s C m d L i s t
@@ -1773,6 +1783,13 @@ BasError:
         sta     BAS_TMP3                ; stash code (stack reset wipes A on stack)
         ldx     #$FF
         txs
+        stx     BAS_STKBASE
+        ; An error can strike anywhere -- part-way through an expression, deep
+        ; in a string function -- so unlike a STOP there is no boundary to
+        ; unwind to and the FOR/GOSUB frames go with it.  Saying CAN'T CONTINUE
+        ; is then the honest answer: resuming onto a frame that is no longer
+        ; there is how ?NEXT WITHOUT FOR turns up two statements later.
+        stz     BAS_OLDTEXT+1
         jsr     BasPrintCRLF
         lda     #'?'
         jsr     Chrout
@@ -4776,6 +4793,20 @@ MoveHighestStringToTop:
 ;   TEMPPT := TEMPST, DATAPTR := TXTTAB-1, stacks emptied
 ; ---------------------------------------------------------------------------
 BasCmdClr:
+        ; Reset the CPU stack, msbasic's STKINI: any FOR or GOSUB frame a
+        ; suspended program left there is being abandoned along with its
+        ; variables, and RUN starting on top of one would let a later NEXT find
+        ; a loop from the previous run.  The return address rides across the
+        ; reset so this is still an ordinary subroutine to its callers.
+        pla                             ; return address low
+        tay
+        pla                             ; return address high
+        ldx     #$FF
+        txs
+        stx     BAS_STKBASE
+        pha
+        tya
+        pha
         ; ARYTAB = STREND = VARTAB
         lda     VARTAB
         sta     ARYTAB
@@ -6529,6 +6560,14 @@ BasNewstt:
         sta     BAS_OLDTEXT
         lda     TXTPTR+1
         sta     BAS_OLDTEXT+1
+        ; And the stack depth this statement starts at: FOR and GOSUB frames
+        ; are below it, anything a statement pushes is above.  A break restores
+        ; SP to here, so the frames survive it and the half-finished statement
+        ; does not -- which is what lets CONT resume inside a loop.  Recorded
+        ; only in run mode: a direct-mode line must not move the baseline it is
+        ; itself being run from.
+        tsx
+        stx     BAS_STKBASE
 @noSave:
         ldy     #0
         lda     (TXTPTR),y
@@ -6555,9 +6594,11 @@ BasNewstt:
         ldy     #2
         lda     (TXTPTR),y
         bne     @loadLine               ; nonzero hi -> next line exists
-        ; End of program -> halt and return to REPL.
+        ; End of program -> halt and return to REPL.  The program ran off its
+        ; last line rather than stopping, so its frames are finished with.
         ldx     #$FF
         txs
+        stx     BAS_STKBASE
         jmp     BasReadyLoop
 @loadLine:
         iny                             ; y=3
@@ -6648,8 +6689,9 @@ BasCheckBreak:
         sta     BAS_OLDLIN
         lda     BAS_CURLIN+1
         sta     BAS_OLDLIN+1
-        ldx     #$FF
-        txs
+        ldx     BAS_STKBASE             ; Back to the statement boundary, not to
+        txs                             ;   an empty stack: the loop this broke
+                                        ;   out of is meant to still be there
         jsr     BasPrintCRLF
         lda     #<MsgBreak
         ldy     #>MsgBreak
@@ -7055,7 +7097,12 @@ BasCmdRun:
         ; Leave direct-mode (CURLIN+1=$FF); @loadLine will set real value.
         stz     BAS_CURLIN
         stz     BAS_CURLIN+1
-        rts
+        ; Straight back into the statement loop rather than RTS, as msbasic's
+        ; RUN does: CLR above has just reset the stack, so the return address
+        ; this was dispatched with is no longer on it -- which is the point.  A
+        ; program that starts on top of a suspended one's FOR frames is a
+        ; program whose first NEXT can find the wrong loop.
+        jmp     BasNewstt
 @withLine:
         jsr     BasCmdClr
         jsr     ChrGot
@@ -7068,7 +7115,8 @@ BasCmdRun:
         ; `?UNDEF'D STATEMENT ERROR` with no spurious `IN 0` line number.
         stz     BAS_CURLIN
         stz     BAS_CURLIN+1
-        rts
+        jmp     BasNewstt               ; as the bare path above: CLR reset the
+                                        ;   stack this was dispatched from
 
 ; ---------------------------------------------------------------------------
 ; Statement: END / STOP -- save CONT context and return to REPL.
@@ -7092,8 +7140,8 @@ BasCmdStop:
         sta     BAS_OLDLIN
         lda     BAS_CURLIN+1
         sta     BAS_OLDLIN+1
-        ldx     #$FF
-        txs
+        ldx     BAS_STKBASE             ; As with a Ctrl+C break: keep the FOR
+        txs                             ;   and GOSUB frames for CONT
         bcc     @end
         ; STOP path: print "BREAK[ IN nnnn]".
         jsr     BasPrintCRLF

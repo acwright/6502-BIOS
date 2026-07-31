@@ -84,7 +84,7 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `REM` | `REM [text]` | Comment — rest of line is ignored |
 | `END` | `END` | Stop execution and return to `OK`. Variables preserved |
 | `STOP` | `STOP` | Stop and print `BREAK IN nnnn`. Resume with `CONT` |
-| `CONT` | `CONT` | Continue after `STOP` or Ctrl+C break (immediate mode only). Error if nothing to continue |
+| `CONT` | `CONT` | Continue after `STOP`, `END` or a Ctrl+C break (immediate mode only), including from inside a `FOR` loop or a subroutine — the loop and `GOSUB` frames survive the break, so `NEXT` and `RETURN` still find them. `CAN'T CONTINUE` after an error, a `NEW`, a `CLR` or a `RUN`, all of which reset the stack those frames live on |
 | `ON` | `ON expr GOTO l1,l2,...` / `ON expr GOSUB l1,l2,...` | Evaluate `expr`, branch to nth target. Out-of-range index silently continues |
 | `DATA` | `DATA v1,v2,...` | Inline data for `READ` (numeric or string literals). Skipped during normal execution |
 | `READ` | `READ var [,var ...]` | Read next value(s) from `DATA` into variables. `OUT OF DATA` if exhausted |

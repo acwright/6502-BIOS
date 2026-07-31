@@ -337,7 +337,8 @@ things, all of which need something a later phase builds:
 
 Every one of the 54 entries in `KeywordTbl` from `$80 END` to `$B5 MEM`.
 
-- **Control flow** — `END`, `STOP`+`CONT` (Tier 2, `BREAK IN nnnn`), `GOTO`,
+- **Control flow** — `END`, `STOP`+`CONT` (Tier 2, `BREAK IN nnnn`, and
+  resuming inside a `FOR` loop or a subroutine — fixed after phase 6), `GOTO`,
   `GOSUB`/`RETURN` incl. deep nesting and exhaustion → `OUT OF MEMORY` (done in
   phase 1),
   `ON…GOTO`, `ON…GOSUB`, out-of-range `ON` index falls through, `IF/THEN`,
@@ -668,6 +669,12 @@ obvious. From the current log:
   `tests/console/no-cf-card-the-monitor-reports-io-error.txt`. Found and fixed
   in phase 6; on the pre-fix ROM the Monitor's `L` reports `FILE NOT FOUND` and
   `@` prints a header with no entries, which is what a blank disk prints.
+- **`CONT` could not resume inside a `FOR` loop or a subroutine** —
+  `tests/console/cont-resumes-inside-a-loop-and-a-subroutine.txt`. Found in
+  phase 2, decided and fixed after phase 6: Microsoft 6502 BASIC resets the
+  stack in `CLR`/`RUN`/`NEW` and never on a break, so the frames survive. On the
+  pre-fix ROM the resume raises `?NEXT WITHOUT FOR`, and `CONT` after an error
+  or a `NEW` resumes into a program that is no longer there.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

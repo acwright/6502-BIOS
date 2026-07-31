@@ -14,42 +14,6 @@ under PLAN.md §6.12 on the way out.
 
 ---
 
-## CONT cannot resume inside a FOR loop
-
-- **Bucket:** undecided — the README does not say either way
-- **Found by:** writing `tests/console/ctrl-c-breaks-and-cont-resumes.txt`
-- **Phase:** 2
-- **Status:** open, no test written
-
-Breaking inside a `FOR` loop and typing `CONT` resumes at the right line and
-then fails on the `NEXT`:
-
-```basic
-10 FOR I = 1 TO 5
-20 IF I = 3 THEN STOP
-30 NEXT I
-RUN
-BREAK IN 20
-CONT
-?NEXT WITHOUT FOR ERROR IN 30
-```
-
-It is not the Ctrl+C path — `STOP` does the same, which is what rules out the
-break handler and points at the resume. `FOR` frames live on the 6502 hardware
-stack, and the return to the prompt resets the stack pointer, so by the time
-`CONT` restores `TXTPTR` and `CURLIN` the frame is gone. `GOSUB` frames live in
-the same place and will have the same problem.
-
-**Why this is not filed as a bug yet.** The README promises only that `CONT`
-continues after a break; it says nothing about loop context, and the same
-limitation is inherent to where msbasic keeps its frames. Fixing it means
-saving and restoring the live part of page 1 across the break — real work, and
-space this ROM does not obviously have. The alternative is to document the
-limitation, which costs nothing and is honest.
-
-Wanted before writing a case: a decision on which of those two. A case asserting
-the resume works would be asserting a feature nobody has agreed to build.
-
 ## WAI and STP are decoded but not implemented
 
 - **Bucket:** emulator bug
@@ -191,6 +155,59 @@ will demand it.
 ---
 
 ## Resolved
+
+### CONT could not resume inside a FOR loop
+
+- **Bucket:** BIOS bug — code wrong, docs silent, and Microsoft 6502 BASIC does
+  it the other way
+- **Found by:** writing `tests/console/ctrl-c-breaks-and-cont-resumes.txt`
+- **Phase:** 2 (found), decided and fixed 2026-07-31
+
+Breaking inside a `FOR` loop and typing `CONT` resumed at the right line and
+then failed on the `NEXT`:
+
+```basic
+10 FOR I = 1 TO 5
+20 IF I = 3 THEN STOP
+30 NEXT I
+RUN
+BREAK IN 20
+CONT
+?NEXT WITHOUT FOR ERROR IN 30
+```
+
+Not the break handler — `STOP` did the same — but the return to the prompt. The
+`FOR` frame lives on the 6502 hardware stack, and every path back to `READY`
+reset the stack pointer to `$FF`, so by the time `CONT` restored `TXTPTR` and
+`CURLIN` the frame was gone. `GOSUB` frames live in the same place and had the
+same problem.
+
+**Decided: it should work, because that is what this interpreter is a copy of.**
+Microsoft 6502 BASIC resets the stack in `STKINI`, which is reached from `CLR`,
+`RUN` and `NEW` — never from `STOP`, `END` or a break. Stopping to look at a
+variable and carrying on is the reason `CONT` exists, and the place a program
+most needs looking at is the loop that is going wrong.
+
+**How, without msbasic's leak.** msbasic gets away with leaving the stack alone
+because its `STOP` key is only polled between statements, where the depth is
+exactly the program's frames. This BIOS also polls inside `WAIT`, so a break can
+arrive part-way through a statement. So the statement loop records the stack
+pointer it starts each statement at (`BAS_STKBASE`, `$0375`), and a break winds
+back to *that* rather than to an empty stack: the loop's frames survive, the
+half-finished statement's do not. The READY loop re-anchors to the same byte
+before every direct-mode line, so a direct `FOR` with no `NEXT` cannot pile up
+either — which is a leak msbasic does have.
+
+**The rule that came out of it: the stack reset and `CAN'T CONTINUE` are the
+same event.** An error can strike anywhere, including mid-expression, so it has
+no boundary to wind back to and keeps resetting the stack — and it now clears
+the saved `CONT` position with it, instead of leaving a pointer that would
+resume onto a frame that is no longer there. `CLR` resets the stack the way
+msbasic's `STKINI` does, popping its return address across the reset, and `NEW`
+falls into `CLR` as msbasic's `SCRTCH` does, so erasing the program erases the
+promise to resume into it. `RUN` ends in a jump into the statement loop rather
+than an `RTS`, because the return address it was dispatched with is one of the
+things `CLR` just threw away.
 
 ### The splash and boot menu were never shown on a serial console
 

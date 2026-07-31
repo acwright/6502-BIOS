@@ -25,6 +25,11 @@ mode: basic
 > SAVE "NOROOM"
 ~ ^\?SAVE ERROR$
 
+# BSAVE names its own length, so it is the command that can ask for more than a
+# disk holds. Same guard, same answer.
+> BSAVE 4096,600,"BIGGER"
+~ ^\?SAVE ERROR$
+
 > DIR
 ~ ^KEEP    \.BIN 4$
 ~ ^TAIL    \.BIN 4096$

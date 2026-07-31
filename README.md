@@ -551,3 +551,18 @@ Remove generated files:
 ```bash
 make clean
 ```
+
+## Related
+
+- [6502-ACE](https://github.com/acwright/6502-ACE) — the hardware, and the index of the whole family
+- [6502-EMULATOR](https://github.com/acwright/6502-EMULATOR) — runs this ROM on desktop, in a browser, or headless; the regression suite above drives it
+- [6502-PRG](https://github.com/acwright/6502-PRG) / [6502-CRT](https://github.com/acwright/6502-CRT) — templates for programs and cartridges, each shipping a `6502.inc` that tracks the Kernal API documented above
+- [6502-ASM](https://github.com/acwright/6502-ASM) / [6502-BAS](https://github.com/acwright/6502-BAS) — example programs and BASIC listings
+- [cffs](https://github.com/acwright/cffs) — builds CompactFlash images for the filesystem described above
+- [bastok](https://github.com/acwright/bastok) — tokenizes BASIC listings into `.prg` images
+- [bin2woz](https://github.com/acwright/bin2woz) — converts a binary into a paste-able upload for the Wozmon at `$FF00`
+- [6502-ASSETS](https://github.com/acwright/6502-ASSETS) — documentation, memory-map and character-set references
+
+## License
+
+MIT License — see [LICENSE](LICENSE).

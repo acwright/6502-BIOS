@@ -1,0 +1,32 @@
+name: with no CF card, the Monitor's L, S and @ report I/O ERROR
+# README: "CompactFlash absent — ... Monitor L, S, @ print I/O ERROR"
+#
+# The half of the CF row that §6.3 handed to this phase: there is no
+# card-absent state to run the Monitor against until HW_PRESENT can be edited,
+# which is what the `hw:` directive does.
+#
+# `I/O ERROR` rather than `FILE NOT FOUND` is the whole point. A missing card
+# and a missing file are different failures — one is fixed by fitting the card
+# and the other by choosing another name — and a Monitor that reported the file
+# as absent would send the user looking in the wrong place. The blank-card case
+# (monitor-directory-and-missing-file) pins the other side of that pair.
+mode: monitor
+hw: -cf
+
+> L "T"
+~ ^I/O ERROR$
+! FILE NOT FOUND
+
+> S "T" 1000 100F
+~ ^I/O ERROR$
+! SAVED
+
+# An absent card must not read as an empty one. `@` on a blank card prints its
+# DISK header and no entries; if that is all an absent card prints too, the two
+# are indistinguishable from the console.
+> @
+~ ^I/O ERROR$
+
+# Still at a working prompt, not stuck waiting on a card that will not answer.
+> N $FF
+~ ^\$00FF  \+255  %0000000011111111$

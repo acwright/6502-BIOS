@@ -51,7 +51,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code or inspected in the 
 
 All hardware-dependent operations are guarded at every level — Kernal, BASIC, and Monitor:
 
-- **CompactFlash absent** — `LOAD`, `SAVE`, `DIR` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` times out instead of hanging
+- **CompactFlash absent** — `LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` returns an error at once when the boot probe found no card, and times out instead of hanging on a card that stops answering
 - **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence`, `SidSetVolume` silently return

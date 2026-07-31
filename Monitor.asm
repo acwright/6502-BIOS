@@ -915,7 +915,10 @@ MonCmdModRegs:
 
 MonCmdDir:
   jsr FsDirectory
-  rts
+  bcs @MonDirErr                ; An unreadable card is not an empty one: the
+  rts                           ;   header and no entries is what a blank disk
+@MonDirErr:                     ;   looks like, so the failure has to be said
+  jmp MonPrintIOErr
 
 ; ============================================================================
 ; MonCmdDisk — Select / report the current CF disk bank
@@ -1031,8 +1034,7 @@ MonCmdLoad:
   jsr MonPrintLoaded            ; Print "LOADED nnnn BYTES AT $xxxx"
   rts
 @LoadSerErr:
-  jsr MonPrintIOErr
-  rts
+  jmp MonPrintIOErr             ; Tail call: it ends in the RTS this needs
 
   ; --- CF path ---
 @LoadCF:
@@ -1151,8 +1153,7 @@ MonCmdLoad:
 @LoadCFSecErr:
   plx                           ; Balance stack
 @LoadCFErr:
-  jsr MonPrintIOErr
-  rts
+  jmp MonPrintIOErr             ; Tail call: it ends in the RTS this needs
 @LoadCFNotFound:
   ldx #0
 @LoadCFNFLoop:
@@ -1249,8 +1250,7 @@ MonCmdSave:
   jsr MonPrintSaved
   rts
 @SaveSerErr:
-  jsr MonPrintIOErr
-  rts
+  jmp MonPrintIOErr             ; Tail call: it ends in the RTS this needs
 
   ; --- CF path ---
 @SaveCF:
@@ -1455,8 +1455,7 @@ MonCmdSave:
 @SaveCFSecErr:
   plx                           ; Balance stack
 @SaveCFIOErr:
-  jsr MonPrintIOErr
-  rts
+  jmp MonPrintIOErr             ; Tail call: it ends in the RTS this needs
 @SaveCFDirFull:
   ldx #0
 @SaveCFDFLoop:
@@ -2447,17 +2446,15 @@ MonPrintSaved:
   jmp MonPrintCRLF
 
 ; MonPrintIOErr — Print "I/O ERROR"
-; Modifies: A, X
+; Through the Kernal's PrintStr rather than a private copy of its loop: this
+; segment has a page and a half of room left in total, and the six bytes buy the
+; presence check that @ needs above.
+; Modifies: A, Y
 
 MonPrintIOErr:
-  ldx #0
-@ELoop:
-  lda MonStrIOErr,x
-  beq @EDone
-  jsr Chrout
-  inx
-  bra @ELoop
-@EDone:
+  lda #<MonStrIOErr
+  ldy #>MonStrIOErr
+  jsr PrintStr
   jmp MonPrintCRLF
 
 ; ============================================================================

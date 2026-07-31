@@ -1579,6 +1579,21 @@ ProbeRTC:
 ; Output: Carry clear = ready, Carry set = error or timeout
 ; Modifies: Flags, A, X, Y
 StWaitReadyImpl:
+  lda HW_PRESENT
+  and #HW_CF
+  bne StWaitReadyPoll           ; Card fitted — poll it
+  sec                           ; No card: fail now rather than spinning out a
+  rts                           ;   65536-iteration timeout per sector.  This is
+                                ;   the one guard the whole storage stack needs
+                                ;   — every read, write and directory listing
+                                ;   comes through here first — so the Monitor's
+                                ;   L, S and @ report I/O ERROR on a machine
+                                ;   with an empty slot without each carrying a
+                                ;   presence check of its own.
+
+; StWaitReadyPoll — the same wait without the presence check, for the probe that
+; establishes presence in the first place.
+StWaitReadyPoll:
   ldx #$00                      ; Outer timeout counter (256 × 256 = 65536 iterations)
   ldy #$00
 @StWaitBsy:
@@ -1653,7 +1668,9 @@ StWaitDrq:
 ; Output: Carry clear = success, Carry set = error
 ; Modifies: Flags, A
 StInit:
-  jsr StWaitReady
+  jsr StWaitReadyPoll           ; Not StWaitReady: HW_CF is what this sets, so
+                                ;   the guarded entry would answer "no card"
+                                ;   before the card had been asked
   bcs @StInitDone               ; Timeout or error — CF not present
   ; CF responded — set presence flag
   lda HW_PRESENT

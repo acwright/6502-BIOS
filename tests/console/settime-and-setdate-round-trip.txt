@@ -1,0 +1,57 @@
+name: SETTIME and SETDATE round-trip through the clock's BCD registers
+# README: "SETTIME <hh>, <mm>, <ss> — Set the RTC time"
+#         "SETDATE <cc>, <yy>, <mm>, <dd> — Set the RTC date"
+#
+# The DS1511Y holds every field as two BCD digits, so each of these values goes
+# binary -> BCD on the way in and BCD -> binary on the way out. That conversion
+# is where a clock goes wrong, and it goes wrong at the digit carry: 9 and 10
+# are one apart in binary and a nibble apart in BCD, and a routine that got the
+# conversion backwards agrees with itself for every value below 10.
+#
+# So the values here are chosen to sit either side of each carry — 9/10 in every
+# field, 59/00 in the seconds and minutes, 23 in the hours, and a year and
+# century that cross their own.
+mode: basic
+
+# Below the first carry, where a broken conversion still looks right.
+> SETTIME 9,9,9
+> TIME
+~ ^09:09:09$
+
+# And immediately above it, where it does not.
+> SETTIME 10,10,10
+> TIME
+~ ^10:10:10$
+
+# The top of each field.
+> SETTIME 23,59,59
+> TIME
+~ ^23:59:59$
+
+# Midnight is the value most likely to be confused with "not set".
+> SETTIME 0,0,0
+> TIME
+~ ^00:00:0[0-9]$
+
+# The date's own carries, and a century boundary in both directions. The month
+# register also carries the oscillator control bits in its top three, so a month
+# that reads back intact is also proof those were masked off and preserved.
+> SETDATE 19,99,12,31
+> DATE
+~ ^1999-12-31$
+> SETDATE 20,26,01,01
+> DATE
+~ ^2026-01-01$
+> SETDATE 20,09,09,09
+> DATE
+~ ^2009-09-09$
+> SETDATE 20,10,10,10
+> DATE
+~ ^2010-10-10$
+
+# And the clock is still running afterwards, rather than having been left with
+# its update-transfer inhibit bit set by the write.
+> SETTIME 12,0,0
+> PAUSE 300
+> TIME
+~ ^12:00:0[3-9]$

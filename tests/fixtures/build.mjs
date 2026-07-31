@@ -235,6 +235,36 @@ export function buildFixtures({ dir = HERE } = {}) {
   return manifest
 }
 
+// ---------------------------------------------------------------------------
+// The clock card's battery-backed bytes
+//
+// 256 bytes: a permutation, so every address holds a different value, and no
+// address holds its own. Both matter. A read that came back holding the address
+// would pass against a ramp without ever reaching the chip, and distinct values
+// mean a byte read from the wrong address is always visible as the wrong byte
+// rather than sometimes coinciding.
+//
+// Exactly one byte is 0, which a permutation cannot avoid — and it is worth
+// having. "NVRAM() returns 0" is the documented answer when the clock card is
+// *absent*, so one address that genuinely holds zero is the case that tells a
+// real zero from a missing card.
+
+export const NVRAM_SIZE = 256
+
+export function nvramImage() {
+  // 0x37 is odd and so coprime with 256: stepping by it visits all 256 values
+  // before repeating.
+  return Uint8Array.from({ length: NVRAM_SIZE }, (_, i) => (i * 0x37 + 0x5b) & 0xff)
+}
+
+export function buildNvram({ dir = HERE } = {}) {
+  const bytes = nvramImage()
+  const path = join(dir, 'nvram.bin')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path, bytes)
+  return { bytes, path }
+}
+
 function writeEntry(image, at, spec, startSector) {
   const name = pad(spec.name, 8)
   const ext = pad(spec.ext, 3)

@@ -322,6 +322,13 @@ export class Machine {
   // up. Going through the $A000 slot rather than the implementation is the
   // point — it exercises the published jump as well as the routine.
   async call6502(address, { A = 0, X = 0, Y = 0, scratch = SCRATCH, timeoutMs = 5000 } = {}) {
+    // What the machine was doing before the stub took the CPU over. Putting it
+    // back is what lets a case call into the ROM and then carry on driving the
+    // console: without it the PC is left parked on the stub's trailing NOP, and
+    // the next thing that resumes the machine runs it and falls into whatever
+    // bytes happen to follow — which surfaces, confusingly, as an unrelated
+    // `BRK AT $7Fxx` several assertions later.
+    const before = await this.regs()
     const returnTo = await this.plantCall(address, { A, X, Y, scratch })
     const result = await this.runTo(returnTo, timeoutMs)
     if (result.stop?.kind !== 'breakpoint') {
@@ -329,6 +336,8 @@ export class Machine {
         `call to ${hexWord(address)} did not return: stopped on ${JSON.stringify(result.stop)}`,
       )
     }
+    const { PC, SP, P, A: a, X: x, Y: y } = before
+    await this.setRegs({ PC, SP, P, A: a, X: x, Y: y })
     return result.registers
   }
 

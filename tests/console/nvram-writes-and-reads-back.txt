@@ -1,0 +1,39 @@
+name: NVRAM writes a byte and NVRAM() reads it back
+# README: "NVRAM <addr>, <value> — Write a byte to RTC NVRAM at address 0–255"
+#         "NVRAM(addr) — Read byte from RTC NVRAM (returns 0 if RTC absent)"
+#
+# The statement and the function are a pair, and the interesting addresses are
+# the two ends: the DS1511Y takes the address through a latch register, so 0 and
+# 255 are where an off-by-one or a sign-extended index shows up. The companion
+# case nvram-address-range covers what happens past 255.
+#
+# Values matter as much as addresses here. 0 has to be storable — "returns 0"
+# is also what an absent card gives, so a write of 0 that quietly did nothing
+# would be invisible — and 255 has to survive a byte that might be treated as
+# signed on the way through.
+mode: basic
+
+> NVRAM 0, 170
+> PRINT NVRAM(0)
+~ ^ 170$
+> NVRAM 255, 85
+> PRINT NVRAM(255)
+~ ^ 85$
+
+# Writing one address does not disturb the other, which is the assertion that
+# catches a latch that was never updated.
+> PRINT NVRAM(0)
+~ ^ 170$
+
+# The ends of the value range.
+> NVRAM 1, 0
+> PRINT NVRAM(1)
+~ ^ 0$
+> NVRAM 2, 255
+> PRINT NVRAM(2)
+~ ^ 255$
+
+# NVRAM() is an ordinary function, so it composes like one rather than only
+# working as the whole of a PRINT.
+> PRINT NVRAM(0) + NVRAM(255)
+~ ^ 255$

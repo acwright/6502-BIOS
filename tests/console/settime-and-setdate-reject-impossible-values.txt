@@ -1,0 +1,54 @@
+name: SETTIME and SETDATE reject a value the clock cannot hold
+xfail: SETTIME and SETDATE write any byte they are given straight to the DS1511Y, so TIME then prints 24:61:61 and DATE prints 2026-13-32
+issue: tests/FINDINGS.md#settime-and-setdate-accept-values-that-are-not-a-time
+# README: "SETTIME <hh>, <mm>, <ss> — Set the RTC time"
+#         "SETDATE <cc>, <yy>, <mm>, <dd> — Set the RTC date"
+#         "TIME — Print current RTC time as `HH:MM:SS`"
+#
+# The README does not spell out a range for either statement, but it does say
+# what TIME prints, and `24:61:61` is not a time. The ranges below are the
+# clock's own: the DS1511Y holds each field as two BCD digits, and 61 minutes
+# is not a value that register has — it is $61 written into a nibble pair that
+# means "six tens and one unit", which is out of spec for the part, not merely
+# unusual.
+#
+# So this asserts the behaviour we believe is correct rather than the behaviour
+# observed, which is what PLAN.md §10 requires and why the marker above exists
+# instead of a looser assertion.
+mode: basic
+
+# The top of each field is legal and has to stay legal — a range check that was
+# one out here would be worse than no check at all.
+> SETTIME 23,59,59
+> TIME
+~ ^23:59:59$
+> SETDATE 99,99,12,31
+> DATE
+~ ^9999-12-31$
+
+# One past each.
+> SETTIME 24,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> SETTIME 0,60,0
+~ \?ILLEGAL QUANTITY ERROR
+> SETTIME 0,0,60
+~ \?ILLEGAL QUANTITY ERROR
+
+# Months and days count from 1, so 0 is as impossible as 13.
+> SETDATE 20,26,0,1
+~ \?ILLEGAL QUANTITY ERROR
+> SETDATE 20,26,13,1
+~ \?ILLEGAL QUANTITY ERROR
+> SETDATE 20,26,1,0
+~ \?ILLEGAL QUANTITY ERROR
+> SETDATE 20,26,1,32
+~ \?ILLEGAL QUANTITY ERROR
+
+# A rejected write leaves the clock alone rather than half-applied — which is
+# the part that matters most, since these routines set the chip's
+# transfer-inhibit bit before writing and clear it after.
+> SETTIME 23,59,59
+> SETTIME 24,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> TIME
+~ ^23:59:59$

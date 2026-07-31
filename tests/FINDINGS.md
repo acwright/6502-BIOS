@@ -188,6 +188,68 @@ delete the `xfail` and commit; that changes no ROM and needs no version bump. An
 `xfail` that passes is reported red, so the first run against the new emulator
 will demand it.
 
+## SETTIME and SETDATE accept values that are not a time
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/settime-and-setdate-reject-impossible-values.txt`
+- **Phase:** 5
+- **Status:** open, case written and marked `xfail`. **Blocked on space, not on
+  the decision** — see the section below, which is the thing that actually
+  needs a call.
+
+`SETTIME 24,61,61` is accepted, and `TIME` then prints `24:61:61`.
+`SETDATE 20,26,13,32` is accepted, and `DATE` prints `2026-13-32`.
+
+Neither statement checks anything. `BasCmdSettime` and `BasCmdSetdate` take
+whatever `GetByt` returns and hand it to `RtcWriteTime`/`RtcWriteDate`, which
+convert binary to BCD and store it. So `61` becomes `$61` in a register whose
+two nibbles mean "six tens and one unit" — not an unusual value for a DS1511Y,
+an out-of-spec one. On the emulator it reads straight back; on the real part
+the behaviour is undefined.
+
+The README does not give ranges for either statement, but it does say `TIME`
+prints `HH:MM:SS`, and `24:61:61` is not that. The ranges the case asserts are
+the chip's own: hours 0-23, minutes and seconds 0-59, month 1-12, day 1-31.
+
+Day-of-month against the month — rejecting 31 April — is deliberately *not*
+asserted. It needs a table and a leap-year rule for one wrong day a year, and
+the DS1511Y does not enforce it either.
+
+## The BASIC segment is full
+
+- **Bucket:** neither — a constraint, not a defect
+- **Found by:** paying for the `VOL`/`SOUND` range checks in phase 5
+- **Phase:** 5
+- **Status:** open, and it gates the finding above
+
+`BASIC` occupies `$C000-$EDFE` in a `$C000-$EDFF` memory area. **One byte
+free.** For comparison, at the same commit `KERNAL` uses `$A000-$B16D` of
+`$A000-$B7FF` — about 1.6 KB spare — and `MONITOR` has two bytes.
+
+The phase 5 `VOL`/`SOUND` fix needed eleven bytes and paid for them by deleting
+`Gse:`, a trampoline defined and called from nowhere, and by sharing one
+`jmp IqErr` between the two statements. That worked once. There is no second
+`Gse` to find.
+
+So the range checks `SETTIME` and `SETDATE` want — seven fields, and `LOCATE`
+and `COLOR` will want four more — cannot be written where the statements are.
+The options, none of them free:
+
+- **Move the check into the Kernal.** `RtcWriteTime`/`RtcWriteDate` are the
+  routines that put BCD on the chip, and the Kernal has the room. But they are
+  published slots returning no error, so either the contract changes or a
+  second, private validator lives in a segment named for the public API.
+- **Take space back from BASIC.** There may be more dead msbasic lineage in
+  there; `Gse` was found by grepping for its own name. Nobody has looked
+  properly.
+- **Move the area boundary.** `BASIC` ends where `MONITOR` begins, and
+  `MONITOR` has two bytes spare, so this means moving the Monitor as well.
+  `$EE00` is not a published address — the README's memory map lists it, but
+  no jump table points into it — so this is cheaper than it looks.
+
+Wanted before any more BASIC statements are corrected: a decision on which.
+Every remaining phase that finds a BASIC bug will hit this.
+
 ## The splash and boot menu are never shown on a serial console
 
 - **Bucket:** BIOS bug — code wrong, docs right

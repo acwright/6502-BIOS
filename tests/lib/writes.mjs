@@ -19,7 +19,7 @@
 // read.
 
 import { AssertionError } from './assert.mjs'
-import { toWaitPattern } from './machine.mjs'
+import { toWaitPattern, DEFAULT_TIMEOUT_MS } from './machine.mjs'
 
 const STORE_WIDTH = 3
 
@@ -82,7 +82,7 @@ async function valueWritten(m, registers, address) {
 // bad state for the next one.
 export async function recordWrites(
   m,
-  { start, end = start, expect, until, max = 32, body, settle, timeoutMs = 20000 },
+  { start, end = start, expect, until, max = 32, body, settle, timeoutMs = DEFAULT_TIMEOUT_MS },
 ) {
   if (expect == null && until == null) {
     throw new AssertionError('recordWrites needs either `expect` or `until`')
@@ -157,7 +157,7 @@ export async function recordWrites(
 // only be made here.
 export async function expectNoWrites(
   m,
-  { start, end = start, body, settle = /^OK/, what = 'the statement', timeoutMs = 20000 },
+  { start, end = start, body, settle = /^OK/, what = 'the statement', timeoutMs = DEFAULT_TIMEOUT_MS },
 ) {
   await m.clearBreaks()
   await m.watch(start, 'write', { end })

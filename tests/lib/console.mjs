@@ -22,7 +22,7 @@
 // anchor to a line rather than to the whole buffer — see toWaitPattern().
 
 import { AssertionError, assertNoMatch } from './assert.mjs'
-import { toLineRegex } from './machine.mjs'
+import { toLineRegex, DEFAULT_TIMEOUT_MS } from './machine.mjs'
 import { escapeRegex } from './basic.mjs'
 
 export const MODES = {
@@ -63,7 +63,7 @@ export function parseConsole(text, defaults = {}) {
   return { meta, steps }
 }
 
-export async function runConsoleCase(m, steps, { mode = 'basic', final, timeoutMs = 20000 } = {}) {
+export async function runConsoleCase(m, steps, { mode = 'basic', final, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const modeSpec = MODES[mode]
   if (!modeSpec) throw new AssertionError(`unknown mode ${JSON.stringify(mode)}`)
 

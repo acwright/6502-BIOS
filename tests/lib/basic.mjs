@@ -13,6 +13,7 @@
 //   # selftest: must-fail — this case proves the harness can report a failure
 
 import { AssertionError } from './assert.mjs'
+import { DEFAULT_TIMEOUT_MS } from './machine.mjs'
 
 export function parseBasic(text, defaults = {}) {
   const meta = { ...defaults, directives: {} }
@@ -44,7 +45,7 @@ export function parseBasic(text, defaults = {}) {
 // whole timeout on every single line. The echo is matched in full and
 // unanchored: a fresh cursor can land part-way through the previous command's
 // output, so anchoring the match to a line start is not reliable.
-export async function runBasicCase(m, lines, { timeoutMs = 20000 } = {}) {
+export async function runBasicCase(m, lines, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   for (const line of lines) {
     await m.send(line + '\r', escapeRegex(line), { timeoutMs })
   }

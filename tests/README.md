@@ -23,7 +23,19 @@ between cases, so a case that wedges the machine into the Monitor needs no
 cleanup code at all.
 
 Nothing sleeps. Every wait is a bounded blocking call on the machine's own
-execution cadence, so a run lands identically however fast the host is.
+execution cadence, so a run lands identically however fast the host is — with
+one exception, which CI found by being slow. Each wait also carries a host
+wall-clock timeout as a backstop against a wedged machine, and that number is
+real time: two shared cores under load run turbo slowly enough that a case can
+run out of it mid-line. It is set for the slowest host rather than the fastest
+(`DEFAULT_TIMEOUT_MS`), because nothing here is judged by how long it took —
+only by whether the right thing arrived.
+
+The related trap, and the reason the same run found two failures: **a wait
+pattern must not be satisfiable by a prefix of the answer.** `/^ \d+$/` after
+`PRINT NVRAM(0)` matches the ` 9` of ` 91` if the console is read between the
+two digits, and on a fast host it never is. Wait for the prompt that closes the
+response and assert against what came back.
 
 ## Fixtures
 

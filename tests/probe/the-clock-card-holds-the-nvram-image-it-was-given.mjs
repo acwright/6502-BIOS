@@ -30,7 +30,11 @@ export async function run(m) {
   // place "0" has to mean the card answered rather than that it was not there.
   const zeroAt = expected.indexOf(0)
   for (const address of [0, 1, zeroAt, 254, 255]) {
-    const { output } = await m.send(`PRINT NVRAM(${address})\r`, /^ \d+$/)
+    // Waiting for `OK` and not for the digits themselves: `/^ \d+$/` is
+    // satisfied by a *prefix* of the answer, so a host slow enough to read the
+    // console between the `9` and the `1` of ` 91` stops there and the
+    // assertion below then fails on a number that was only half printed.
+    const { output } = await m.send(`PRINT NVRAM(${address})\r`, '^OK')
     m.assertMatch(output, new RegExp(`^ ${expected[address]}$`, 'm'), `NVRAM(${address})`)
   }
 

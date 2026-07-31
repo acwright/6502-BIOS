@@ -18,6 +18,18 @@ export const EMULATOR = process.env.SIXTY502 || '6502'
 const CONNECT_ATTEMPTS = 200
 const CONNECT_INTERVAL_MS = 50
 
+// How long a single wait may block before it is called a wedged machine.
+//
+// This is the one number in the suite measured in *host* time rather than the
+// machine's own cadence, and it is a safety net rather than an assertion —
+// nothing is judged by how long it took, only by whether it arrived. So it is
+// set for the slowest host that has to run it, not the fastest: two shared
+// cores under CI load execute turbo far slower than a laptop does, and at 20
+// seconds a case that types a 76-character line was failing there while
+// completing perfectly given the time. A case that needs longer still says so
+// with a `timeout:` directive; a genuinely wedged one costs a minute.
+export const DEFAULT_TIMEOUT_MS = 60000
+
 // Where call6502() plants its stub: high RAM, below the top of BASIC's string
 // space and well clear of anything live at the prompt.
 const SCRATCH = 0x7f00
@@ -284,13 +296,13 @@ export class Machine {
   // Send text, then block until `pattern` appears in what came back. The
   // returned output has CRs stripped: the console sends CRLF, as a real serial
   // terminal does, and a pattern anchored with $ will not match otherwise.
-  async send(text, pattern, { timeoutMs = 20000, run = 'turbo', required = true } = {}) {
+  async send(text, pattern, { timeoutMs = DEFAULT_TIMEOUT_MS, run = 'turbo', required = true } = {}) {
     const { cursor } = await this.serialWrite(text)
     if (pattern == null) return { cursor, output: '' }
     return this.expectFrom(cursor, pattern, { timeoutMs, run, required, sent: text })
   }
 
-  async expectFrom(cursor, pattern, { timeoutMs = 20000, run = 'turbo', required = true, sent } = {}) {
+  async expectFrom(cursor, pattern, { timeoutMs = DEFAULT_TIMEOUT_MS, run = 'turbo', required = true, sent } = {}) {
     const source = pattern instanceof RegExp ? pattern.source : String(pattern)
     const result = await this.waitFor({ serial: toWaitPattern(source), since: cursor, run, timeoutMs })
     const output = stripCR(result.output ?? '')
@@ -308,7 +320,7 @@ export class Machine {
   // everything the console printed. This is how a negative assertion ("prints
   // nothing") is made without a host-side sleep.
   async settle(cursor, cycles = 200000) {
-    await this.waitFor({ cycles, run: 'turbo', timeoutMs: 20000 })
+    await this.waitFor({ cycles, run: 'turbo', timeoutMs: DEFAULT_TIMEOUT_MS })
     const result = await this.serialRead(cursor)
     return stripCR(result.data ?? '')
   }

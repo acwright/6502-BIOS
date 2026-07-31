@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { Machine, EMULATOR, stripCR } from './lib/machine.mjs'
+import { Machine, EMULATOR, DEFAULT_TIMEOUT_MS, stripCR } from './lib/machine.mjs'
 import { AssertionError } from './lib/assert.mjs'
 import { parseBasic, runBasicCase } from './lib/basic.mjs'
 import { parseConsole, runConsoleCase, MODES } from './lib/console.mjs'
@@ -29,7 +29,6 @@ const TESTS = dirname(fileURLToPath(import.meta.url))
 const REPO = dirname(TESTS)
 
 const RTC = '2026-01-01T00:00:00'
-const CASE_TIMEOUT_MS = 20000
 
 // Machine profiles. Adding one is a table entry: the runner starts it on demand
 // and reuses it.
@@ -152,7 +151,7 @@ function metaOf(id, file, directives) {
     issue: directives.issue || null,
     selftest: directives.selftest || null,
     final: directives.final || null,
-    timeoutMs: directives.timeout ? Number(directives.timeout) : CASE_TIMEOUT_MS,
+    timeoutMs: directives.timeout ? Number(directives.timeout) : DEFAULT_TIMEOUT_MS,
   }
   validate(meta)
   return meta

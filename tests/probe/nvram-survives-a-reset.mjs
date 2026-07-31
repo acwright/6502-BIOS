@@ -53,6 +53,8 @@ export async function run(m) {
 
   // And BASIC reads the same thing the chip holds, which is the half a direct
   // memory read cannot check.
-  const { output } = await m.send('PRINT NVRAM(127)\r', /^ \d+$/)
+  // `OK` rather than the digits: a digit-run pattern is satisfied by a prefix
+  // of the number, so a slow enough host stops the wait half way through it.
+  const { output } = await m.send('PRINT NVRAM(127)\r', '^OK')
   m.assertMatch(output, /^ 60$/m, 'NVRAM(127) after the reset')
 }

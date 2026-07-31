@@ -152,9 +152,87 @@ delete the `xfail` and commit; that changes no ROM and needs no version bump. An
 `xfail` that passes is reported red, so the first run against the new emulator
 will demand it.
 
+## Typing a long line can wedge the serial input path
+
+- **Bucket:** BIOS bug, on the evidence below — but the mechanism is a
+  hypothesis, not yet confirmed at the register level
+- **Found by:** phase 7's CI, by being slower than a laptop
+- **Phase:** 7
+- **Status:** **open, unfixed, and intermittent.** No case is `xfail` for it,
+  because it does not fail reliably — an `xfail` would report XPASS on most
+  runs, which is worse than nothing. It is why CI is not yet dependable.
+
+The first CI run failed two cases. One was a suite bug and is fixed (see
+*Resolved*). The other was `LEFT$, RIGHT$ and MID$`, timing out with its line
+echoed only as far as `100 IF RIGHT$(S$, 20) <> S$ THEN PRINT`. Under
+artificial load a laptop reproduces it a few times per full run, on a different
+case and at a different character each time — always part way through a long
+program line, never in the same place.
+
+**It is a wedge, not slowness.** Three separate cases each consumed the *entire*
+60-second timeout rather than some fraction of it, which is what a stopped
+machine looks like and not what a slow one does. Load costs far less than that:
+measured against a spinner on every core, a machine still gets through
+thousands of emulated cycles per millisecond, so tens of millions of cycles
+passed without the rest of the line arriving — and echoing sixty more
+characters needs a few hundred thousand. The characters are not lost either:
+given a `cycles`-bounded wait instead, the same line completes every time, the
+input buffer drains to empty, `SC_CMD` is back to RTS-low and the status
+register shows no overrun.
+
+**How often, and at what load, is not yet pinned down.** The runs that produced
+those three were under heavier contention than they were meant to be — a `kill`
+that does not work in a non-interactive shell had been quietly leaving spinners
+behind, so the load was roughly double what was intended. CI's own machine is
+about 1.5× slower than an idle laptop, and it has hit this once, at the old
+20-second timeout. So the honest position is that the defect is real and the
+rate at CI's load is unmeasured.
+
+**The suspected mechanism** is the one PLAN.md §6.1 already records from phase 1:
+reading the ACIA status register clears a pending receive interrupt, and
+`SerialChroutImpl`'s transmit loop reads that register once per character while
+echoing. If a byte arrives during that poll, the interrupt is cleared without
+anyone reading `SC_DATA`; the byte stays in the receive register, `Irq` never
+sees `SC_STATUS_IRQ` set, and nothing more is ever buffered. A 6551 behaves this
+way for real, so this would wedge actual hardware too — anything that sends
+faster than the ROM echoes, such as pasting a line into a terminal.
+
+**What would fix it** is making the transmit wait loop service the receiver: when
+the status it just read shows `RDRF`, read `SC_DATA` and `WriteBuffer` it rather
+than dropping the interrupt on the floor. That is a real ROM change, so it wants
+a pinned case under PLAN.md §6.12 and it lands in v1.4.
+
+**Before writing that fix, confirm the mechanism.** Catch a wedged machine and
+read `SC_STATUS` — `RDRF` set with the input buffer not draining is the proof.
+400 attempts in isolation failed to reproduce it, so the reproduction needs the
+whole suite's contention, and probably the overlap the runner creates by writing
+the next line while the previous one is still being consumed.
+
 ---
 
 ## Resolved
+
+### A wait pattern that a prefix of the answer satisfied
+
+- **Bucket:** suite bug — the ROM was right and the case was wrong
+- **Found by:** phase 7's CI, on its first run
+- **Phase:** 7 (found and fixed)
+
+`the clock card reads back the NVRAM image it was booted with` failed on CI and
+passed everywhere else. It asked for `NVRAM(0)`, waited for `/^ \d+$/`, and then
+asserted the value was ` 91` — against a console that said ` 9`.
+
+The wait was satisfied by half of its own answer. `^ \d+$` matches ` 9` as
+readily as ` 91`, so a host slow enough to read the console between the two
+digits stops there and hands the assertion a number that was still being
+printed. A fast host never lands in that window, which is why this was invisible
+until CI ran it on two shared cores.
+
+Both NVRAM cases now wait for the `OK` that closes the response and assert
+against what came back, which cannot be satisfied early. The general rule is in
+`tests/README.md`: **a wait pattern must not be satisfiable by a prefix of the
+answer.** Nothing was loosened to fix it — the assertion is the same exact ` 91`
+it always was.
 
 ### CONT could not resume inside a FOR loop
 

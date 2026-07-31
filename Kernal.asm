@@ -3050,7 +3050,7 @@ Splash:
   sta STR_PTR + 1
   jsr VideoPrintStrImpl
   rts
-@SplashTitle: .asciiz "-- 6502 BIOS v1.3 --"
+@SplashTitle: .asciiz "-- 6502 BIOS v1.4 --"
 @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler

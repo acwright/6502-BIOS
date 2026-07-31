@@ -4,7 +4,7 @@
 //
 //   BIOS.inc      BIOS_VERSION_MAJOR / BIOS_VERSION_MINOR, which is what
 //                 KernalVersion ($A07B) reports to a program
-//   Kernal.asm    the hardcoded "-- 6502 BIOS v1.3 --" splash string
+//   Kernal.asm    the hardcoded "-- 6502 BIOS v1.4 --" splash string
 //
 // They can drift, and nothing else in the suite would notice: the splash is a
 // string nobody parses and the Kernal call is a number nobody reads. So assert

@@ -2,7 +2,7 @@
 //
 // README step 8 shows it as two centred lines on a 40-column screen:
 //
-//     -- 6502 BIOS v1.3 --
+//     -- 6502 BIOS v1.4 --
 //   ENTER=BASIC  ESC=MONITOR
 //
 // The companion case, version-agrees-with-splash, checks the string in the ROM

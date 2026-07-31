@@ -132,7 +132,7 @@ XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 1
-BIOS_VERSION_MINOR  = 3
+BIOS_VERSION_MINOR  = 4
 
 ; User Vars
 USER_VARS           := $0400             ; $0400-$07FF

@@ -167,7 +167,7 @@ Current file: BIOS.asm
 000000r 2               
 000000r 2               ; BIOS Version
 000000r 2               BIOS_VERSION_MAJOR  = 1
-000000r 2               BIOS_VERSION_MINOR  = 3
+000000r 2               BIOS_VERSION_MINOR  = 4
 000000r 2               
 000000r 2               ; User Vars
 000000r 2               USER_VARS           := $0400             ; $0400-$07FF
@@ -961,7 +961,7 @@ Current file: BIOS.asm
 0003CAr 2               ; Modifies: A, X
 0003CAr 2               KernalVersionImpl:
 0003CAr 2  A9 01          lda #BIOS_VERSION_MAJOR
-0003CCr 2  A2 03          ldx #BIOS_VERSION_MINOR
+0003CCr 2  A2 04          ldx #BIOS_VERSION_MINOR
 0003CEr 2  60             rts
 0003CFr 2               
 0003CFr 2               ; ProgramEnd — Determine where the program image at PROGRAM_START ends.
@@ -3412,7 +3412,7 @@ Current file: BIOS.asm
 00110Dr 2  85 03          sta STR_PTR + 1
 00110Fr 2  20 rr rr       jsr VideoPrintStrImpl
 001112r 2  60             rts
-001113r 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.3 --"
+001113r 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.4 --"
 001117r 2  35 30 32 20  
 00111Br 2  42 49 4F 53  
 001128r 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"

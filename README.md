@@ -231,10 +231,10 @@ Two rules for `.prg` files:
 
 A full-featured Supermon-style machine-code monitor occupies the `$EE00–$FEFF` segment. It supports memory inspection, 65C02 disassembly, register manipulation, code execution, CompactFlash and serial file I/O, and number base conversion. The monitor prompt is `.`.
 
-The monitor is entered in three ways:
-- **ESC at boot** — cold entry, prints `MONITOR` banner
-- **BRK from BASIC** — prints `BRK AT $xxxx` and the current register state
-- **Hardware BRK** — any `BRK` opcode in user code enters the monitor with full register display
+The monitor is entered in three ways, and all three arrive through `BRK`, so all three print the banner, `BRK AT $xxxx`, and the register display:
+- **ESC at boot** — cold entry from the boot menu
+- **BRK from BASIC** — the `BRK` statement
+- **Hardware BRK** — any `BRK` opcode in user code
 
 **Memory Inspection**
 

@@ -228,6 +228,41 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### The Monitor's S wrote the wrong length, and off the end of the disk
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/monitor-saves-and-loads-a-range.txt` and
+  `tests/console/monitor-lists-a-populated-directory.txt`
+- **Phase:** 4 (found and fixed)
+
+`S "M" 1000 1010` reported `SAVED 16 BYTES` on an empty disk and
+`SAVED 15 BYTES` on a disk that already held a 15-byte file. The length it
+wrote was the length of some *other* file.
+
+`FsCalcNextSec` reads every directory entry's size into `FS_FILE_SIZE` while
+scanning for the highest used sector, so it comes back holding the last used
+entry's size. `FsSaveFileAddrImpl` saves and restores it across that call;
+`MonCmdSave`, which carries its own copy of the same save logic, did not. On an
+empty disk the scan touches no entry and the omission is invisible — which is
+why every earlier test of `S` passed, and why the case that caught it only did
+so because the cases before it had left files on the card. The case now saves
+two files itself rather than depending on that.
+
+The second defect was in the same block: `MonCmdSave` had no disk-full guard,
+so a save with no room left wrote past its disk's region and over the next
+disk's directory sector. The pre-fix ROM, asked for 16 bytes on the fixture's
+full disk 2, reported `SAVED 4096 BYTES` — the wrong length from the first bug
+— and destroyed disk 3's directory with it. The README promises the filesystem
+prevents exactly this; `FsSaveFileAddrImpl` implements it and the Monitor's
+copy did not. It has the same guard now, reporting `I/O ERROR`.
+
+Both are the duplicate's fault rather than either bug's. The Monitor keeps its
+own copy of the load and save paths so it can report `FILE NOT FOUND` and
+`DIRECTORY FULL` where the Kernal returns a bare carry, and the price is that
+every fix to the Kernal's copy has to be made twice. It was worth 32 bytes to
+fix in place this time; a third divergence would be worth merging them and
+finding somewhere else to keep the messages.
+
 ### FORMAT could not be typed, because FOR matched first
 
 - **Bucket:** BIOS bug — code wrong, docs right

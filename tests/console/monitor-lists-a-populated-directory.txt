@@ -1,0 +1,48 @@
+name: the Monitor's @ lists a populated directory, and # moves it to another bank
+# README: "@ — List current disk's directory (prints DISK n header)"
+#         "# NN — Select CF disk bank NN (hex 00-FF)"
+#         "L, S, @ in the Monitor ... all operate on the currently selected
+#          disk bank"
+#
+# §6.3 covered the empty listing on a blank card; the populated one waited for
+# phase 4's fixtures. Three files on disk 0, one on disk 1, and the same
+# command has to show a different card after `#` — the header alone tracking
+# the selection would prove nothing about where the sector came from.
+profile: cf
+mode: monitor
+
+> @
+~ ^DISK 0$
+~ ^HELLO   \.BAS 27$
+~ ^SAMPLE  \.PRG 35$
+~ ^RAW     \.BIN 300$
+
+> # 01
+~ ^DISK 1$
+> @
+~ ^DISK 1$
+~ ^OTHER   \.BAS 27$
+! ^HELLO
+
+# A file is reachable only from its own bank, by name, from the Monitor too.
+> L "HELLO.BAS"
+~ ^FILE NOT FOUND$
+> L "OTHER.BAS" 1200
+~ ^LOADED 27 BYTES AT \$1200$
+
+> # 00
+> L "HELLO.BAS" 1400
+~ ^LOADED 27 BYTES AT \$1400$
+
+# S is bound by the same disk-region rule as BASIC's SAVE: disk 2's last
+# sectors are spoken for, so there is nowhere to put this and the write that
+# would land on disk 3's directory is refused.
+> # 02
+> S "NOROOM" 1000 1010
+~ ^I/O ERROR$
+> @
+~ ^KEEP    \.BIN 4$
+! ^NOROOM
+> # 03
+> @
+~ ^NEXTDISK\.BIN 2$

@@ -505,6 +505,11 @@ obvious. From the current log:
   `tests/probe/joy-without-a-via-reads-released.mjs`. Found and fixed in
   phase 2; the ports are active low, so the pre-fix 0 meant every direction
   and button pressed.
+- **The Monitor's `S` wrote another file's length, and past the end of the
+  disk** — `tests/console/monitor-saves-and-loads-a-range.txt` and
+  `tests/console/monitor-lists-a-populated-directory.txt`. Found and fixed in
+  phase 4; on the pre-fix ROM the first reports `SAVED 4 BYTES` for a 16-byte
+  range and the second overwrites the next disk's directory.
 - **`FORMAT` was unreachable because `FOR` matched first** —
   `tests/console/format-asks-before-erasing.txt`, with
   `tests/basic/for-still-crunches-as-for.bas` guarding the tokenizer change

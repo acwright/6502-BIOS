@@ -1323,9 +1323,22 @@ MonCmdSave:
   pha
   lda CF_BUF_PTR+1
   pha
+  ; Save FS_FILE_SIZE: FsCalcNextSec reads every entry's size into it while
+  ; scanning, so on a disk that already holds a file it comes back holding
+  ; *that* file's length.  On an empty disk the scan touches nothing and the
+  ; omission is invisible, which is how this survived.  FsSaveFileAddrImpl
+  ; saves it across the same call for the same reason.
+  lda FS_FILE_SIZE
+  pha
+  lda FS_FILE_SIZE+1
+  pha
   ; Calculate next free sector
   jsr FsCalcNextSec
-  ; Restore CF_BUF_PTR
+  ; Restore FS_FILE_SIZE, then CF_BUF_PTR
+  pla
+  sta FS_FILE_SIZE+1
+  pla
+  sta FS_FILE_SIZE
   pla
   sta CF_BUF_PTR+1
   pla
@@ -1342,6 +1355,23 @@ MonCmdSave:
 @SaveCFRound:
   inc FS_SEC_COUNT
 @SaveCFNoRound:
+  ; Disk-full guard, as FsSaveFileAddrImpl has: end sector = FS_NEXT_SEC +
+  ; FS_SEC_COUNT must be <= FS_DISK_SECTORS, or the write walks out of this
+  ; disk's region and over the next disk's directory sector.
+  lda FS_NEXT_SEC
+  clc
+  adc FS_SEC_COUNT
+  tay                           ; Y = end sector low
+  lda FS_NEXT_SEC+1
+  adc #$00                      ; A = end sector high
+  cmp #>FS_DISK_SECTORS
+  bcc @SaveCFSpaceOk            ; end high < high(FS_DISK_SECTORS) -> fits
+  bne @SaveCFNoRoom             ; end high > high(FS_DISK_SECTORS) -> full
+  tya                           ; end high equal: OK only if end low == 0
+  beq @SaveCFSpaceOk
+@SaveCFNoRoom:
+  jmp @SaveCFIOErr
+@SaveCFSpaceOk:
   ; Fill in directory entry
   ; Copy filename (11 bytes)
   ldy #0

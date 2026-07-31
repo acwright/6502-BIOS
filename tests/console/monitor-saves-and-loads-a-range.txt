@@ -1,0 +1,42 @@
+name: the Monitor saves a memory range to CF and loads it back
+# README: "S "file" addr addr — Save to CompactFlash (with filename) or XModem"
+#         "L "file" [addr] — Load from CompactFlash (with filename) or XModem
+#          (without) to address (default $0800)"
+#         "L, S, @ ... all operate on the currently selected disk bank"
+#
+# §6.3 left this to phase 4 because a round trip needs somewhere to put the
+# file. The range is the Monitor's own [start, end) — sixteen bytes from $1000
+# to $1010 — and the file is read back to a different address than it was
+# written from, so a load that ignored its address argument would show up.
+#
+# The second save is onto a directory that already has an entry in it, which is
+# not the same code path as the first: allocating a sector means scanning the
+# entries that are there, and what that scan leaves behind used to become the
+# new file's length.
+mode: monitor
+
+> F 1000 100F AA
+> S "FIRST" 1000 1004
+~ ^SAVED 4 BYTES$
+
+> S "M" 1000 1010
+~ ^SAVED 16 BYTES$
+
+> @
+~ ^DISK 0$
+~ ^FIRST   \.    4$
+~ ^M       \.    16$
+
+> L "M" 1200
+~ ^LOADED 16 BYTES AT \$1200$
+> M 1200 120F
+~ ^\.:1200 AA AA AA AA AA AA AA AA
+~ ^\.:1208 AA AA AA AA AA AA AA AA
+
+# And back over the top of a range that has been changed since, which is what
+# a load is for.
+> F 1000 100F 00
+> L "M" 1000
+~ ^LOADED 16 BYTES AT \$1000$
+> M 1000 100F
+~ ^\.:1000 AA AA AA AA AA AA AA AA

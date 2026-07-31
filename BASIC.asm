@@ -1811,7 +1811,9 @@ BasError:
 ;   and bounce to the REPL.
 ;
 ;   Entered with a jmp, never a jsr - it does not come back, and every caller
-;   has already reset the stack pointer by the time it gets here.
+;   has already put the stack pointer where it belongs: an error resets it to
+;   $FF, a STOP or a break winds it back to BAS_STKBASE so the program's FOR
+;   and GOSUB frames are still there for CONT.
 BasStopAtLine:
         lda     BAS_CURLIN+1
         cmp     #$FF

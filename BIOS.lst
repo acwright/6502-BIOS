@@ -6182,7 +6182,9 @@ Current file: BIOS.asm
 00071Er 2               ;   and bounce to the REPL.
 00071Er 2               ;
 00071Er 2               ;   Entered with a jmp, never a jsr - it does not come back, and every caller
-00071Er 2               ;   has already reset the stack pointer by the time it gets here.
+00071Er 2               ;   has already put the stack pointer where it belongs: an error resets it to
+00071Er 2               ;   $FF, a STOP or a break winds it back to BAS_STKBASE so the program's FOR
+00071Er 2               ;   and GOSUB frames are still there for CONT.
 00071Er 2               BasStopAtLine:
 00071Er 2  AD 6A 03             lda     BAS_CURLIN+1
 000721r 2  C9 FF                cmp     #$FF

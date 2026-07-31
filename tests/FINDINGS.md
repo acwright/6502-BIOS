@@ -228,6 +228,61 @@ with CRLF between? menu on the same write or a separate one?).
 
 ## Resolved
 
+### ?NO DEVICE stopped a program for a screen or a speaker it did not need
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/no-video-card-the-screen-statements-do-nothing.txt`
+  and `no-sid-card-the-sound-statements-stay-quiet.txt`
+- **Phase:** 6 (found and fixed)
+
+The README's degradation table says `CLS`, `LOCATE`, `COLOR`, `VOL` and `SOUND`
+skip silently when the card behind them is not fitted, and that `Beep`,
+`SidPlayNote` and `SidSilence` do the same at the Kernal slot. All five
+statements raised `?NO DEVICE ERROR` instead — `CLS` at the top of a program was
+enough to stop it dead on the serial-only machine the default profile is — and
+the Kernal routines wrote the chip whatever the probe had found.
+
+**Where the guard belongs.** It moved from the statement to the routine each one
+ends in, which is what makes the promise true for a cartridge calling the slot
+directly as well. The arguments are parsed and range-checked either way, so
+`LOCATE 24,0` and `VOL 16` are still `ILLEGAL QUANTITY` on a machine with
+neither card: a program is wrong or right everywhere, not only where it was
+written.
+
+**Why these rows are silent and the storage rows are not.** A screen and a
+speaker have nothing to hand back, so there is nothing an error could tell the
+program that silence does not. `LOAD` and `TIME` do have an answer to return and
+cannot, which is why they keep `?NO DEVICE`.
+
+`BIT` rather than `LDA`/`AND` for the guards: video is bit 7 of `HW_PRESENT` and
+SID is bit 6, so `N` and `V` carry both without disturbing `A`, which is where
+these routines take their argument. BASIC came out 25 bytes smaller.
+
+### Nothing below BASIC ever asked whether a CF card was fitted
+
+- **Bucket:** BIOS bug — code wrong, docs right
+- **Found by:** `tests/console/no-cf-card-the-monitor-reports-io-error.txt`
+- **Phase:** 6 (found and fixed)
+
+The README says the storage stack is guarded at every level — Kernal, BASIC and
+Monitor — and only BASIC's statements ever read `HW_PRESENT`. On a machine with
+an empty slot the Monitor's `L` reported `FILE NOT FOUND`, which sends the user
+looking for a filename rather than for the card, and `@` printed nothing at all:
+exactly what a blank disk prints. The two states were indistinguishable from the
+console.
+
+The guard went into `StWaitReady`, which every read, write and directory listing
+passes through first, so one check covers the stack instead of each command
+carrying its own — and a machine with no card stops spending a 65536-iteration
+timeout per sector to reach the same answer. `StInit` calls the unguarded entry
+beneath it, since `HW_CF` is what the probe exists to set.
+
+`@` then had to report the carry it was discarding. The five bytes came from the
+four `jsr MonPrintIOErr` / `rts` pairs, which are tail calls, and from that
+routine's private copy of the Kernal's `PrintStr` loop. The `MONITOR` segment had
+two bytes free and has seven now; the same loop is open-coded at six more sites
+there if the next fix needs room.
+
 ### SETTIME and SETDATE accepted values that are not a time
 
 - **Bucket:** BIOS bug — code wrong, docs right

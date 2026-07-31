@@ -563,13 +563,42 @@ Every row of the README's degradation table. `HW_PRESENT` is patched with
 | RTC (`$04`) | `TIME`/`DATE`/`SETTIME`/`SETDATE`/`NVRAM` write → `NO DEVICE`; `NVRAM()` read → 0 |
 | All (`$00`) | the machine still reaches a usable state on the console it has |
 
+**What §6.11 found.** Every row is covered, and two of them were not true when
+they were first run — see `tests/FINDINGS.md`. The video and SID rows raised
+`?NO DEVICE` instead of skipping, so `CLS` at the top of a program stopped it
+dead on the serial-only machine most people run; and nothing below BASIC ever
+read `HW_PRESENT`, so the Monitor's `L` called an absent card's contents a
+missing file and `@` printed what a blank disk prints. Both are fixed, with the
+guard moved down to the Kernal routine in each case, so a cartridge calling the
+slot gets the same treatment as the statement.
+
+Two rows cannot be reached with the `hw:` directive, and their cases say so:
+clearing the **serial** bit stops the IRQ handler filling the input buffer from
+the ACIA, so nothing can be typed afterwards, and clearing **everything**
+includes it. Those cases type their program first and let it take the cards away
+from itself with a `POKE 781`. Output is not gated on the probe, so the verdict
+still comes back.
+
+Where a row's promise is that *nothing happens* — the SID and video writes,
+`Chrin`'s flow control — the console cannot see it, so it is asserted on the bus
+and **the claim is made twice**: with the bit set the routine writes and the
+watchpoint catches it, with the bit clear it does not. Without the first half,
+"nothing was written" is also what a watchpoint on the wrong address reports.
+
 ### 6.12 Pinned regressions — ~8 cases
 
 One case per bug fixed in recent history, named for its commit so the link is
 obvious. From the current log:
 
 - `eed5f37` — zero-page clobber in `POKE`, `WAIT`, `COLOR`, `MID$`, `DEF FN`;
-  and `LEN`/`VAL`. Each gets a case that fails on the pre-fix ROM.
+  and `LEN`/`VAL`. Each gets a case that fails on the pre-fix ROM. **Four of
+  them did not, until phase 6 checked**: `POKE`, `WAIT`, `COLOR` and `DEF FN`
+  were built from literals, and every one of those defects was a value parked in
+  zero page across an *expression* — a numeric constant never goes near the
+  pairs that get trampled. They carry the form that breaks now (`POKE 4097,D`,
+  `WAIT` with a `PEEK` for its mask, `COLOR 7,PEEK(4096)`, `FN S(Y)`), and fail
+  against `eed5f37~1`. The three older pins were checked the same way and
+  already had teeth.
 - `73273b6` — a `.prg` survives `LOAD`/`SAVE` (see §6.7).
 - `3194337` — `InitVideo` restores the character set (see §6.8).
 - **ELSE on a false condition** — `tests/basic/if-then-else.bas` and
@@ -632,6 +661,15 @@ obvious. From the current log:
 - **`PRINT HEX()` rejected values above 32767** —
   `tests/console/hex-in-print-and-in-an-expression.txt`. Found and fixed in
   phase 2; the pre-fix ROM raises `?ILLEGAL QUANTITY` for `$8000` upwards.
+- **A missing screen or speaker stopped the program** —
+  `tests/console/no-video-card-the-screen-statements-do-nothing.txt`,
+  `no-sid-card-the-sound-statements-stay-quiet.txt`, and the two bus probes
+  beside them. Found and fixed in phase 6; on the pre-fix ROM `CLS` and `VOL 9`
+  raise `?NO DEVICE ERROR` and `SidPlayNote` writes a chip that is not there.
+- **An absent CF card read as an empty one** —
+  `tests/console/no-cf-card-the-monitor-reports-io-error.txt`. Found and fixed
+  in phase 6; on the pre-fix ROM the Monitor's `L` reports `FILE NOT FOUND` and
+  `@` prints a header with no entries, which is what a blank disk prints.
 
 **Every future bug fix adds a case here.** The rule that makes this section worth
 having: a fix is not finished until a test fails without it.

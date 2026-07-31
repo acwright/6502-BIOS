@@ -153,6 +153,26 @@ suite error, not a skip. **An `xfail` that passes is a failure** — reported re
 leads the summary: `13 passed, 0 failed, 2 known-failing` is honest, `13 passed`
 with two bugs outstanding is not.
 
+## Every fix adds a case
+
+**A fix is not finished until a test fails without it.** One case per bug, in the
+commit that fixes it, along with whatever the README needed. That is what keeps
+the suite a record of what has actually gone wrong here rather than a list of
+things somebody thought to check.
+
+The case has to be *watched* failing, not assumed to:
+
+```sh
+git archive <the-commit-before-the-fix> | tar -x -C /tmp/pre && (cd /tmp/pre && make)
+tests/run.mjs --rom /tmp/pre/BIOS.bin --filter "<the case>"    # must FAIL
+tests/run.mjs --filter "<the case>"                            # must PASS
+```
+
+A test written alongside its fix has never been observed to fail, so until that
+first line is run it is unproven — and four of the pins in this suite turned out
+to pass against the ROM they were pinning, because they were written from
+literals and the bug needed an expression.
+
 ## selftest
 
 A case marked `selftest: must-fail` is expected to fail, and the run goes red if

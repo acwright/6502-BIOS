@@ -1783,9 +1783,22 @@ BasError:
         lda     #<MsgErrorWord
         ldy     #>MsgErrorWord
         jsr     BasPrintStr
+        jmp     BasStopAtLine
+
+; BasStopAtLine / BasStopDirect - the tail every "stop and go back to the
+;   prompt" path shares: an error, a STOP, a Ctrl+C break.
+;
+;   BasStopAtLine appends " IN nnnn" when a program is running and says nothing
+;   in direct mode; BasStopDirect skips straight past that, for the caller that
+;   has already decided there is no line to name.  Both then mark direct mode
+;   and bounce to the REPL.
+;
+;   Entered with a jmp, never a jsr - it does not come back, and every caller
+;   has already reset the stack pointer by the time it gets here.
+BasStopAtLine:
         lda     BAS_CURLIN+1
         cmp     #$FF
-        beq     @NoLine
+        beq     BasStopDirect
         lda     #<MsgInWord
         ldy     #>MsgInWord
         jsr     BasPrintStr
@@ -1794,7 +1807,7 @@ BasError:
         lda     BAS_CURLIN+1
         sta     BAS_LINNUM+1
         jsr     BasPrintLineNum
-@NoLine:
+BasStopDirect:
         ; Mark direct mode and bounce back to REPL.
         lda     #$FF
         sta     BAS_CURLIN
@@ -6641,22 +6654,7 @@ BasCheckBreak:
         lda     #<MsgBreak
         ldy     #>MsgBreak
         jsr     BasPrintStr
-        lda     BAS_CURLIN+1
-        cmp     #$FF
-        beq     @noLine
-        lda     #<MsgInWord
-        ldy     #>MsgInWord
-        jsr     BasPrintStr
-        lda     BAS_CURLIN
-        sta     BAS_LINNUM
-        lda     BAS_CURLIN+1
-        sta     BAS_LINNUM+1
-        jsr     BasPrintLineNum
-@noLine:
-        lda     #$FF
-        sta     BAS_CURLIN
-        sta     BAS_CURLIN+1
-        jmp     BasReadyLoop
+        jmp     BasStopAtLine
 
 MsgBreak: .byte "BREAK",0
 
@@ -7102,27 +7100,9 @@ BasCmdStop:
         lda     #<MsgBreak
         ldy     #>MsgBreak
         jsr     BasPrintStr
-        lda     BAS_CURLIN+1
-        cmp     #$FF
-        beq     @endNoLine
-        lda     #<MsgInWord
-        ldy     #>MsgInWord
-        jsr     BasPrintStr
-        lda     BAS_CURLIN
-        sta     BAS_LINNUM
-        lda     BAS_CURLIN+1
-        sta     BAS_LINNUM+1
-        jsr     BasPrintLineNum
-@endNoLine:
-        lda     #$FF
-        sta     BAS_CURLIN
-        sta     BAS_CURLIN+1
-        jmp     BasReadyLoop
+        jmp     BasStopAtLine
 @end:
-        lda     #$FF
-        sta     BAS_CURLIN
-        sta     BAS_CURLIN+1
-        jmp     BasReadyLoop
+        jmp     BasStopDirect
 @synErrPlp:
         plp
 @synErr:

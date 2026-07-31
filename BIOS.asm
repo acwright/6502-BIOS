@@ -1,6 +1,16 @@
-; ***          ***
-; ***   BIOS   ***
-; ***          ***
+; =============================================================================
+; BIOS  —  Top-Level Assembly Source
+;           for AC6502 Homebrew Computer
+;
+;   Role        :  Sets the CPU target, then .include's every segment source
+;                   below in link order to produce the assembled ROM image.
+;   Segments    :  KERNAL, CHARS, BASIC, MONITOR, WOZMON, VECTORS  (see BIOS.cfg)
+;   Assembler   :  ca65  (cc65 toolchain)
+;   Linker cfg  :  BIOS.cfg
+;
+;   Build       :  make build   ->  BIOS.bin / BIOS.lst / BIOS.dbg
+;   Test        :  make test    ->  runs tests/run.mjs against BIOS.bin
+; =============================================================================
 
 ; The hardware is a WDC 65C02S. cc65's "65C02" is the Rockwell part: it has
 ; RMB/SMB/BBR/BBS but not WAI or STP, which are WDC additions. "W65C02" is that

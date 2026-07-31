@@ -1,6 +1,20 @@
-; ***             ***
-; ***   WOZMON    ***
-; ***             ***
+; =============================================================================
+; WOZMON  —  Woz Monitor (Steve Wozniak's original Apple 1 monitor, ported)
+;             for AC6502 Homebrew Computer
+;
+;   ROM Region  :  $FF00-$FFF9  (250 bytes / $00FA)
+;   Segment     :  WOZMON
+;   Entry point :  WozMon  (first byte of segment = $FF00)
+;   Assembler   :  ca65  (cc65 toolchain)
+;   Linker cfg  :  BIOS.cfg
+;
+;   Commands    :  <addr>                        Examine
+;                   <addr>.<addr>                 Block examine
+;                   <addr>: <byte> [<byte> ...]   Store
+;                   <addr>R                        Run
+;
+;   Reachable from the Monitor with "G FF00" or from BASIC with "SYS $FF00".
+; =============================================================================
 
 WOZ_XAML  = $24               ; Last "opened" location Low
 WOZ_XAMH  = $25               ; Last "opened" location High

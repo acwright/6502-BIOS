@@ -2,9 +2,19 @@ ca65 V2.19 - Git 0fca83500
 Main file   : BIOS.asm
 Current file: BIOS.asm
 
-000000r 1               ; ***          ***
-000000r 1               ; ***   BIOS   ***
-000000r 1               ; ***          ***
+000000r 1               ; =============================================================================
+000000r 1               ; BIOS  —  Top-Level Assembly Source
+000000r 1               ;           for AC6502 Homebrew Computer
+000000r 1               ;
+000000r 1               ;   Role        :  Sets the CPU target, then .include's every segment source
+000000r 1               ;                   below in link order to produce the assembled ROM image.
+000000r 1               ;   Segments    :  KERNAL, CHARS, BASIC, MONITOR, WOZMON, VECTORS  (see BIOS.cfg)
+000000r 1               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 1               ;   Linker cfg  :  BIOS.cfg
+000000r 1               ;
+000000r 1               ;   Build       :  make build   ->  BIOS.bin / BIOS.lst / BIOS.dbg
+000000r 1               ;   Test        :  make test    ->  runs tests/run.mjs against BIOS.bin
+000000r 1               ; =============================================================================
 000000r 1               
 000000r 1               ; The hardware is a WDC 65C02S. cc65's "65C02" is the Rockwell part: it has
 000000r 1               ; RMB/SMB/BBR/BBS but not WAI or STP, which are WDC additions. "W65C02" is that
@@ -23,9 +33,20 @@ Current file: BIOS.asm
 000000r 1               .endif
 000000r 1               
 000000r 1               .include "BIOS.inc"
-000000r 2               ; ***                     ***
-000000r 2               ; ***   6502 INCLUDES     ***
-000000r 2               ; ***                     ***
+000000r 2               ; =============================================================================
+000000r 2               ; BIOS.INC  —  Shared Zero-Page, Memory-Map, and Hardware Register Equates
+000000r 2               ;               for AC6502 Homebrew Computer
+000000r 2               ;
+000000r 2               ;   Role        :  .include'd by BIOS.asm before any segment. Defines the
+000000r 2               ;                   zero-page layout, stack/buffer addresses, Kernal RAM
+000000r 2               ;                   variables, and the memory-mapped I/O registers (VIA,
+000000r 2               ;                   6551 ACIA, TMS9918, SID, RTC, CompactFlash) shared by
+000000r 2               ;                   every segment.
+000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 2               ;
+000000r 2               ;   Coding style :  Match the rest of the BIOS project.
+000000r 2               ;                   * Constants / equates : UPPER_SNAKE_CASE.
+000000r 2               ; =============================================================================
 000000r 2               
 000000r 2               ; Zero Page
 000000r 2               ZP                  := $00
@@ -323,9 +344,29 @@ Current file: BIOS.asm
 000000r 1               
 000000r 1               .segment "KERNAL"
 000000r 1               .include "Kernal.asm"
-000000r 2               ; ***             ***
-000000r 2               ; ***   KERNAL    ***
-000000r 2               ; ***             ***
+000000r 2               ; =============================================================================
+000000r 2               ; KERNAL  —  Hardware Driver Library and Jump Table
+000000r 2               ;             for AC6502 Homebrew Computer
+000000r 2               ;
+000000r 2               ;   ROM Region  :  $A000-$B7FF  (6,144 bytes / $1800)
+000000r 2               ;   Segment     :  KERNAL
+000000r 2               ;   Entry point :  Chrout  (jump table, first byte of segment = $A000)
+000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 2               ;   Linker cfg  :  BIOS.cfg
+000000r 2               ;
+000000r 2               ;   Contents    :  85-slot JMP table ($A000-$A0FF) giving external code and
+000000r 2               ;                   cartridges stable entry points, followed by the driver
+000000r 2               ;                   implementations for character I/O, TMS9918 video, SID
+000000r 2               ;                   sound, CompactFlash storage, RTC, keyboard/joystick,
+000000r 2               ;                   serial (6551 + XModem), and the Reset/NMI/IRQ handlers.
+000000r 2               ;
+000000r 2               ;   Coding style :  Match the rest of the BIOS project.
+000000r 2               ;                   * Routine / data labels : PascalCase  (e.g. ChroutDispatch,
+000000r 2               ;                     KernalInit, RtcReadTime).
+000000r 2               ;                   * Constants / equates    : UPPER_SNAKE_CASE  (e.g. IO_MODE).
+000000r 2               ;                   * Local labels           : @camelCase or @PascalCase.
+000000r 2               ;                   * Opcodes are lowercase.
+000000r 2               ; =============================================================================
 000000r 2               
 000000r 2               ; === Kernal Jump Table ($A000-$A0FF) ===
 000000r 2               ; 85 slots of 3-byte JMP instructions plus 1 padding byte
@@ -3373,9 +3414,21 @@ Current file: BIOS.asm
 00116Er 2               
 00116Er 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
-000000r 2               ; IBM Code Page 437 Character Set
-000000r 2               ; 5x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)
-000000r 2               ; Each byte represents one horizontal row of pixels (5 pixels left-aligned in 8-bit space)
+000000r 2               ; =============================================================================
+000000r 2               ; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)
+000000r 2               ;            for AC6502 Homebrew Computer
+000000r 2               ;
+000000r 2               ;   ROM Region  :  $B800-$BFFF  (2,048 bytes / $0800)
+000000r 2               ;   Segment     :  CHARS
+000000r 2               ;   Entry point :  CharacterSet  (first byte of segment = $B800)
+000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 2               ;   Linker cfg  :  BIOS.cfg
+000000r 2               ;
+000000r 2               ;   Layout      :  256 characters, 8 bytes each. Each byte is one horizontal
+000000r 2               ;                   row of pixels, 5 pixels left-aligned in the 8-bit byte.
+000000r 2               ;                   Consumed by InitVideo (Kernal.asm) to seed the TMS9918
+000000r 2               ;                   pattern table.
+000000r 2               ; =============================================================================
 000000r 2               
 000000r 2               CharacterSet:
 000000r 2                   ; Character $00 - NULL (blank)
@@ -13162,16 +13215,25 @@ Current file: BIOS.asm
 002DCCr 2               
 002DCCr 1               .segment "MONITOR"
 000000r 1               .include "Monitor.asm"
-000000r 2               ; ***             ***
-000000r 2               ; ***   MONITOR   ***
-000000r 2               ; ***             ***
-000000r 2               
-000000r 2               ; Machine Code Monitor — Supermon-style command set
-000000r 2               ; Segment: $EE00-$FEFF (~4KB)
+000000r 2               ; =============================================================================
+000000r 2               ; MONITOR  —  Machine Code Monitor (Supermon-style command set)
+000000r 2               ;              for AC6502 Homebrew Computer
 000000r 2               ;
-000000r 2               ; Entry points:
-000000r 2               ;   MonitorEntry    ($EE00) — Cold entry from boot menu or X return
-000000r 2               ;   MonitorBrkEntry ($EE03) — BRK entry with register display
+000000r 2               ;   ROM Region  :  $EE00-$FEFF  (4,352 bytes / $1100)
+000000r 2               ;   Segment     :  MONITOR
+000000r 2               ;   Entry points:  MonitorEntry     ($EE00) — Cold entry from boot menu or X return
+000000r 2               ;                   MonitorBrkEntry ($EE03) — BRK entry with register display
+000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 2               ;   Linker cfg  :  BIOS.cfg
+000000r 2               ;
+000000r 2               ;   Coding style :  Match the rest of the BIOS project.
+000000r 2               ;                   * Routine / data labels : PascalCase  (e.g. MonColdEntry,
+000000r 2               ;                     MonBrkEntry, StReadSectorImpl).
+000000r 2               ;                   * Constants / equates    : UPPER_SNAKE_CASE  (e.g.
+000000r 2               ;                     MON_LINBUF, MN_ADC).
+000000r 2               ;                   * Local labels           : @camelCase or @PascalCase.
+000000r 2               ;                   * Opcodes are lowercase.
+000000r 2               ; =============================================================================
 000000r 2               
 000000r 2               ; ============================================================================
 000000r 2               ; Monitor Constants
@@ -15992,9 +16054,23 @@ Current file: BIOS.asm
 0010FEr 2               
 0010FEr 1               .segment "WOZMON"
 000000r 1               .include "Wozmon.asm"
-000000r 2               ; ***             ***
-000000r 2               ; ***   WOZMON    ***
-000000r 2               ; ***             ***
+000000r 2               ; =============================================================================
+000000r 2               ; WOZMON  —  Woz Monitor (Steve Wozniak's original Apple 1 monitor, ported)
+000000r 2               ;             for AC6502 Homebrew Computer
+000000r 2               ;
+000000r 2               ;   ROM Region  :  $FF00-$FFF9  (250 bytes / $00FA)
+000000r 2               ;   Segment     :  WOZMON
+000000r 2               ;   Entry point :  WozMon  (first byte of segment = $FF00)
+000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 2               ;   Linker cfg  :  BIOS.cfg
+000000r 2               ;
+000000r 2               ;   Commands    :  <addr>                        Examine
+000000r 2               ;                   <addr>.<addr>                 Block examine
+000000r 2               ;                   <addr>: <byte> [<byte> ...]   Store
+000000r 2               ;                   <addr>R                        Run
+000000r 2               ;
+000000r 2               ;   Reachable from the Monitor with "G FF00" or from BASIC with "SYS $FF00".
+000000r 2               ; =============================================================================
 000000r 2               
 000000r 2               WOZ_XAML  = $24               ; Last "opened" location Low
 000000r 2               WOZ_XAMH  = $25               ; Last "opened" location High
@@ -16177,9 +16253,19 @@ Current file: BIOS.asm
 0000F1r 2               
 0000F1r 1               .segment "VECTORS"
 000000r 1               .include "Vectors.asm"
-000000r 2               ; ***             ***
-000000r 2               ; ***   VECTORS   ***
-000000r 2               ; ***             ***
+000000r 2               ; =============================================================================
+000000r 2               ; VECTORS  —  Hardware Interrupt Vectors (NMI / RESET / IRQ)
+000000r 2               ;              for AC6502 Homebrew Computer
+000000r 2               ;
+000000r 2               ;   ROM Region  :  $FFFA-$FFFF  (6 bytes / $0006)
+000000r 2               ;   Segment     :  VECTORS
+000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
+000000r 2               ;   Linker cfg  :  BIOS.cfg
+000000r 2               ;
+000000r 2               ;   Contents    :  Three .word entries read by the 65C02 at reset/interrupt
+000000r 2               ;                   time. Targets (NmiVec, ResetVec, IrqVec) are defined in
+000000r 2               ;                   Kernal.asm.
+000000r 2               ; =============================================================================
 000000r 2               
 000000r 2  rr rr        .word   NmiVec           ; NMI vector
 000002r 2  rr rr        .word   ResetVec         ; RESET vector

@@ -1,6 +1,17 @@
-; ***                     ***
-; ***   6502 INCLUDES     ***
-; ***                     ***
+; =============================================================================
+; BIOS.INC  —  Shared Zero-Page, Memory-Map, and Hardware Register Equates
+;               for AC6502 Homebrew Computer
+;
+;   Role        :  .include'd by BIOS.asm before any segment. Defines the
+;                   zero-page layout, stack/buffer addresses, Kernal RAM
+;                   variables, and the memory-mapped I/O registers (VIA,
+;                   6551 ACIA, TMS9918, SID, RTC, CompactFlash) shared by
+;                   every segment.
+;   Assembler   :  ca65  (cc65 toolchain)
+;
+;   Coding style :  Match the rest of the BIOS project.
+;                   * Constants / equates : UPPER_SNAKE_CASE.
+; =============================================================================
 
 ; Zero Page
 ZP                  := $00

@@ -1,13 +1,22 @@
-; ***             ***
-; ***   MONITOR   ***
-; ***             ***
-
-; Machine Code Monitor — Supermon-style command set
-; Segment: $EE00-$FEFF (~4KB)
+; =============================================================================
+; MONITOR  —  Machine Code Monitor (Supermon-style command set)
+;              for AC6502 Homebrew Computer
 ;
-; Entry points:
-;   MonitorEntry    ($EE00) — Cold entry from boot menu or X return
-;   MonitorBrkEntry ($EE03) — BRK entry with register display
+;   ROM Region  :  $EE00-$FEFF  (4,352 bytes / $1100)
+;   Segment     :  MONITOR
+;   Entry points:  MonitorEntry     ($EE00) — Cold entry from boot menu or X return
+;                   MonitorBrkEntry ($EE03) — BRK entry with register display
+;   Assembler   :  ca65  (cc65 toolchain)
+;   Linker cfg  :  BIOS.cfg
+;
+;   Coding style :  Match the rest of the BIOS project.
+;                   * Routine / data labels : PascalCase  (e.g. MonColdEntry,
+;                     MonBrkEntry, StReadSectorImpl).
+;                   * Constants / equates    : UPPER_SNAKE_CASE  (e.g.
+;                     MON_LINBUF, MN_ADC).
+;                   * Local labels           : @camelCase or @PascalCase.
+;                   * Opcodes are lowercase.
+; =============================================================================
 
 ; ============================================================================
 ; Monitor Constants

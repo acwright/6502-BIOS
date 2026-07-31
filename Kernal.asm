@@ -1,6 +1,26 @@
-; ***             ***
-; ***   KERNAL    ***
-; ***             ***
+; =============================================================================
+; KERNAL  —  Hardware Driver Library and Jump Table
+;             for AC6502 Homebrew Computer
+;
+;   ROM Region  :  $A000-$B7FF  (6,144 bytes / $1800)
+;   Segment     :  KERNAL
+;   Entry point :  Chrout  (jump table, first byte of segment = $A000)
+;   Assembler   :  ca65  (cc65 toolchain)
+;   Linker cfg  :  BIOS.cfg
+;
+;   Contents    :  85-slot JMP table ($A000-$A0FF) giving external code and
+;                   cartridges stable entry points, followed by the driver
+;                   implementations for character I/O, TMS9918 video, SID
+;                   sound, CompactFlash storage, RTC, keyboard/joystick,
+;                   serial (6551 + XModem), and the Reset/NMI/IRQ handlers.
+;
+;   Coding style :  Match the rest of the BIOS project.
+;                   * Routine / data labels : PascalCase  (e.g. ChroutDispatch,
+;                     KernalInit, RtcReadTime).
+;                   * Constants / equates    : UPPER_SNAKE_CASE  (e.g. IO_MODE).
+;                   * Local labels           : @camelCase or @PascalCase.
+;                   * Opcodes are lowercase.
+; =============================================================================
 
 ; === Kernal Jump Table ($A000-$A0FF) ===
 ; 85 slots of 3-byte JMP instructions plus 1 padding byte

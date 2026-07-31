@@ -1,6 +1,18 @@
-; IBM Code Page 437 Character Set
-; 5x8 pixel font in 8x8 area, 8 bytes per character (256 characters total)
-; Each byte represents one horizontal row of pixels (5 pixels left-aligned in 8-bit space)
+; =============================================================================
+; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)
+;            for AC6502 Homebrew Computer
+;
+;   ROM Region  :  $B800-$BFFF  (2,048 bytes / $0800)
+;   Segment     :  CHARS
+;   Entry point :  CharacterSet  (first byte of segment = $B800)
+;   Assembler   :  ca65  (cc65 toolchain)
+;   Linker cfg  :  BIOS.cfg
+;
+;   Layout      :  256 characters, 8 bytes each. Each byte is one horizontal
+;                   row of pixels, 5 pixels left-aligned in the 8-bit byte.
+;                   Consumed by InitVideo (Kernal.asm) to seed the TMS9918
+;                   pattern table.
+; =============================================================================
 
 CharacterSet:
     ; Character $00 - NULL (blank)

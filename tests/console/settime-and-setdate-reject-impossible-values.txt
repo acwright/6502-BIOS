@@ -1,6 +1,4 @@
 name: SETTIME and SETDATE reject a value the clock cannot hold
-xfail: SETTIME and SETDATE write any byte they are given straight to the DS1511Y, so TIME then prints 24:61:61 and DATE prints 2026-13-32
-issue: tests/FINDINGS.md#settime-and-setdate-accept-values-that-are-not-a-time
 # README: "SETTIME <hh>, <mm>, <ss> — Set the RTC time"
 #         "SETDATE <cc>, <yy>, <mm>, <dd> — Set the RTC date"
 #         "TIME — Print current RTC time as `HH:MM:SS`"

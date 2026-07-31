@@ -8145,6 +8145,51 @@ BasCmdSys:
         sta     INDEX+1
         jmp     (INDEX)
 
+; ---------------------------------------------------------------------------
+; Byte arguments, with the ranges the README documents.
+;
+; GetByt itself only rejects a value that will not fit in a byte.  Every
+; statement below has a narrower range than that -- a volume of 0-15, a screen
+; row of 0-23, an hour of 0-23 -- and each of them used to take whatever byte
+; it was handed and fold it into something legal.  VOL 16 masked to 4 bits and
+; set the volume to *zero*; LOCATE 24,0 pointed the cursor past the end of the
+; name table; SETTIME 24,61,61 wrote BCD the DS1511Y has no values for.  None
+; of them said anything.
+;
+; So the range travels with the fetch.  A = one past the highest legal value;
+; anything from there up raises ILLEGAL QUANTITY, as NVRAM's address already
+; did.  GetComByteLim is the same thing preceded by the comma between two
+; arguments, and it costs a byte *less* per site than the `jsr ChkCom /
+; jsr GetByt` pair it replaces -- which is how thirteen range checks fit into
+; a segment that had one byte spare.
+;
+; The limit is parked on the stack across the fetch rather than in scratch:
+; GetByt runs the whole expression evaluator, which reaches BAS_TMP3 itself.
+; Between the `pla` and the `cpx` nothing runs at all, so the byte is safe
+; there and nowhere earlier.
+; ---------------------------------------------------------------------------
+
+; GetComByt - a comma, then an unchecked byte argument.
+GetComByt:
+        jsr     ChkCom
+        jmp     GetByt
+
+; GetComByteLim / GetByteLim - the same, with a range.  X = value.
+GetComByteLim:
+        pha                             ; the limit, across the comma
+        jsr     ChkCom
+        pla
+GetByteLim:
+        pha                             ; and across the evaluator
+        jsr     GetByt                  ; X = value
+        pla
+        sta     BAS_TMP3
+        cpx     BAS_TMP3
+        bcs     BasRangeErr             ; value >= limit
+        rts
+BasRangeErr:
+        jmp     IqErr
+
 ; CLS
 BasCmdCls:
         lda     #HW_VID
@@ -8155,10 +8200,11 @@ BasCmdCls:
 BasCmdLocate:
         lda     #HW_VID
         jsr     ReqHw
-        jsr     GetByt                  ; X = row
+        lda     #24                     ; rows 0-23
+        jsr     GetByteLim              ; X = row
         phx
-        jsr     ChkCom
-        jsr     GetByt                  ; X = col
+        lda     #40                     ; columns 0-39
+        jsr     GetComByteLim           ; X = col
         ply                             ; Y = row
         jmp     VideoSetCursor
 
@@ -8166,18 +8212,17 @@ BasCmdLocate:
 BasCmdColor:
         lda     #HW_VID
         jsr     ReqHw
-        jsr     GetByt                  ; X = fg
+        lda     #16                     ; colours 0-15
+        jsr     GetByteLim              ; X = fg
         txa
         asl     a
         asl     a
         asl     a
         asl     a
         pha                             ; fg must survive FrmEvl -> stack, not ZP
-        jsr     ChkCom
-        jsr     GetByt                  ; X = bg
-        txa
-        and     #$0F
-        sta     BAS_TMP1
+        lda     #16
+        jsr     GetComByteLim           ; X = bg, already known to fit a nibble
+        stx     BAS_TMP1
         pla
         ora     BAS_TMP1
         jmp     VideoSetColor
@@ -8186,26 +8231,20 @@ BasCmdColor:
 BasCmdVol:
         lda     #HW_SID
         jsr     ReqHw
-        jsr     GetByt                  ; X = vol
-        cpx     #16                     ; Documented range is 0-15.  SidSetVolume
-        bcs     BasSidRange             ;   masks to 4 bits, so an unchecked 16
-        txa                             ;   would set volume 0 — silence, for
-        jmp     SidSetVolume            ;   "louder than maximum"
-
-; Shared by VOL and SOUND below: both reject out of range, and one trampoline
-; is 3 bytes cheaper than two in a segment that has none to spare.
-BasSidRange:
-        jmp     IqErr
+        lda     #16                     ; volume 0-15
+        jsr     GetByteLim              ; X = vol
+        txa
+        jmp     SidSetVolume
 
 ; SOUND voice, freq, dur (freq=Hz, dur=centisec)
 ;   Hz -> SID register: reg = Hz * 16.75 ≈ Hz<<4 + Hz - Hz/4
 BasCmdSound:
         lda     #HW_SID
         jsr     ReqHw
-        jsr     GetByt                  ; X = voice (1..3)
+        lda     #4                      ; voices 1-3, after Commodore BASIC V3.5
+        jsr     GetByteLim              ; X = voice
         dex                             ; 0-indexed for SidPlayNote
-        cpx     #3                      ; Voice 0 underflows to $FF, so one
-        bcs     BasSidRange             ;   unsigned test catches both ends
+        bmi     BasRangeErr             ; voice 0 underflowed to $FF
         phx                             ; voice (0-indexed) on stack
         jsr     ChkCom
         jsr     EvalU16                 ; freq Hz: hi=FAC+3, lo=FAC+4
@@ -8298,13 +8337,14 @@ BasCmdDate:
 BasCmdSettime:
         lda     #HW_RTC
         jsr     ReqHw
-        jsr     GetByt                  ; X = h
+        lda     #24                     ; hours 0-23
+        jsr     GetByteLim              ; X = h
         phx
-        jsr     ChkCom
-        jsr     GetByt                  ; X = m
+        lda     #60                     ; minutes 0-59
+        jsr     GetComByteLim           ; X = m
         phx
-        jsr     ChkCom
-        jsr     GetByt                  ; X = s
+        lda     #60                     ; seconds 0-59
+        jsr     GetComByteLim           ; X = s
         txa
         tay                             ; Y = s
         plx                             ; X = m
@@ -8315,29 +8355,36 @@ BasCmdSettime:
 BasCmdSetdate:
         lda     #HW_RTC
         jsr     ReqHw
-        jsr     GetByt
+        lda     #100                    ; century 0-99, as two BCD digits
+        jsr     GetByteLim
         stx     RTC_BUF_CENT
-        jsr     ChkCom
-        jsr     GetByt
+        lda     #100                    ; year 0-99
+        jsr     GetComByteLim
         phx                             ; year
-        jsr     ChkCom
-        jsr     GetByt
+        lda     #13                     ; months 1-12, so reject 0 as well
+        jsr     GetComByteLim
+        cpx     #1
+        bcc     @bad
         phx                             ; month
-        jsr     ChkCom
-        jsr     GetByt                  ; X=day
+        lda     #32                     ; days 1-31.  Which months are short is
+        jsr     GetComByteLim           ;   left alone: it needs a table and a
+        cpx     #1                      ;   leap rule for one wrong day a year,
+        bcc     @bad                    ;   and the DS1511Y does not check it
+                                        ;   either
         txa
         plx                             ; X=month
         ply                             ; Y=year
         jmp     RtcWriteDate
+@bad:                                   ; BasRangeErr is out of branch reach
+        jmp     IqErr
 
 ; NVRAM addr, val
 BasCmdNvram:
         lda     #HW_RTC
         jsr     ReqHw
-        jsr     GetByt
-        phx                             ; addr
-        jsr     ChkCom
-        jsr     GetByt                  ; X=val
+        jsr     GetByt                  ; addr; GetByt's own 0-255 is the range
+        phx
+        jsr     GetComByt               ; X=val
         txa                             ; A=val
         plx                             ; X=addr
         jmp     RtcWriteNVRAM
@@ -8351,8 +8398,7 @@ BasCmdWait:
         pha
         lda     FAC+4                   ; lo
         pha
-        jsr     ChkCom
-        jsr     GetByt                  ; X = mask
+        jsr     GetComByt               ; X = mask
         stx     BAS_TMP2
         pla
         sta     BAS_TMP1

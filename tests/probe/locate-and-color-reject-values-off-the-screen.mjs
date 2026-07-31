@@ -24,9 +24,6 @@ import { typeLine, awaitScreen, cursor, render, ROWS, COLUMNS } from '../lib/vid
 
 export const name = 'LOCATE and COLOR reject a cell or a colour that does not exist'
 export const profile = 'video'
-export const xfail =
-  'LOCATE and COLOR take any byte: LOCATE 24,0 points the cursor off the end of the name table and scrambles the screen, and COLOR 16,16 silently means black on black'
-export const issue = 'tests/FINDINGS.md#locate-and-color-accept-values-off-the-screen'
 
 const ERROR = /\?ILLEGAL QUANTITY ERROR/
 

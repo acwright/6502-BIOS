@@ -480,11 +480,12 @@ the machine on the echo of its own first character with the key delivery still
 in flight. It is run from a program spinning on `WAIT` against a byte of free
 RAM, armed, and then released with a poke.
 
-Not covered: **`LOCATE` and `COLOR` reject nothing.** `LOCATE 24,0` points the
-cursor past the end of the name table and later output overwrites earlier lines
-at an offset; `COLOR 16,16` is black on black. Both are the `VOL 16` shape, both
-are `xfail`, and both are blocked on the BASIC segment being full — see §6.10's
-note.
+**`LOCATE` and `COLOR` used to reject nothing** — `LOCATE 24,0` pointed the
+cursor past the end of the name table and later output overwrote earlier lines
+at an offset, and `COLOR 16,16` was black on black. Both were the `VOL 16`
+shape and both are fixed; see §6.10's note for where the room came from.
+`COLOR` came out smaller, because the `and #$0F` that made an out-of-range
+background fit has nothing left to do.
 
 ### 6.9 Sound and GPIO — ~10 cases, Tier 3
 
@@ -537,13 +538,14 @@ byte, and agrees with itself. The fixture is a permutation, so reading the wrong
 address is always visible, and the one byte that genuinely holds zero is what
 tells a real zero from the absent card that also "returns 0".
 
-**Blocked: the BASIC segment is full.** `SETTIME 24,61,61` is accepted and
-`TIME` then prints `24:61:61`; the case is written and `xfail`. `BASIC` occupies
-`$C000–$EDFE` of a `$C000–$EDFF` area — **one byte free** — where `KERNAL` has
-about 1.6 KB spare. The `VOL`/`SOUND` fix paid its eleven bytes by deleting a
-trampoline defined and called from nowhere, and there is not a second one. This
-gates eleven range checks across four statements, and every remaining phase that
-finds a BASIC bug will hit it. `tests/FINDINGS.md` sets out the three options.
+**`SETTIME 24,61,61` was accepted, and fixing it meant finding room first.**
+`BASIC` occupied `$C000–$EDFE` of a `$C000–$EDFF` area — one byte free. The
+space came from a 40-byte tail that an error, a `STOP` and a Ctrl+C break each
+carried their own copy of, now `BasStopAtLine`/`BasStopDirect`: **75 bytes**.
+Thirteen range checks across six statements cost 24 of them, because the range
+travels with the fetch — `GetComByteLim` is a byte *shorter* per site than the
+`jsr ChkCom / jsr GetByt` it replaces. 52 bytes free now, and
+`tests/FINDINGS.md` lists the next four candidates with sizes.
 
 ### 6.11 Graceful degradation — ~18 cases, Tier 2
 
@@ -619,10 +621,14 @@ obvious. From the current log:
   `tests/basic/for-still-crunches-as-for.bas` guarding the tokenizer change
   from the other side. Found and fixed in phase 4; the pre-fix ROM raises
   `?SYNTAX ERROR`.
-- **`VOL 16` set the volume to zero, and `SOUND 0` played voice 1** —
-  `tests/console/sound-and-vol-reject-values-out-of-range.txt`. Found and fixed
-  in phase 5; on the pre-fix ROM both statements fold an out-of-range argument
-  into a legal one and say nothing.
+- **Every statement with a documented range folded an out-of-range argument
+  into a legal one** — `tests/console/sound-and-vol-reject-values-out-of-range.txt`,
+  `tests/console/settime-and-setdate-reject-impossible-values.txt` and
+  `tests/probe/locate-and-color-reject-values-off-the-screen.mjs`. Found and
+  fixed in phase 5. On the pre-fix ROM `VOL 16` sets the volume to *zero*,
+  `SOUND 0` plays voice 1, `SETTIME 24,61,61` is accepted and `TIME` then prints
+  `24:61:61`, and `LOCATE 24,0` points the cursor past the end of the name table
+  and scrambles the screen. None of them said anything.
 - **`PRINT HEX()` rejected values above 32767** —
   `tests/console/hex-in-print-and-in-an-expression.txt`. Found and fixed in
   phase 2; the pre-fix ROM raises `?ILLEGAL QUANTITY` for `$8000` upwards.

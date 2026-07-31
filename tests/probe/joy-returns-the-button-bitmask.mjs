@@ -1,8 +1,6 @@
 // JOY reads a VIA port that cannot be observed any other way, and needs the
 // emulator to hold a stick position while BASIC looks at it.
 export const name = 'JOY(1) and JOY(2) return the documented R-L-D-U-Y-X-B-A bitmask'
-export const xfail = 'the released emulator (2.4.0) numbers the joystick bits differently and never drives port A'
-export const issue = 'tests/FINDINGS.md#joy-reads-ff-regardless-of-the-stick'
 
 // The DB9 is wired P7 RIGHT, P6 LEFT, P5 DOWN, P4 UP, P3 Y, P2 X, P1 B,
 // P0 A/FIRE — the README's R-L-D-U-Y-X-B-A. Each line is pulled up through 1K

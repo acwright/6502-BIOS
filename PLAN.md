@@ -1,16 +1,17 @@
 # BIOS Test Suite — Plan
 
 A regression suite for `BIOS.bin`, run against the A.C. Wright 6502 emulator
-(v2.4.0+) in headless mode. The goal is that every Monitor command and every
+(v2.4.1+) in headless mode. The goal is that every Monitor command and every
 BASIC keyword has at least one executable assertion behind it, and that a
 `make test` failure is the normal way a BIOS regression is discovered.
 
-> **This is now a two-repository release.** The suite has found bugs in
+> **This was a two-repository release, and it shipped.** The suite found bugs in
 > `6502-EMULATOR` as well as in the ROM, and the emulator bundles the ROM that
-> every user runs by default. `6502-BIOS` v1.4 and the emulator's patch release
-> go out together, in that order, and neither ships alone. **§10.7 is the
-> procedure** — read it before touching either project's release process, and
-> before cutting an emulator release to unblock a test.
+> every user runs by default. `6502-BIOS` **v1.4** went out first, then
+> `6502-EMULATOR` **v2.4.1** carrying it. **§10.7 is the procedure** — read it
+> before touching either project's release process, and before cutting an
+> emulator release to unblock a test. The rule that made it one release still
+> holds for the next one.
 
 ---
 
@@ -932,6 +933,27 @@ the emulator release lists what it found in the emulator *and* names the BIOS
 version it now bundles. A reader of either should be able to tell that the two
 went out together.
 
+**What phase 8 did.** All five steps, in that order. `6502-BIOS` **v1.4** — the
+twenty-seven defects the suite found, over twenty-two commits, every one pinned
+by a case that was watched to fail without it — then `6502-EMULATOR` **v2.4.1**,
+carrying that ROM in `assets/roms/BIOS.bin` and the BRK and joystick fixes in
+the same commit as it. Then the two `xfail` markers came off and the CI pin
+moved to `v2.4.1`.
+
+Two things are worth recording because they are what the design was for. The
+version bump was **two edits that had to stay in step**, and
+`version-agrees-with-splash` — written in phase 1 for exactly this commit and
+never useful until now — is what would have caught a half-finished one. And the
+`xfail` mechanism closed itself: run against a build of the fixed emulator
+*before* the markers were touched, the suite reported
+`157 passed, 0 failed, 2 unexpectedly passing` and exited non-zero. Nobody had
+to remember step 5; the suite demanded it.
+
+What did not ship: the emulator's `WAI`/`STP` stubs, still open in
+`tests/FINDINGS.md` and still blocking nothing, because the BIOS does not use
+either instruction and a correct implementation is a design decision about the
+emulator rather than a defect in the way of this suite.
+
 **Anything the suite finds in the emulator from here follows the same rule**: fix
 it in the emulator working tree, record it in `tests/FINDINGS.md` like any other
 finding, mark the blocked case `xfail` pointing at that heading, and let it ride
@@ -952,12 +974,11 @@ is how the two histories drift apart.
    as against the installed app, and the workflow was then rehearsed step for
    step in a Linux container.
 
-   **The pin is the tag, not `main`.** §10.7 wants CI building the emulator from
-   source so that a case blocked on an emulator bug can go green before that fix
-   is released — true, and the reason to move this pin at phase 8. Until then
-   the tag is right for the opposite reason: those fixes are deliberately
-   unreleased, so CI has to see the emulator a developer sees, or an `xfail`
-   that is honest on a laptop reports `XPASS` here.
+   **The pin is the tag, not `main`.** Through phases 3–7 the emulator fixes
+   were deliberately unreleased, so CI had to see the emulator a developer sees,
+   or an `xfail` that is honest on a laptop would report `XPASS` here. Phase 8
+   released them and moved the pin to `v2.4.1`; it stays a tag for the same
+   reason, and moves again the next time a release the suite needs goes out.
 
    **The toolchain was the harder half, and it was this repo's problem rather
    than CI's.** `apt-get install cc65` — which is what the README told a Linux

@@ -63,13 +63,16 @@ and consumes cycles (instruction completes)". Those tests encode the bug and
 will resist a correct implementation, exactly the failure mode PLAN.md §10.4
 warns about. They have to be rewritten as part of the fix, not made to pass.
 
-## BRK pushed the return address one byte too high
+---
+
+## Resolved
+
+### BRK pushed the return address one byte too high
 
 - **Bucket:** emulator bug
 - **Found by:** `tests/console/monitor-go-and-jsr.txt`
-- **Phase:** 3
-- **Status:** fixed in the `6502-EMULATOR` working tree, uncommitted until phase
-  8 per PLAN.md §10.7; the case stays `xfail` until that ships
+- **Phase:** 3 (found), fixed in the `6502-EMULATOR` working tree, shipped in
+  emulator **v2.4.1** at phase 8
 
 A `BRK` planted at `$1000` and run with `G 1000` reported `BRK AT $1001` and a
 saved `PC` of `$1003`. A 6502 pushes the address of the `BRK` plus two — `$1002`
@@ -98,13 +101,12 @@ The emulator's `BRK` test asserted the vector jump and the `I` flag but never
 what was pushed, which is why this survived. It now asserts the pushed address,
 the `B` flag in the pushed status, and the stack pointer.
 
-## JOY reads $FF regardless of the stick
+### JOY reads $FF regardless of the stick
 
-- **Bucket:** emulator bug, plus a BIOS doc/degradation fix (done)
+- **Bucket:** emulator bug, plus a BIOS doc/degradation fix
 - **Found by:** `tests/probe/joy-returns-the-button-bitmask.mjs`
-- **Phase:** 2
-- **Status:** cause found and fixed in the emulator working tree; the case stays
-  `xfail` until that ships, because the released 2.4.0 still fails it
+- **Phase:** 2 (found), fixed in the `6502-EMULATOR` working tree, shipped in
+  emulator **v2.4.1** at phase 8
 
 `JOY(1)` and `JOY(2)` returned 255 whatever was held through `input.joystick`.
 The BIOS was not at fault: `ReadJoystick1Impl` reads `GPIO_PORTB` raw and
@@ -139,22 +141,13 @@ which under active low means *everything held*. `FnJoy`'s absent path returns
 `$FF` now, and the README says the polarity outright rather than leaving it to
 be inferred. Pinned by `tests/probe/joy-without-a-via-reads-released.mjs`.
 
-**To close this out:** both emulator fixes are applied but deliberately
-**uncommitted** in the `6502-EMULATOR` working tree, and stay that way until
-phase 8 — PLAN.md §10.7. They ship in the same release as BIOS v1.4, because the
-emulator also bundles the ROM, and cutting an emulator release mid-build-out just
-to unblock this one case is what would pull the two histories apart.
-
-The bitmask case passes against a build of that working tree —
-`SIXTY502="node …/out/cli/index.js" make test` — and fails against the released
-2.4.0, which is why the marker is still here. Once the emulator release is out,
-delete the `xfail` and commit; that changes no ROM and needs no version bump. An
-`xfail` that passes is reported red, so the first run against the new emulator
-will demand it.
-
----
-
-## Resolved
+**How it closed out.** Both emulator fixes were held uncommitted through phases
+3–7 per PLAN.md §10.7, and went out with BIOS v1.4 in emulator v2.4.1 — the
+emulator bundles the ROM, so the two had to ship together anyway. The `xfail`
+came off this case and off `monitor-go-and-jsr.txt` after that release, which is
+what §10.7 step 5 is for. The suite reported both as **unexpectedly passing**
+against a build of the fixed emulator before the markers were touched, which is
+the mechanism working: a drive-by fix cannot leave a stale marker behind.
 
 ### Typing a long line could wedge the serial input path
 

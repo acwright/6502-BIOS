@@ -19,14 +19,15 @@ concurrency:
 # unrelated cc65 change can turn this repo red on a morning nobody touched it.
 #
 # The emulator, because the suite runs on it and its `main` is not this repo's
-# business. It is also what keeps CI honest about `xfail`: PLAN.md §10.7 holds
-# the emulator fixes this build-out found until phase 8, and the cases blocked
-# on them stay marked until that release. Pinning to the tag means CI sees the
-# emulator a developer sees, so a marker that is stale here is stale there too.
+# business. It stays a tag rather than `main` for the same reason it always
+# was: CI should see the emulator a developer sees, so an `xfail` that is stale
+# here is stale there too. The pin moves when a release the suite needs goes
+# out — v2.4.1 carries the BRK and joystick fixes that phase 8 shipped, and the
+# two cases blocked on them are no longer marked.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v2.4.0
+  EMULATOR_REF: v2.4.1
 
 jobs:
   test:

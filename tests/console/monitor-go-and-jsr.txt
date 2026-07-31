@@ -1,6 +1,4 @@
 name: G runs planted code with the saved registers, and J calls and returns
-xfail: the released emulator (2.4.0) pushes BRK's return address one byte late
-issue: tests/FINDINGS.md#brk-pushed-the-return-address-one-byte-too-high
 # README: "G [addr] — Go — JMP to address (or saved PC); restores all registers via RTI"
 #         "J [addr] — JSR — call a subroutine; RTS returns to the monitor with
 #          register display"

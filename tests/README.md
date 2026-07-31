@@ -6,7 +6,8 @@ make test-one T=gosub          # just the cases matching /gosub/
 tests/run.mjs --help
 ```
 
-Needs Node ≥ 22 and the A.C. Wright 6502 emulator (v2.4.0+) as `6502` on PATH.
+Needs Node ≥ 22 and the A.C. Wright 6502 emulator (v2.4.1+) as `6502` on PATH.
+Two cases fail on v2.4.0 — the emulator fixes they need shipped in v2.4.1.
 `SIXTY502` overrides that — `SIXTY502="node …/out/cli/index.js" make test` runs
 against an emulator checkout, which is what `.github/workflows/ci.yml` does on
 every push.

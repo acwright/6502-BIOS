@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Two pins, and both are load-bearing.
+#
+# cc65, because the ROM sets `.setcpu "W65C02"` and the 2.19 release — which is
+# what `apt-get install cc65` gives on every distro — has never heard of it.
+# W65C02 landed upstream in July 2025, five and a half years after that release,
+# so the toolchain is built from source. A commit rather than a branch, or an
+# unrelated cc65 change can turn this repo red on a morning nobody touched it.
+#
+# The emulator, because the suite runs on it and its `main` is not this repo's
+# business. It is also what keeps CI honest about `xfail`: PLAN.md §10.7 holds
+# the emulator fixes this build-out found until phase 8, and the cases blocked
+# on them stay marked until that release. Pinning to the tag means CI sees the
+# emulator a developer sees, so a marker that is stale here is stale there too.
+env:
+  CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
+  EMULATOR_REPO: acwright/6502-EMULATOR
+  EMULATOR_REF: v2.4.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the emulator
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.EMULATOR_REPO }}
+          ref: ${{ env.EMULATOR_REF }}
+          path: emulator
+
+      # After the emulator checkout, because the lock file it keys on is in it.
+      # The cache is npm's own store rather than node_modules: `npm ci` deletes
+      # node_modules before it installs, so caching that directory buys nothing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: emulator/package-lock.json
+
+      # ---- cc65 ----------------------------------------------------------
+
+      - name: Restore cc65
+        id: cc65
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/cc65
+          key: cc65-${{ runner.os }}-${{ env.CC65_REF }}
+
+      - name: Build cc65
+        if: steps.cc65.outputs.cache-hit != 'true'
+        run: |
+          git clone --filter=blob:none https://github.com/cc65/cc65.git cc65
+          git -C cc65 checkout --detach "$CC65_REF"
+          # `bin` is the tools; `none` is the single target library, the one
+          # `cl65 -t none` hands to the linker. cc65 has thirty-odd other
+          # targets and this ROM is not any of them, so not building them is
+          # what keeps this step to about a minute.
+          #
+          # Both halves are installed, because the tools alone are not enough:
+          # BASIC.asm's `.macpack longbranch` is read out of cc65's `asminc`,
+          # which travels with the libraries rather than the binaries.
+          make -C cc65 -j"$(nproc)" bin  PREFIX="$HOME/.local/cc65"
+          # cc65 creates lib/ in the pass that walks every target, which asking
+          # for one target by name skips.
+          mkdir -p cc65/lib
+          make -C cc65 -j"$(nproc)" none PREFIX="$HOME/.local/cc65"
+          make -C cc65/src    install PREFIX="$HOME/.local/cc65"
+          make -C cc65/libsrc install PREFIX="$HOME/.local/cc65"
+
+      - name: Put cc65 on PATH
+        run: echo "$HOME/.local/cc65/bin" >> "$GITHUB_PATH"
+
+      # ---- the emulator the suite runs on --------------------------------
+
+      - name: Build the emulator's CLI
+        working-directory: emulator
+        # The CLI is Node, not Electron. Skipping the binary is not a shortcut:
+        # the 100 MB is only needed to open a window, and this job never does.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          npm ci --prefer-offline --no-audit --no-fund
+          npm run build:cli
+
+      # ---- the ROM and the suite -----------------------------------------
+
+      - name: Build the ROM
+        run: make
+
+      # BIOS.bin is committed, and at phase 8 it is the file the emulator
+      # bundles for every user who never passes --rom. So the copy in the tree
+      # has to be the one this source builds — otherwise the suite is green
+      # against a ROM nobody can reproduce, which is the one thing a ROM in a
+      # repository must never be.
+      - name: The committed ROM is the one the source builds
+        run: git diff --exit-code -- BIOS.bin
+
+      - name: Test
+        env:
+          SIXTY502: node ${{ github.workspace }}/emulator/out/cli/index.js
+        run: make test

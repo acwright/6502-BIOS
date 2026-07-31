@@ -744,7 +744,7 @@ Each phase ends with something runnable, and each is independently useful.
 | **4. Storage** | §6.7 and the CF fixtures. | ~30 cases |
 | **5. Hardware** | §6.1, §6.2, §6.8, §6.9, §6.10 — boot, jump table, video, sound, clock. Adds the `video` and `nvram` profiles. | ~57 cases |
 | **6. Degradation and pins** | §6.11, §6.12, and the rule that every future fix adds a case. | ~26 cases |
-| **7. CI** | GitHub Actions: install cc65, `make`, `make test`. Needs the emulator available to the runner — see §11. | — |
+| **7. CI** | GitHub Actions: cc65 built from source at a pinned commit, the emulator's CLI built from a pinned tag, `make`, `make test`, and a check that the committed `BIOS.bin` is the one the source builds. The *packaged* cc65 cannot build this ROM at all — see §11. | — |
 | **8. Release** | **Two repositories, one release.** Bump both BIOS version sites, update the README, tag **v1.4**; then bundle that ROM into the emulator alongside the emulator fixes this build-out found, and cut its patch release. Neither ships alone — see §10.7. | — |
 
 Phases 2–6 are independent of each other once phase 1 lands.
@@ -931,20 +931,41 @@ is how the two histories drift apart.
 
 ## 11. Open questions and risks
 
-1. **How does CI get an emulator?** The CLI ships inside the app and runs under
-   Electron's Node. Options, in the order I'd try them: (a) check out
-   `6502-EMULATOR` in the workflow and run `node out/cli/index.js` after
-   `npm ci && npm run build:cli` — the emulator's own CI already does this;
-   (b) publish the CLI as a small npm package; (c) skip CI and keep the suite
-   local-only. **(a) is the recommendation** and needs nothing new from the
-   emulator. The runner should take `SIXTY502` as an env var override, as the
-   emulator's `examples/lib.sh` does, so local and CI differ by one variable.
+1. **How does CI get an emulator? — settled on (a), and it works.**
+   `.github/workflows/ci.yml` checks `6502-EMULATOR` out at a pinned tag, builds
+   its CLI with `npm ci && npm run build:cli`, and points `SIXTY502` at
+   `out/cli/index.js`. Both repositories are public, so it needs no token and
+   nothing new from the emulator. Proved before it was committed rather than on
+   the branch it was pushed to: the suite reports the same
+   `156 passed, 0 failed, 2 known-failing` against a pristine `v2.4.0` checkout
+   as against the installed app, and the workflow was then rehearsed step for
+   step in a Linux container.
 
-   §10.7 strengthens the case for (a): building the emulator from source in CI
-   means the suite tests against the emulator fixes *before* they are released,
-   which is the only way a case blocked on an emulator bug can go green without
-   waiting for a release. Pin the checkout to a ref rather than tracking its
-   `main`, or an unrelated emulator change can turn this repo's CI red.
+   **The pin is the tag, not `main`.** §10.7 wants CI building the emulator from
+   source so that a case blocked on an emulator bug can go green before that fix
+   is released — true, and the reason to move this pin at phase 8. Until then
+   the tag is right for the opposite reason: those fixes are deliberately
+   unreleased, so CI has to see the emulator a developer sees, or an `xfail`
+   that is honest on a laptop reports `XPASS` here.
+
+   **The toolchain was the harder half, and it was this repo's problem rather
+   than CI's.** `apt-get install cc65` — which is what the README told a Linux
+   reader to run — and `brew install cc65` both give the 2.19 release, which has
+   never heard of `W65C02`; that CPU reached cc65 in July 2025, five and a half
+   years after 2.19 shipped. So the documented build has been impossible since
+   `b141b2f` set `.setcpu "W65C02"`, and nothing noticed, because every machine
+   that had ever built this ROM already had a toolchain on it. CI builds cc65
+   from a pinned commit and caches it, and the README now says how for humans
+   too. The rehearsal turned up the rest of the same gap one failure at a time:
+   `BASIC.asm`'s `.macpack longbranch` is read out of cc65's `asminc`, which
+   travels with the libraries rather than the tools; `cl65 -t none` hands the
+   linker a `none.lib` that has to be built; and asking cc65 for a single target
+   by name skips the pass that creates the directory that library lands in.
+
+   The pin is also what makes the ROM check in the workflow worth having.
+   `BIOS.bin` is committed and is what the emulator bundles at phase 8, so CI
+   rebuilds it and fails if it differs from the copy in the tree. Linux at the
+   pinned commit produces the same 32 KB, byte for byte, as macOS does.
 
 2. **XModem `LOAD`/`SAVE` with no filename.** Testing these means driving both
    ends of the protocol over the same serial console the test harness is using.

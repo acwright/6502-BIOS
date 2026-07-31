@@ -1,6 +1,8 @@
 6502-BIOS
 =========
 
+[![CI](https://github.com/acwright/6502-BIOS/actions/workflows/ci.yml/badge.svg)](https://github.com/acwright/6502-BIOS/actions/workflows/ci.yml)
+
 ## Overview
 
 BIOS is the firmware ROM for the [A.C. Wright 6502](https://github.com/acwright/6502-ACE) family of computer systems. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
@@ -477,15 +479,24 @@ A template project for creating cartridges for the A.C. Wright 6502 system is av
 
 The cc65 toolchain provides the assembler and linker needed to build 6502 assembly code.
 
+It must be **newer than the 2.19 release**, which is still what every package manager ships. The ROM sets `.setcpu "W65C02"`, and cc65 did not gain that CPU until July 2025 — five and a half years after 2.19 — so the packaged toolchain stops on the first directive in `BIOS.asm` rather than producing a subtly wrong ROM.
+
 macOS (using Homebrew):
 ```bash
-brew install cc65
+brew install --HEAD cc65
 ```
 
-Linux (Debian/Ubuntu):
+Linux, and anywhere else the package is 2.19 — from source, which takes about a minute:
 ```bash
-sudo apt-get install cc65
+git clone https://github.com/cc65/cc65.git
+make -C cc65 -j"$(nproc)" bin  PREFIX=/usr/local
+mkdir -p cc65/lib
+make -C cc65 -j"$(nproc)" none PREFIX=/usr/local
+sudo make -C cc65/src    install PREFIX=/usr/local
+sudo make -C cc65/libsrc install PREFIX=/usr/local
 ```
+
+`bin` builds the tools; `none` builds the single target library that `cl65 -t none` hands to the linker. cc65 has thirty-odd other targets and this ROM is not any of them, so skipping them is what keeps that to about a minute — the `mkdir` is only there because asking cc65 for one target by name skips the pass that would have created that directory. Both halves get installed because the tools alone are not enough: `BASIC.asm` uses `.macpack longbranch`, which is read from cc65's `asminc`. `.github/workflows/ci.yml` pins the exact commit CI builds against.
 
 Other platforms: See [cc65 documentation](https://cc65.github.io/)
 
@@ -513,6 +524,17 @@ View the generated binary as hex dump:
 ```bash
 make view
 ```
+
+## Testing
+
+The ROM has a regression suite that runs it headless on the [A.C. Wright 6502 emulator](https://github.com/acwright/6502-EMULATOR), covering every Monitor command and every BASIC keyword:
+
+```bash
+make test                # build the ROM and run everything
+make test-one T=gosub    # just the cases matching /gosub/
+```
+
+It needs Node 22 or newer and the emulator's CLI as `6502` on `PATH`; `SIXTY502` points it at a checkout instead, which is how CI runs it. `tests/README.md` covers writing a case, and every fix to this ROM is expected to arrive with one that fails without it.
 
 ## Programming EEPROM
 

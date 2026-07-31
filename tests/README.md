@@ -8,7 +8,8 @@ tests/run.mjs --help
 
 Needs Node ≥ 22 and the A.C. Wright 6502 emulator (v2.4.0+) as `6502` on PATH.
 `SIXTY502` overrides that — `SIXTY502="node …/out/cli/index.js" make test` runs
-against an emulator checkout, which is how CI will do it.
+against an emulator checkout, which is what `.github/workflows/ci.yml` does on
+every push.
 
 PLAN.md is the map: what the suite is for, what it covers, and what to do when it
 finds a BIOS bug. FINDINGS.md is what it has found and not yet resolved.

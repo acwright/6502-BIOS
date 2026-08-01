@@ -10,7 +10,7 @@
 // the Monitor keep working, because they call the labels — and every cartridge
 // ever shipped breaks.
 //
-// The table is 85 slots, not 51. The 51 published ones are followed by 34
+// The table is 85 slots, not 53. The 53 published ones are followed by 32
 // reserved slots that all jump to a bare `rts`, and one pad byte, filling
 // $A000-$A0FF exactly. That padding is not decoration: it is the mechanism that
 // makes "stable across BIOS versions" true, because a new entry point appends
@@ -27,8 +27,8 @@ export const name = 'the jump table is 85 three-byte JMP slots filling exactly o
 const TABLE_START = 0xa000
 const TABLE_END = 0xa100 // exclusive
 const SLOT_SIZE = 3
-const PUBLISHED = 51 // $A000..$A096 — the README's table
-const RESERVED = 34 // $A099..$A0FE — `jmp UnimplementedStub`
+const PUBLISHED = 53 // $A000..$A09C — the README's table
+const RESERVED = 32 // $A09F..$A0FE — `jmp UnimplementedStub`
 const SLOTS = PUBLISHED + RESERVED
 
 const hex = (n) => `$${n.toString(16).toUpperCase().padStart(4, '0')}`

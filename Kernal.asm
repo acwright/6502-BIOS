@@ -89,9 +89,12 @@ FsPrintDisk:    jmp FsPrintDiskImpl     ; $A08D - Print "DISK n" + CRLF via Chro
 PrintStr:       jmp PrintStrImpl        ; $A090 - Print NUL-terminated string (A=lo, Y=hi); clobbers A,Y,STR_PTR
 PrintCRLF:      jmp PrintCRLFImpl       ; $A093 - Print CR+LF
 PrintDecU16:    jmp PrintDecU16Impl     ; $A096 - Print unsigned 16-bit decimal (A=lo, X=hi), no leading zeros
+; --- Keyboard encoder control (raw port access) ---
+KBDisable:      jmp KBDisableImpl       ; $A099 - Release both encoders and settle; ports free for raw read
+KBEnable:       jmp KBEnableImpl        ; $A09C - Re-enable both encoders
 
-; Reserved entries ($A099-$A0FE)
-.repeat 34
+; Reserved entries ($A09F-$A0FE)
+.repeat 32
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -1161,58 +1164,61 @@ VideoSetColorImpl:
 @VideoSetColorNone:
   rts
 
-; KBDisable — Disable both keyboard encoders for raw port access
-; Sets CB2 high (disable matrix encoder) and CA2 high (disable PS/2 encoder)
+; Encoder settle count for KBDisableImpl. Each loop iteration is 5 cycles, so
+; the busy-wait is ~KB_SETTLE_COUNT*5 cycles. Sized against the 2 MHz clock
+; option (the worst case): 80 => ~400 cycles => ~200 us @ 2 MHz (~400 us @ 1 MHz),
+; comfortably above the firmware's guaranteed 100 us release ceiling.
+KB_SETTLE_COUNT = 80
+
+; KBDisable — Disable both keyboard encoders and wait for them to release the ports
+; Sets CB2/CA2 high, then busy-waits so the encoder firmware has time to let go of
+; both ports before the caller reads them. Self-contained cycle loop — deliberately
+; not SysDelay or the VIA T1 path, so it is safe to call while the caller owns the timers.
 ; Modifies: Flags, A
-KBDisable:
+KBDisableImpl:
   lda #(GPIO_PCR_CB2_HI | GPIO_PCR_CB1_NEG | GPIO_PCR_CA2_HI | GPIO_PCR_CA1_NEG)
-  sta GPIO_PCR
+  sta GPIO_PCR                  ; Tell both encoders to release the ports
+  txa
+  pha                           ; Preserve X so the contract stays "Modifies: Flags, A"
+  ldx #KB_SETTLE_COUNT
+@KBSettle:
+  dex
+  bne @KBSettle                 ; Give the encoders time to go high-impedance
+  pla
+  tax
   rts
 
 ; KBEnable — Re-enable both keyboard encoders
 ; Sets CB2 low (enable matrix encoder) and CA2 low (enable PS/2 encoder)
 ; Modifies: Flags, A
-KBEnable:
+KBEnableImpl:
   lda #(GPIO_PCR_CB2_LO | GPIO_PCR_CB1_NEG | GPIO_PCR_CA2_LO | GPIO_PCR_CA1_NEG)
   sta GPIO_PCR
   rts
 
 ; ReadJoystick1 — Read joystick 1 on Port B
-; Temporarily disables matrix keyboard encoder (CB2 high) to read raw port data
-; Output: A = joystick bitmask (bits: R-L-D-U-Y-X-B-A)
-; Modifies: Flags, A, X
+; Disables both encoders, waits for release, then reads the raw port directly —
+; the same way a C64 reads a CIA port. No sei/PCR save-restore is needed: the port
+; is static while the encoders are off and no interrupt handler touches these ports.
+; Output: A = joystick bitmask (active-low bits: R-L-D-U-Y-X-B-A)
+; Modifies: Flags, A
 ReadJoystick1Impl:
-  sei                           ; Disable interrupts during raw port read
-  lda GPIO_PCR
-  pha                           ; Save current PCR state
-  ; Set CB2 high to disable matrix encoder, preserve CA2 state
-  lda #(GPIO_PCR_CB2_HI | GPIO_PCR_CB1_NEG | GPIO_PCR_CA2_LO | GPIO_PCR_CA1_NEG)
-  sta GPIO_PCR
-  lda GPIO_PORTB                ; Read raw joystick data from Port B
-  tax                           ; Save result in X
-  pla                           ; Restore original PCR state
-  sta GPIO_PCR
-  txa                           ; Return result in A
-  cli                           ; Re-enable interrupts
+  jsr KBDisableImpl             ; Encoders off, ports released, settled
+  lda GPIO_PORTB                ; JOY(1) - raw Port B
+  pha
+  jsr KBEnableImpl
+  pla
   rts
 
 ; ReadJoystick2 — Read joystick 2 on Port A
-; Temporarily disables PS/2 keyboard encoder (CA2 high) to read raw port data
-; Output: A = joystick bitmask (bits: R-L-D-U-Y-X-B-A)
-; Modifies: Flags, A, X
+; Output: A = joystick bitmask (active-low bits: R-L-D-U-Y-X-B-A)
+; Modifies: Flags, A
 ReadJoystick2Impl:
-  sei                           ; Disable interrupts during raw port read
-  lda GPIO_PCR
-  pha                           ; Save current PCR state
-  ; Set CA2 high to disable PS/2 encoder, preserve CB2 state
-  lda #(GPIO_PCR_CB2_LO | GPIO_PCR_CB1_NEG | GPIO_PCR_CA2_HI | GPIO_PCR_CA1_NEG)
-  sta GPIO_PCR
-  lda GPIO_PORTA                ; Read raw joystick data from Port A
-  tax                           ; Save result in X
-  pla                           ; Restore original PCR state
-  sta GPIO_PCR
-  txa                           ; Return result in A
-  cli                           ; Re-enable interrupts
+  jsr KBDisableImpl             ; Encoders off, ports released, settled
+  lda GPIO_PORTA                ; JOY(2) - raw Port A
+  pha
+  jsr KBEnableImpl
+  pla
   rts
 
 ; === BCD Conversion Helpers ===
@@ -3050,7 +3056,7 @@ Splash:
   sta STR_PTR + 1
   jsr VideoPrintStrImpl
   rts
-@SplashTitle: .asciiz "-- 6502 BIOS v1.4 --"
+@SplashTitle: .asciiz "-- 6502 BIOS v1.5 --"
 @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler

@@ -37,6 +37,17 @@ export async function run(m) {
   m.assertByte(await joyValue(m, 2), 0x00, 'JOY(2) with everything held')
   m.assertByte(await joyValue(m, 1), 0xFF, 'JOY(1) after being released')
 
+  // Both sticks held at once, with different buttons. This is the case the
+  // abandoned control-byte protocol could not do and the reason JOY now reads
+  // the raw port: each JOY() runs its own disable/settle/read/enable, so the two
+  // reads must see their own stick even while the other is also grounding lines.
+  await m.joystick(PORT[1], ['left', 'a'])
+  await m.joystick(PORT[2], ['down', 'x'])
+  m.assertByte(await joyValue(m, 1), held('left', 'a'), 'JOY(1) with both sticks held')
+  m.assertByte(await joyValue(m, 2), held('down', 'x'), 'JOY(2) with both sticks held')
+  await m.joystick(PORT[1], [])
+  await m.joystick(PORT[2], [])
+
   // Each line on its own, which is the assertion that actually pins the order:
   // a rotated or mirrored mapping passes the combined cases above and fails
   // here on the first button whose bit moved.

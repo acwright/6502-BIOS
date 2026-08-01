@@ -49,5 +49,7 @@
   "$A08D": "FsPrintDisk",
   "$A090": "PrintStr",
   "$A093": "PrintCRLF",
-  "$A096": "PrintDecU16"
+  "$A096": "PrintDecU16",
+  "$A099": "KBDisable",
+  "$A09C": "KBEnable"
 }

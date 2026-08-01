@@ -25,7 +25,7 @@ The probe-and-boot sequence is:
 8. **Splash screen** — displayed on the active console:
 
 ```
-  -- 6502 BIOS v1.4 --
+  -- 6502 BIOS v1.5 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
@@ -298,6 +298,14 @@ Bit:  7   6   5   4   3   2   1   0
       R   L   D   U   Y   X   B   A
 ```
 
+The joysticks share the VIA's two ports with the keyboard encoders, so a read cannot happen until the encoders let go of the lines. Each read therefore runs a fixed sequence:
+
+1. `KBDisable` (`$A099`) raises `CB2`/`CA2` to tell both encoders to release the ports, then busy-waits ~200 µs so they have time to go high-impedance.
+2. The 6502 reads the raw port directly — `GPIO_PORTB` for joystick 1, `GPIO_PORTA` for joystick 2.
+3. `KBEnable` (`$A09C`) lowers `CB2`/`CA2` to hand the ports back to the encoders.
+
+The keyboard is briefly offline for the duration — roughly 200 µs per read — but the encoders buffer PS/2 and matrix keystrokes across the gap and resume their scan where they left off, so nothing is dropped. Because both ports are released together, both sticks can be read in a single disable/enable window: a caller that wants both at once should bracket two raw reads with its own `KBDisable`/`KBEnable` rather than paying the settle twice. This is exactly what `JOY()` in BASIC does, one stick at a time.
+
 ### CompactFlash Storage
 
 A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The card is divided into up to **256 disk banks** of 1 MB each (2048 sectors × 512 bytes), giving a maximum usable capacity of **256 MB**. The current disk bank is selected with `DISK n` in BASIC or `#NN` in the Monitor, and resets to 0 (disk 0) on power-on or reset.
@@ -412,6 +420,8 @@ The table is a fixed 256 bytes: the 51 published slots below, then 34 reserved s
 | `$A090` | `PrintStr` | Print a NUL-terminated string via `Chrout`: `A`=lo, `Y`=hi (address) |
 | `$A093` | `PrintCRLF` | Print CR+LF via `Chrout` |
 | `$A096` | `PrintDecU16` | Print an unsigned 16-bit value as decimal, no leading zeros: `A`=lo, `X`=hi |
+| `$A099` | `KBDisable` | Disable both keyboard encoders and wait for them to release the ports (~200 µs). Modifies `A`, flags |
+| `$A09C` | `KBEnable` | Re-enable both keyboard encoders. Modifies `A`, flags |
 
 ### Cartridge Support
 

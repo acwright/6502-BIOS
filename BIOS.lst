@@ -1,4 +1,4 @@
-ca65 V2.19 - Git 0fca83500
+ca65 V2.19 - Git 547d92358
 Main file   : BIOS.asm
 Current file: BIOS.asm
 
@@ -169,8 +169,13 @@ Current file: BIOS.asm
 000000r 2               BIOS_VERSION_MAJOR  = 1
 000000r 2               BIOS_VERSION_MINOR  = 5
 000000r 2               
-000000r 2               ; User Vars
-000000r 2               USER_VARS           := $0400             ; $0400-$07FF
+000000r 2               ; NOT user memory, despite the name -- kept only because Wozmon builds its input
+000000r 2               ; buffer on it.  Every byte of $0400-$07FF belongs to something: $0400 is
+000000r 2               ; BAS_LINBUF (the raw input line), $0500 is BAS_TOKBUF (tokenizing scratch), and
+000000r 2               ; $0600-$07FF is FS_SECTOR_BUF, which any filesystem call overwrites.  A program
+000000r 2               ; wanting scratch space has $003A-$00FF in zero page and everything above itself
+000000r 2               ; up to MEMORY_TOP.
+000000r 2               USER_VARS           := $0400             ; $0400-$07FF - see above; Wozmon's input buffer
 000000r 2               
 000000r 2               ; Program
 000000r 2               PROGRAM_START       := $0800             ; $0800-$7FFF
@@ -3418,7 +3423,9 @@ Current file: BIOS.asm
 001104r 2  85 03          sta STR_PTR + 1
 001106r 2  20 rr rr       jsr VideoPrintStrImpl
 001109r 2  60             rts
-00110Ar 2  2D 2D 20 36  @SplashTitle: .asciiz "-- 6502 BIOS v1.5 --"
+00110Ar 2               ; Built from the version equates rather than typed, so the splash and
+00110Ar 2               ; KernalVersion ($A07B) cannot disagree about which ROM this is.
+00110Ar 2  2D 2D 20 36  @SplashTitle: .asciiz .sprintf("-- 6502 BIOS v%d.%d --", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR)
 00110Er 2  35 30 32 20  
 001112r 2  42 49 4F 53  
 00111Fr 2  45 4E 54 45  @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"

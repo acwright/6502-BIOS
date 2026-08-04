@@ -3056,7 +3056,9 @@ Splash:
   sta STR_PTR + 1
   jsr VideoPrintStrImpl
   rts
-@SplashTitle: .asciiz "-- 6502 BIOS v1.5 --"
+; Built from the version equates rather than typed, so the splash and
+; KernalVersion ($A07B) cannot disagree about which ROM this is.
+@SplashTitle: .asciiz .sprintf("-- 6502 BIOS v%d.%d --", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR)
 @SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler

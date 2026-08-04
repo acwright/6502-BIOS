@@ -134,8 +134,13 @@ XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (
 BIOS_VERSION_MAJOR  = 1
 BIOS_VERSION_MINOR  = 5
 
-; User Vars
-USER_VARS           := $0400             ; $0400-$07FF
+; NOT user memory, despite the name -- kept only because Wozmon builds its input
+; buffer on it.  Every byte of $0400-$07FF belongs to something: $0400 is
+; BAS_LINBUF (the raw input line), $0500 is BAS_TOKBUF (tokenizing scratch), and
+; $0600-$07FF is FS_SECTOR_BUF, which any filesystem call overwrites.  A program
+; wanting scratch space has $003A-$00FF in zero page and everything above itself
+; up to MEMORY_TOP.
+USER_VARS           := $0400             ; $0400-$07FF - see above; Wozmon's input buffer
 
 ; Program
 PROGRAM_START       := $0800             ; $0800-$7FFF

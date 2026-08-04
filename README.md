@@ -3,6 +3,11 @@
 
 [![CI](https://github.com/acwright/6502-BIOS/actions/workflows/ci.yml/badge.svg)](https://github.com/acwright/6502-BIOS/actions/workflows/ci.yml)
 
+> 📖 **Guide:** [AC6502 Documentation](https://acwright.github.io/6502-DOCS/) — the user's and programmer's guide for the whole family.
+> The tutorial half of what this README specifies lives there: [BASIC](https://acwright.github.io/6502-DOCS/basic/),
+> [assembly and the Kernal API](https://acwright.github.io/6502-DOCS/assembly/), and
+> [the Monitor](https://acwright.github.io/6502-DOCS/using/monitor).
+
 ## Overview
 
 BIOS is the firmware ROM for the [A.C. Wright 6502](https://github.com/acwright/6502-ACE) family of computer systems. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
@@ -66,9 +71,11 @@ The two silent rows are silent because a screen and a speaker have nothing to re
 
 ### BASIC
 
-A full interactive floating-point BASIC interpreter is included, with a feature surface comparable to Microsoft 6502 BASIC. Programs are typed line-numbered and executed with `RUN`. Numeric variables are single-letter (`A`–`Z`) holding 5-byte (40-bit) floating-point values; string variables are `A$`–`Z$`. Each name can additionally be dimensioned as a 1-D array via `DIM`. Multiple statements per line are separated by `:`.
+A full interactive floating-point BASIC interpreter is included, with a feature surface comparable to Microsoft 6502 BASIC. Programs are typed line-numbered and executed with `RUN`. Numeric variables hold 5-byte (40-bit) floating-point values; a `$` suffix makes the name a string variable. Each name can additionally be dimensioned as a 1-D array via `DIM`. Multiple statements per line are separated by `:`.
 
-> **Numeric range:** ~±1.7 × 10³⁸, six significant digits. Numbers print with a leading-space sign convention (positive numbers prefixed by a space, negative by `-`). Boolean expressions evaluate to `-1` (true) or `0` (false).
+> **Variable names:** any length, letters and digits, but **only the first two characters are significant** — the usual Microsoft BASIC rule. `COUNT` and `COURSE` are the same variable (`CO`), and `PRINT COUNT` after `COUNT = 7 : COURSE = 9` prints `9`. A name may not contain a keyword: `SCORE` will not parse, because it contains `OR`.
+
+> **Numeric range:** ~±1.7 × 10³⁸, **nine significant digits** (`PRINT 1 / 3` gives ` .333333333`, `PRINT SQR(2)` gives ` 1.41421356`). Numbers print with a leading-space sign convention (positive numbers prefixed by a space, negative by `-`). Boolean expressions evaluate to `-1` (true) or `0` (false).
 
 **Core Statements**
 
@@ -81,8 +88,8 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `GOSUB` | `GOSUB linenum` | Push current position and jump. Nesting is bounded by the 6502 stack, which the frames share with the interpreter's own working space — at least 20 levels are available whatever the subroutine does, and about 27 for a simple one. Exceeding the space raises `OUT OF MEMORY` |
 | `RETURN` | `RETURN` | Pop the GOSUB stack and resume after the calling `GOSUB` |
 | `IF` | `IF expr THEN stmt [ELSE stmt]` | Execute THEN branch if `expr` non-zero, else (if present) the ELSE branch. `THEN linenum` is shorthand for `THEN GOTO linenum`, and `ELSE linenum` for `ELSE GOTO linenum` |
-| `FOR` | `FOR var = init TO limit [STEP step]` | Counted loop. Default step is `1`. Up to 8 nested loops. The limit is tested at `NEXT`, as in Microsoft 6502 BASIC, so the body always runs at least once — `FOR I = 5 TO 1` runs once and leaves `I` at 6 |
-| `NEXT` | `NEXT [var [, var ...]]` | Increment loop variable and branch back to matching `FOR` if condition holds |
+| `FOR` | `FOR var = init TO limit [STEP step]` | Counted loop. Default step is `1`. Nests 14 deep — see **Stack limits** below. The limit is tested at `NEXT`, as in Microsoft 6502 BASIC, so the body always runs at least once — `FOR I = 5 TO 1` runs once and leaves `I` at 6 |
+| `NEXT` | `NEXT [var]` | Increment loop variable and branch back to matching `FOR` if condition holds. **One variable only** — the comma form `NEXT J, I` is not accepted and fails at runtime with `?NEXT WITHOUT FOR ERROR` at the comma |
 | `REM` | `REM [text]` | Comment — rest of line is ignored |
 | `END` | `END` | Stop execution and return to `OK`. Variables preserved |
 | `STOP` | `STOP` | Stop and print `BREAK IN nnnn`. Resume with `CONT` |
@@ -229,7 +236,9 @@ Two rules for `.prg` files:
 | Logical AND | `AND` |
 | Logical OR | `OR` |
 
-> **Stack limits:** GOSUB and FOR/NEXT frames both live on the 6502 stack, which they share with the interpreter's own working space. At least 20 GOSUB levels are available whatever the subroutine does, and about 27 for a simple one; FOR/NEXT supports up to 8 nested loops. Exceeding either limit produces an `OUT OF MEMORY` error.
+> **Stack limits:** GOSUB and FOR/NEXT frames both live on the 6502 stack, which they share with the interpreter's own working space. At least 20 GOSUB levels are available whatever the subroutine does, and about 27 for a simple one; exceeding that raises `OUT OF MEMORY`, because `BasCmdGosub` checks the stack pointer against `GOSUB_STACK_MIN` before it pushes.
+>
+> **`FOR` has no such guard, and fails differently.** A `FOR` frame is 18 bytes (`TXTPTR`, `CURLIN`, the 5-byte limit, the step sign, the 5-byte step, the variable address, and the `$81` tag), so 14 of them fill page 1. `BasCmdFor` pushes without testing the stack pointer, so the 15th frame overwrites the bottom of the stack instead of raising an error — and the failure surfaces later, at the matching `NEXT`, as **`?NEXT WITHOUT FOR ERROR`**. Fourteen levels of nesting is the working ceiling at the top level of a program, and less inside a `GOSUB`, which shares the same 256 bytes.
 
 > **Memory layout:** Programs grow up from `$0800`. Numeric/string scalar variables follow the program, then arrays, then the string heap which grows down from `$8000`. `MEM` and the cold-boot banner report `MEMSIZ - VARTAB` (free bytes for variables, arrays, and strings combined).
 
@@ -352,12 +361,15 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | Range | Size | Purpose |
 |-------|------|---------|
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
-| `$0100–$01FF` | 256B | CPU stack |
+| `$0100–$01FF` | 256B | CPU stack — and therefore BASIC's `GOSUB` and `FOR` frames, which are pushed onto it |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
 | `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime) |
-| `$0400–$05FF` | 512B | BASIC line-input buffer, GOSUB stack, FOR stack |
-| `$0600–$07FF` | 512B | CompactFlash sector buffer (overlaps user RAM during `LOAD`/`SAVE`/`DIR`/`DEL`) |
+| `$0400–$04FF` | 256B | `BAS_LINBUF` — the raw input line, as typed |
+| `$0500–$05FF` | 256B | `BAS_TOKBUF` — tokenizing scratch |
+| `$0600–$07FF` | 512B | `FS_SECTOR_BUF` — CompactFlash sector buffer, overwritten by **any** filesystem call (`LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT`) |
 | `$0800–$7FFF` | ~31KB | Program text grows up from `$0800`; numeric/string variables follow; arrays then string heap grow down from `$8000` |
+
+> **None of `$0400–$07FF` is free memory**, despite `BIOS.inc` naming `$0400` `USER_VARS` — a legacy name kept only because Wozmon builds its input buffer on it. The free RAM is `$003A–$00FF` in zero page (for a machine-code program that has taken the machine over; not underneath a running BASIC, which uses that space as it interprets) and everything above your program up to `$8000`.
 
 ---
 
@@ -475,9 +487,31 @@ In practice, **Pattern A is recommended** for most cartridges.
 - **Kernal jump table** (`$A000–$A0FF`) — all entries remain stable across BIOS versions
 - **`HW_PRESENT`** (`$030D`) — read after `KernalInit` to discover installed hardware
 - **`KernalVersion`** (`$A07B`) — check BIOS compatibility (`A`=major, `X`=minor)
-- **RAM vectors** — `IRQ_PTR` (`$0300`), `BRK_PTR` (`$0302`), `NMI_PTR` (`$0304`) can be overwritten to install custom interrupt handlers
+- **RAM vectors** — `IRQ_PTR` (`$0300`), `BRK_PTR` (`$0302`), `NMI_PTR` (`$0304`) can be overwritten to install custom interrupt handlers. **A handler that chains to the Kernal's must not leave anything on the stack** — see below
 - **`IO_MODE`** (`$0306`) — set via `SetIOMode` (`$A00F`) to route console output
 - **No-console safe** — `KernalInit` does not halt if neither video nor serial is detected, allowing cartridges with their own display hardware to boot normally
+
+#### Chaining an IRQ Handler
+
+`IRQ_PTR` can be pointed at your own handler, which then chains to the Kernal's by jumping to the address it replaced. That works, but it carries a constraint nothing else in this README implies:
+
+**A chained handler must leave the stack exactly as the CPU left it.**
+
+The Kernal's `Irq` pushes A, Y and X, then decides whether it was entered by `BRK` or by hardware:
+
+```asm
+Irq:
+  pha
+  phy
+  phx
+  tsx
+  lda $104,x            ; the saved P, at a fixed depth past the three pushes
+  and #$10              ; B flag — set by BRK, clear by a hardware IRQ
+```
+
+That `$104,x` is an absolute offset, not a search. A handler in front of the Kernal's that pushes anything — even one byte it means to pull back after the chain — shifts the read onto the wrong byte, and the Kernal then services a hardware interrupt as a `BRK` or the reverse.
+
+So a chained handler either touches no register at all (`inc`, `dec` and `stz` on absolute addresses do useful work without one), or saves and restores everything it used *before* the `jmp`. The alternative is to replace the vector outright and end in `rti`, taking on the keyboard and serial servicing yourself.
 
 A template project for creating cartridges for the A.C. Wright 6502 system is available here: [https://github.com/acwright/6502-CRT](https://github.com/acwright/6502-CRT).
 
@@ -571,7 +605,7 @@ make clean
 - [cffs](https://github.com/acwright/cffs) — builds CompactFlash images for the filesystem described above
 - [bastok](https://github.com/acwright/bastok) — tokenizes BASIC listings into `.prg` images
 - [bin2woz](https://github.com/acwright/bin2woz) — converts a binary into a paste-able upload for the Wozmon at `$FF00`
-- [6502-ASSETS](https://github.com/acwright/6502-ASSETS) — documentation, memory-map and character-set references
+- [6502-DOCS](https://github.com/acwright/6502-DOCS) — the documentation site: the guide, the printable reference cards, and the memory-map and character-set references
 
 ## License
 

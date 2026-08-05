@@ -22,12 +22,14 @@ concurrency:
 # business. It stays a tag rather than `main` for the same reason it always
 # was: CI should see the emulator a developer sees, so an `xfail` that is stale
 # here is stale there too. The pin moves when a release the suite needs goes
-# out — v2.4.1 carries the BRK and joystick fixes that phase 8 shipped, and the
-# two cases blocked on them are no longer marked.
+# out — v2.6.0 is the one that reads the DS1511Y's TE bit the way the datasheet
+# does, and the case asserting the clock still runs after SETTIME needs it. On
+# v2.5.1 and earlier the emulator carried the same inversion the ROM did, so a
+# correct ROM looks like a stopped clock there.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v2.4.1
+  EMULATOR_REF: v2.6.0
 
 jobs:
   test:

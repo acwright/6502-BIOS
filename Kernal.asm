@@ -1269,20 +1269,78 @@ BinToBcd:
 
 ; === DS1511Y RTC Routines ===
 
+; The clock registers at $8800-$8807 are double buffered.  A set of internal
+; counters does the actual timekeeping; what the CPU reads and writes is a
+; user-facing copy, and the TE bit in Control Register B decides how the two
+; are joined:
+;
+;   TE = 1  the counters are copied into the user registers once a second —
+;           the normal running state, and what makes a read see time advance
+;   TE = 0  that copy is inhibited, so the user registers hold one consistent
+;           instant.  Returning TE to 1 transfers the user registers back into
+;           the counters, which is how a write takes effect
+;
+; So a write brackets itself with RtcFreeze / RtcThaw, keeping the per-second
+; update from landing in the middle of the bytes being set and then committing
+; the lot.  Leaving TE set afterwards is not housekeeping, it is the whole
+; point: TE is battery-backed and no internal function of the part ever changes
+; it, so a TE left at 0 freezes the CPU's view of the clock indefinitely — the
+; counters go on counting, but every read returns the same instant, across
+; resets and power cycles alike, until something sets TE again.
+;
+; A read has a rollover to worry about — read the hour at 23:59:59 and the
+; minute a moment later and the answer is 23:00, an hour that never happened —
+; but it deliberately does not use TE for it.  Freezing would work, and is what
+; the part is for, except that the thaw both commits the user registers back
+; into the counters and restarts the second from zero; a program polling the
+; time in a loop would thereby hold the clock still.  Reading the seconds on
+; either side of the other registers and retrying if they differ costs nothing
+; and writes nothing.
+
+; RtcFreeze — Clear TE, holding the user registers at one instant
+; Modifies: Flags, A
+RtcFreeze:
+  lda RTC_CTRL_B
+  and #<~RTC_CTRL_B_TE
+  sta RTC_CTRL_B
+  rts
+
+; RtcThaw — Set TE, committing the user registers and resuming the updates
+; Modifies: Flags, A
+RtcThaw:
+  lda RTC_CTRL_B
+  ora #RTC_CTRL_B_TE
+  sta RTC_CTRL_B
+  rts
+
 ; RtcReadTime — Read current time from DS1511Y
 ; Output: A = hours (binary), X = minutes (binary), Y = seconds (binary)
 ; Modifies: Flags
 RtcReadTimeImpl:
-  lda RTC_HR
-  jsr BcdToBin
-  pha                           ; Save hours
-  lda RTC_MIN
+  ldy #2                        ; Attempts.  One retry is all a working clock
+@Retry:                         ;   can need — a rollover cannot happen twice
+  lda RTC_SEC                   ;   in the same second — and the count is what
+  sta RTC_TMP                   ;   keeps a floating bus, on a machine with no
+  lda RTC_HR                    ;   card, from spinning here forever
+  pha                           ; Stacked raw: the seconds have to be compared
+  lda RTC_MIN                   ;   before BcdToBin, which wants RTC_TMP itself
+  pha
+  lda RTC_SEC                   ; Seconds after; unchanged means no rollover
+  cmp RTC_TMP                   ;   happened between the two reads above
+  beq @Stable
+  dey
+  beq @Stable                   ; Out of attempts: take what is there
+  pla                           ; Torn — drop the pair and read again
+  pla
+  bra @Retry
+@Stable:
+  jsr BcdToBin                  ; A still holds the seconds
+  tay                           ; Y = seconds
+  pla
   jsr BcdToBin
   tax                           ; X = minutes
-  lda RTC_SEC
-  jsr BcdToBin
-  tay                           ; Y = seconds
-  pla                           ; A = hours
+  pla
+  jsr BcdToBin                  ; A = hours
   rts
 
 ; RtcReadDate — Read current date from DS1511Y
@@ -1290,17 +1348,40 @@ RtcReadTimeImpl:
 ;         RTC_BUF_CENT = century (binary)
 ; Modifies: Flags
 RtcReadDateImpl:
+  ldy #2                        ; Attempts, bounded as in RtcReadTime
+@Retry:
+  lda RTC_SEC                   ; The date rolls over on a second like anything
+  sta RTC_TMP                   ;   else, so it is guarded the same way
+  lda RTC_DATE                  ; Pushed in reverse of the order they are
+  pha                           ;   wanted, so the day of month comes off last
+  lda RTC_YR                    ;   and is already in A to return
+  pha
+  lda RTC_MON
+  pha
   lda RTC_CENT
+  pha
+  lda RTC_SEC
+  cmp RTC_TMP
+  beq @Stable
+  dey
+  beq @Stable                   ; Out of attempts: take what is there
+  pla                           ; Torn — drop the four and read again
+  pla
+  pla
+  pla
+  bra @Retry
+@Stable:
+  pla
   jsr BcdToBin
   sta RTC_BUF_CENT              ; Store century in buffer
-  lda RTC_MON
+  pla
   and #RTC_MON_MASK             ; Strip control bits (EOSC/E32K/BB32) before BCD decode
   jsr BcdToBin
   tax                           ; X = month
-  lda RTC_YR
+  pla
   jsr BcdToBin
   tay                           ; Y = year
-  lda RTC_DATE
+  pla
   jsr BcdToBin                  ; A = day of month
   rts
 
@@ -1311,10 +1392,7 @@ RtcWriteTimeImpl:
   pha                           ; Save hours
   phx                           ; Save minutes
   phy                           ; Save seconds
-  ; Set TE bit to inhibit update transfers
-  lda RTC_CTRL_B
-  ora #RTC_CTRL_B_TE
-  sta RTC_CTRL_B
+  jsr RtcFreeze                 ; Hold off the once-a-second update
   ; Write seconds
   pla                           ; A = seconds
   jsr BinToBcd
@@ -1327,11 +1405,7 @@ RtcWriteTimeImpl:
   pla                           ; A = hours
   jsr BinToBcd
   sta RTC_HR
-  ; Clear TE bit to resume updates
-  lda RTC_CTRL_B
-  and #<~RTC_CTRL_B_TE
-  sta RTC_CTRL_B
-  rts
+  jmp RtcThaw                   ; Commit the write and resume the updates
 
 ; RtcWriteDate — Set DS1511Y date
 ; Input: A = day of month (binary), X = month (binary), Y = year (binary)
@@ -1341,10 +1415,7 @@ RtcWriteDateImpl:
   pha                           ; Save day
   phx                           ; Save month
   phy                           ; Save year
-  ; Set TE bit to inhibit update transfers
-  lda RTC_CTRL_B
-  ora #RTC_CTRL_B_TE
-  sta RTC_CTRL_B
+  jsr RtcFreeze                 ; Hold off the once-a-second update
   ; Write century
   lda RTC_BUF_CENT
   jsr BinToBcd
@@ -1366,11 +1437,7 @@ RtcWriteDateImpl:
   pla                           ; A = day
   jsr BinToBcd
   sta RTC_DATE
-  ; Clear TE bit to resume updates
-  lda RTC_CTRL_B
-  and #<~RTC_CTRL_B_TE
-  sta RTC_CTRL_B
-  rts
+  jmp RtcThaw                   ; Commit the write and resume the updates
 
 ; RtcReadNVRAM — Read a byte from DS1511Y NVRAM
 ; Input: X = NVRAM address ($00-$FF)
@@ -1602,10 +1669,17 @@ ProbeRTC:
   ; explicitly disable the square-wave output here. E32K/BB32/EOSC live in the
   ; upper 3 bits of the month register (05H); keep the month value and leave the
   ; oscillator running.
+  ;
+  ; Bracketed like any other clock write, since 05H carries the month as well as
+  ; the control bits. The thaw doubles as a repair: TE is battery-backed, so a
+  ; board whose TE was left at 0 reads a stopped clock forever, and setting it
+  ; here is the only thing that starts the readout moving again.
+  jsr RtcFreeze
   lda RTC_MON
   and #RTC_MON_MASK             ; Keep month value (low 5 bits)
   ora #RTC_MON_E32K             ; E32K=1 → SQW disabled; BB32=0, EOSC=0
   sta RTC_MON
+  jsr RtcThaw
 @ProbeRTCDone:
   pla
   sta RTC_RAM_DATA              ; Restore original value

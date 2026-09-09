@@ -41,3 +41,4 @@ tests/fixtures/*.bin
 
 # AI prompts
 *.prompt.md
+OPTIMIZE.md

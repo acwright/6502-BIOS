@@ -24,20 +24,12 @@ export const MENU_CYCLES = 5000000
 // `expectFrom` takes the pattern's source and applies its own line-anchor
 // translation, so the flag is ignored on that path rather than conflicting.
 export const BASIC_BANNER = /^6502 BASIC V2\.0$/m
-export const MONITOR_BANNER = /^6502 MONITOR v1\.1$/m
 
 // What to wait for, as opposed to what to assert afterwards. BASIC prints its
 // banner and then its free-memory line before the prompt, so a wait that
 // stopped at the banner would return output the rest of the boot had not been
 // printed into yet.
 export const BASIC_READY = /^OK$/m
-
-// The Monitor's entry is banner, `BRK AT $xxxx`, registers, prompt — so the
-// register line is the one to wait on. Waiting on the banner returns output the
-// three lines after it have not been printed into yet, which passes or fails
-// depending on how the host was scheduled.
-export const MONITOR_READY =
-  /^PC=[0-9A-F]{4} A=[0-9A-F]{2} X=[0-9A-F]{2} Y=[0-9A-F]{2} SP=[0-9A-F]{2} [N\-][V\-]-[B\-][D\-][I\-][Z\-][C\-]$/m
 
 // Cold-reset the machine, optionally press one key at the boot menu, and wait
 // for whatever that was supposed to start. Returns the console output and the

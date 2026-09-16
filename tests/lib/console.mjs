@@ -1,15 +1,14 @@
 // Tier 2 — console transcripts.
 //
-// For everything Tier 1 cannot express: the Monitor (which has no way to assert
-// on itself), error messages, prompts, LIST output, immediate-mode behaviour.
+// For everything Tier 1 cannot express: error messages, prompts, LIST output,
+// immediate-mode behaviour.
 //
 // A case is a header block followed by send/expect lines:
 //
-//   mode: monitor
-//   > F 1000 100F AA
-//   > M 1000 1007
-//   ~ ^:1000  AA AA AA AA AA AA AA AA
-//   ! RUNAWAY
+//   > 10 PRINT "HI"
+//   > LIST
+//   ~ ^10 PRINT "HI"$
+//   ! SYNTAX
 //
 //   #        a comment
 //   key: v   a header — mode, name, profile, xfail, issue, selftest, final
@@ -27,7 +26,6 @@ import { escapeRegex } from './basic.mjs'
 
 export const MODES = {
   basic: { prompt: '^OK' },
-  monitor: { prompt: '^\\. ' },
 }
 
 // How much emulated time a negative assertion gives the machine to be wrong in.

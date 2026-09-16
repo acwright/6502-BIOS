@@ -18,7 +18,7 @@
 // The companion cases: splash-renders-on-video for the centred half, and
 // version-agrees-with-splash for the string in the ROM against KernalVersion.
 
-import { coldBoot, BASIC_READY, MONITOR_READY } from '../lib/boot.mjs'
+import { coldBoot, BASIC_READY } from '../lib/boot.mjs'
 
 export const name = 'the boot splash and menu print on a serial console too'
 
@@ -50,10 +50,4 @@ export async function run(m) {
   // the video path — the two renderings must not drift apart.
   const regs = await m.call6502(0xa07b)
   m.assertEqual(title, `-- 6502 BIOS v${regs.A}.${regs.X} --`, 'the splash title')
-
-  // And it is printed before the menu takes a key, not on the way out of it:
-  // ESC arrives during the countdown, so a splash that only printed once the
-  // menu was over would be missing here.
-  const escaped = await coldBoot(m, { key: '\x1b', expect: MONITOR_READY })
-  assertSplash(m, escaped.output, 'booting into the Monitor')
 }

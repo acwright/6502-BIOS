@@ -28,8 +28,7 @@ FINDINGS.md is what the suite has found and not yet resolved.
 One emulator per machine profile, one WebSocket per emulator, one boot per run.
 Every case starts by restoring the snapshot taken at the `OK` prompt — exact, and
 about a millisecond against the 5.36 million cycles a boot costs. Nothing leaks
-between cases, so a case that wedges the machine into the Monitor needs no
-cleanup code at all.
+between cases, so a case that wedges the machine needs no cleanup code at all.
 
 Nothing sleeps. Every wait is a bounded blocking call on the machine's own
 execution cadence, so a run lands identically however fast the host is — with
@@ -82,17 +81,17 @@ what went wrong without a re-run. Exactly one verdict line: a program that print
 
 ### Tier 2 — `console/*.txt`
 
-For what Tier 1 cannot express — the Monitor, error messages, prompts, `LIST`,
-immediate mode. Headers, then send/expect lines:
+For what Tier 1 cannot express — error messages, prompts, `LIST`, immediate
+mode. Headers, then send/expect lines:
 
 ```
-name: the Monitor fills a range and dumps it back
-mode: monitor
+name: LIST prints a line back as it was typed
+profile: serial
 
-> F 1000 100F AA
-> M 1000 100F
-~ ^\.:1000 AA AA AA AA AA AA AA AA
-! ^\.:1010
+> 10 PRINT "HI"
+> LIST
+~ ^10 PRINT "HI"$
+! SYNTAX
 ```
 
 | | |
@@ -104,7 +103,7 @@ mode: monitor
 | `#` | a comment |
 
 Expectations are regexes over console output with `\r` stripped, and `^`/`$`
-anchor to a **line**. Every transcript ends by waiting for its mode's prompt,
+anchor to a **line**. Every transcript ends by waiting for the `OK` prompt,
 which is what catches a case that printed the right text and then wedged.
 
 ### Tier 3 — `probe/*.mjs`
@@ -136,7 +135,7 @@ Set as `# key: value` in a `.bas` header, `key: value` in a `.txt` header, or an
 |---|---|
 | `name` | what the case is called in the report (default: its path) |
 | `profile` | `serial` (default), `video`, or `cf` |
-| `mode` | `basic` (default) or `monitor` — Tier 2 |
+| `mode` | `basic`, the default and the only one — Tier 2 |
 | `hw` | cards to take away — `hw: -cf`, `hw: -sid -rtc`, `hw: -all` |
 | `timeout` | per-step timeout in ms (default 20000) |
 | `final` | Tier 2's closing expectation; `none` to skip it |

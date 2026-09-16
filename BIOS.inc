@@ -23,18 +23,13 @@ CF_BUF_PTR          := $24               ; $24-$25 - CF sector data buffer point
 CF_LBA              := $26               ; $26-$29 - CF 28-bit LBA address (4 bytes, little-endian)
 XFER_PTR            := $2A               ; $2A-$2B - Serial transfer data pointer (2 bytes)
 DELAY_CNT           := $2C               ; $2C-$2D - SysDelay 16-bit centisecond counter
-; Monitor ZP variables ($2E-$35)
-MON_ADDR            := $2E               ; $2E-$2F - Monitor current address (2 bytes)
+; $2E-$35 unassigned
 
 ; XModem ZP variables ($36-$39)
 XMODEM_BLK          := $36               ; $36     - XModem expected/current block number
 XMODEM_CHK          := $37               ; $37     - XModem running checksum
 XMODEM_RETRY        := $38               ; $38     - XModem retry counter
 XMODEM_RCVBLK       := $39               ; $39     - XModem received block number
-MON_END             := $30               ; $30-$31 - Monitor end address (2 bytes)
-MON_TMP             := $32               ; $32-$33 - Monitor temp pointer (2 bytes)
-MON_BYTE            := $34               ; $34     - Monitor parsed byte scratch
-MON_IDX             := $35               ; $35     - Monitor input line index
 
 ; ProgramEnd chain-walk scratch.  Aliases the CF sector pointer / LBA, which are
 ; idle whenever ProgramEnd runs (BASIC cold init or BASIC entry, never with an

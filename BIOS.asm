@@ -4,7 +4,7 @@
 ;
 ;   Role        :  Sets the CPU target, then .include's every segment source
 ;                   below in link order to produce the assembled ROM image.
-;   Segments    :  KERNAL, CHARS, BASIC, MONITOR, WOZMON, VECTORS  (see BIOS.cfg)
+;   Segments    :  KERNAL, CHARS, BASIC, WOZMON, VECTORS  (see BIOS.cfg)
 ;   Assembler   :  ca65  (cc65 toolchain)
 ;   Linker cfg  :  BIOS.cfg
 ;
@@ -16,9 +16,7 @@
 ; RMB/SMB/BBR/BBS but not WAI or STP, which are WDC additions. "W65C02" is that
 ; set plus those two, so this is a pure superset — no instruction already in use
 ; changes encoding, and the ROM is byte-identical until something emits WAI or
-; STP. The Monitor's disassembler already decodes both ($CB, $DB), which is what
-; the README means by "full WDC 65C02 + Rockwell instruction set"; before this
-; the assembler could not have produced what the disassembler could read.
+; STP.
 .setcpu "W65C02"
 
 ; Stated as a requirement rather than left to the line above, so that narrowing
@@ -36,8 +34,6 @@
 .include "Chars.asm"
 .segment "BASIC"
 .include "BASIC.asm"
-.segment "MONITOR"
-.include "Monitor.asm"
 .segment "WOZMON"
 .include "Wozmon.asm"
 .segment "VECTORS"

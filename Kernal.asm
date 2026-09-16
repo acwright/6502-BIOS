@@ -1972,10 +1972,10 @@ StWaitReadyImpl:
   rts                           ;   65536-iteration timeout per sector.  This is
                                 ;   the one guard the whole storage stack needs
                                 ;   — every read, write and directory listing
-                                ;   comes through here first — so the Monitor's
-                                ;   L, S and @ report I/O ERROR on a machine
-                                ;   with an empty slot without each carrying a
-                                ;   presence check of its own.
+                                ;   comes through here first — so a caller on
+                                ;   a machine with an empty slot gets carry set
+                                ;   without carrying a presence check of its
+                                ;   own.
 
 ; StWaitReadyPoll — the same wait without the presence check, for the probe that
 ; establishes presence in the first place.
@@ -3412,7 +3412,7 @@ Splash:
 Nmi:
   rti
 
-; BRK Handler — saves full CPU state and enters monitor
+; BRK Handler — saves full CPU state and warm-starts BASIC
 ; On entry from @IrqBrk: A/X/Y are the user's original values (restored by IRQ handler).
 ; The CPU's hardware push left P/PCL/PCH on the stack.
 Break:
@@ -3427,7 +3427,7 @@ Break:
   sta BRK_PCL
   pla                           ; Pull saved PCH
   sta BRK_PCH
-  jmp MonitorBrkEntry
+  jmp BasEntry                  ; Warm start: the program is kept
 
 ; IRQ Handler
 Irq:

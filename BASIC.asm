@@ -8480,12 +8480,6 @@ BasCmdBank:
         stx     RAM_BANK_L
         rts
 
-; BRK
-BasCmdBrk:
-        brk
-        .byte   0
-        rts
-
 ; POKE addr, val
 ; The value expression is evaluated BEFORE the address is parked in INDEX:
 ; FrmEvl clobbers every zero-page scratch pair (INDEX via LoadFacFromYa,
@@ -8695,7 +8689,7 @@ BasTokenAddrTbl:
         .word   BasCmdNvram-1           ; $B1 NVRAM
         .word   BasCmdPause-1           ; $B2 PAUSE
         .word   BasCmdBank-1            ; $B3 BANK
-        .word   BasCmdBrk-1             ; $B4 BRK
+        .word   SynErr-1                ; $B4 BRK  (retired in 2.0)
         .word   BasCmdMem-1             ; $B5 MEM
 
 ; =============================================================================

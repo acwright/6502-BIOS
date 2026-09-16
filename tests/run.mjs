@@ -274,7 +274,7 @@ class Pool {
         nvram,
         args: spec.args,
       })
-      const entry = { name, spec, machine, ready: null, monitor: null }
+      const entry = { name, spec, machine, ready: null }
       entry.ready = await boot(machine, spec)
       this.#machines.set(name, entry)
       return entry
@@ -309,18 +309,6 @@ async function boot(m, spec) {
   return m.saveState()
 }
 
-// A second snapshot, taken at the Monitor's `.` prompt by the path a user takes:
-// ESC at the boot menu. Built on first use, because most runs never need it.
-async function monitorSnapshot(entry) {
-  if (entry.monitor) return entry.monitor
-  const m = entry.machine
-  await m.reset(true)
-  await m.start()
-  await m.send('\x1b', 'MONITOR', { timeoutMs: 60000 })
-  entry.monitor = await m.saveState()
-  return entry.monitor
-}
-
 // ---------------------------------------------------------------------------
 // Running
 
@@ -352,8 +340,7 @@ async function runCase(pool, testCase) {
   const m = entry.machine
   let outcome
   try {
-    const snapshot = testCase.mode === 'monitor' ? await monitorSnapshot(entry) : entry.ready
-    await m.loadState(snapshot)
+    await m.loadState(entry.ready)
     if (testCase.hwClear) {
       await m.write(HW_PRESENT, [(await m.peek(HW_PRESENT)) & ~testCase.hwClear])
     }

@@ -6,9 +6,11 @@ belongs to is in [VDP-ASSESSMENT.md](VDP-ASSESSMENT.md), Part 1. Everything this
 defines is **ABI that 2.x inherits unchanged**: the six entries, the slot format, `NV_ID` at
 `$0390`, and `NV_PTR` = `STR_PTR`.
 
-Plan only — **no code has been written for this.** Every measurement below comes from the
-committed build (`BIOS.bin`, `BIOS.dbg`) and the current sources, not from estimation, except
-where a figure is explicitly labelled an estimate.
+**Status, 2026-09-16: built and released.** Tag `v1.6` is at `71e1e66`, with a GitHub release,
+and `v1.x` is cut from it. CI is green, with 167 passed. §8 records what was done and what is
+left. The rest of this file is the design as it was settled before any code was written. Its
+measurements came from the v1.5 build (`BIOS.bin`, `BIOS.dbg`) and sources, except where a figure
+is labelled an estimate. Where the build turned out differently, the section says so.
 
 ---
 
@@ -103,7 +105,7 @@ NV_CK_SEED      = $A6       ; Checksum seed
 NV_EMPTY        = 0         ; NvStat: slot is free
 NV_VALID        = 1         ; NvStat: owner ID set, checksum agrees
 NV_BAD          = 2         ; NvStat: owner ID set, checksum does not
-NV_ID          := $0390     ; Owner ID in/out for NvWrite / NvStat
+NV_ID          := $0390     ; Owner ID input for NvWrite
 NV_PTR         := STR_PTR   ; $02-$03 - caller's buffer during a slot copy
 ```
 
@@ -119,7 +121,9 @@ same time, so it costs no new zero page. Callers must treat `STR_PTR` as clobber
 `NvWrite`, exactly as they already must for `PrintStr`.
 
 `NV_ID` sits in the free `$0390-$03FF` region and exists because the 6502 has three registers and
-`NvWrite` needs four arguments. This follows the `FS_IO_ADDR` / `RTC_BUF_CENT` precedent.
+`NvWrite` needs four arguments. **As built, it is input-only:** `NvStat` returns the owner ID in
+`Y`, as §3's table says, and writes nothing to `NV_ID`. The "in/out" in an earlier draft of the
+comment above was not carried into the ABI. This follows the `FS_IO_ADDR` / `RTC_BUF_CENT` precedent.
 
 ---
 
@@ -199,7 +203,8 @@ and a management utility can write it. It is included because a format command i
 partner to a save area, and reserved slots are not scarce.
 
 **Estimated KERNAL cost: ~250 bytes** (about 230 for the routines, plus the flag brackets and
-`X` saves), against 1552 free.
+`X` saves), against 1552 free. **Actual: 314 bytes**, leaving 1230 free. The `ProbeRTC` fix
+(§4.3) took another 8 bytes before that.
 
 ---
 
@@ -323,6 +328,7 @@ the same read-modify-write as everything else touching Control B.
 | [Kernal.asm](Kernal.asm) | six table entries; `.repeat 32` → `.repeat 26`, and its comment `; Reserved entries ($A09F-$A0FE)` → `($A0B1-$A0FE)` (6502-DOCS's extractor reads the reserved range from that comment, so a stale one is published); the header's "85 slots" stays correct; six implementations after `RtcWriteNVRAMImpl`; **the §4.3 BME fix in `ProbeRTC`** |
 | [README.md](README.md) | six jump-table rows; the jump-table count (it says 51 published and 34 reserved from `$A099`, where the source has 53 and 32 from `$A09F` today, and 59 and 26 from `$A0B1` after this); splash sample v1.5 → v1.6; an "NVRAM Save Slots" subsection under Real-Time Clock documenting the format so third-party code can read it |
 | `tests/fixtures/jumptable.json` | six pins — hand-edited, which is the entire point of that file |
+| `tests/probe/the-jump-table-fills-a-page-of-jmp-slots.mjs` | its `PUBLISHED` / `RESERVED` constants, 53/32 → 59/26 (missed by this table when it was drafted; the lockstep below names the case) |
 
 `tests/probe/version-agrees-with-splash.mjs` reads `BIOS_VERSION_*` from `BIOS.inc` and needs no
 edit; the splash string is derived via `.sprintf` at [Kernal.asm:3135](Kernal.asm#L3135).
@@ -408,23 +414,34 @@ slot, and a corrupt one, and the assertions read rather than write.
 ## 8. Order of work
 
 1. ~~Confirm the two §4 datasheet questions.~~ **Done — see §4.**
-2. **The §4.3 `ProbeRTC` BME fix, first and on its own.** It is a pre-existing bug, it is
-   independent of save slots, and it wants its own commit and its own regression test so the fix is
-   legible in history rather than buried inside a feature.
-3. `BIOS.inc` — version bump, the `NV_*` block, `RTC_CTRL_B_BME`.
-4. `Kernal.asm` — table entries and implementations. Build; confirm KERNAL free space and that no
-   existing slot address moved.
-5. `tests/fixtures/jumptable.json` and the README table, together. `make test` green.
-6. The new Tier 3 probes.
-7. README prose: the format subsection, the splash sample, `SAVEMGR.BAS`.
-8. **Release.** Tag `v1.6`, then cut `v1.x` from the tag. Then hand off, in this order of need:
-   - **6502-EMULATOR `main`** bundles the `v1.6` `BIOS.bin` and releases 2.7.0.
+2. ~~**The §4.3 `ProbeRTC` BME fix, first and on its own.**~~ **Done — `57622ff`.** Its
+   regression case was watched to fail on the v1.5 ROM first.
+3. ~~`BIOS.inc` — version bump, the `NV_*` block, `RTC_CTRL_B_BME`.~~
+4. ~~`Kernal.asm` — table entries and implementations.~~
+5. ~~`tests/fixtures/jumptable.json` and the README table, together.~~ **Steps 3–5 done
+   together — `fc54dbb`,** since the lockstep (§5) makes them one green point. No slot
+   address moved. Fifteen slots' *targets* did (`FsLoadFile` onward), because the routines
+   behind them shifted, which is what the table is for.
+6. ~~The new Tier 3 probes.~~ **Done — `b892fbe`.** Each was checked by breaking the ROM
+   eight ways; every break failed a case.
+7. ~~README prose: the format subsection, the splash sample, `SAVEMGR.BAS`.~~ **Done —
+   `71e1e66`,** with a case that types `SAVEMGR.BAS` out of the README and holds it to the ROM.
+   §10's `tests/README.md` fix went in the same commit.
+8. ~~**Release.** Tag `v1.6`, then cut `v1.x` from the tag.~~ **Done.** Then hand off, in this
+   order of need:
+   - **6502-EMULATOR `main`** bundles the `v1.6` `BIOS.bin` and releases 2.7.0. *Planned* in
+     its `VDP-PLAN.md` (on `v3-vdp`), updated for the release.
    - **6502-ASM** adds the `NV_*` equates, `RTC_CTRL_B_BME` and the six entries to the legacy
      `6502.inc`, verified against the `v1.6` build, and copies it to every repo that ships one
-     (6502-C also gets `6502.h` declarations).
-   - **6502-DOCS** documents 1.6 before cutting its frozen `v1`.
+     (6502-C also gets `6502.h` declarations). *Not yet planned.*
+   - **6502-DOCS** documents 1.6 before cutting its frozen `v1`. *Planned* in its
+     `VDP-PLAN.md`, updated for the release.
    - **6502-PICOCALC** embeds the `v1.6` ROM and releases a new UF2, since it is a legacy
-     machine shipping the final legacy BIOS.
+     machine shipping the final legacy BIOS. *Not yet planned.*
+
+   Once emulator 2.7.0 is out, `v1.x`'s `ci.yml` moves its `EMULATOR_REF` to `v2.7.0`. That
+   workflow runs only on pushes to `main` and on pull requests, so 1.x fixes go through PRs
+   into `v1.x`, or `v1.x` is added to its push branches.
 
 Commit at each green point rather than at the end.
 
@@ -458,6 +475,6 @@ lose. 14 bytes still holds a level, a score, lives, and a flag word with room to
 unlike the optimization audit, it is the record of an API being designed, and the reasoning in §4
 and §9 is worth having in history next to the commits that act on it.
 
-Separately: [tests/README.md](tests/README.md) still says "PLAN.md is the map" for the test suite,
+Separately: [tests/README.md](tests/README.md) said "PLAN.md is the map" for the test suite,
 but `tests/PLAN.md` was removed in `621a9b2`. With a root `PLAN.md` now tracked, that sentence
-points a reader at the wrong document. Fix the wording as part of 1.6.
+pointed a reader at the wrong document. **Fixed in `71e1e66`.**

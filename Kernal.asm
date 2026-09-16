@@ -165,9 +165,14 @@ VdpSetReg:
 ; Modifies: Flags, A, X, Y
 VideoClearImpl:
   bit HW_PRESENT                ; Video is bit 7, so BIT tests it in N without
-  bpl @VideoClearNone           ;   disturbing A — these routines take their
-                                ;   argument there.  See the note above
+  bmi @VideoClearFitted         ;   disturbing A — these routines take their
+  rts                           ;   argument there.  See the note above
                                 ;   HW_PRESENT's bit definitions in BIOS.inc.
+@VideoClearFitted:
+  lda VID_MODE                  ; First use since KernalInit: bring the console
+  bne VideoClearNow             ;   up, and then this is the clear it needs
+  jsr InitVideoImpl
+VideoClearNow:
   lda #$40                      ; Name table, $0000, write
   ldx #$20
   jsr @Fill
@@ -183,7 +188,6 @@ VideoClearImpl:
   stz VID_CURSOR_Y
   stz VID_CURSOR_ADDR
   stz VID_CURSOR_ADDR + 1
-@VideoClearNone:
   rts
 @Fill:                          ; A = address command high byte, X = fill value
   stz VC_REG                    ; Low byte of the address
@@ -213,6 +217,7 @@ VideoClearImpl:
 VideoSetCursorImpl:
   bit HW_PRESENT                ; Video is bit 7 — see VideoClear
   bpl @VideoSetCursorNone
+  jsr VideoConsoleReady
   stx VID_CURSOR_X
   sty VID_CURSOR_Y
   tya                           ; Screen row to name-table row:
@@ -229,6 +234,31 @@ VideoSetCursorImpl:
   bcc @VideoSetCursorNone
   inc VID_CURSOR_ADDR + 1
 @VideoSetCursorNone:
+  rts
+
+; VideoConsoleReady — Bring the Text console up on its first use
+; KernalInit leaves the card in the legacy submode it resets to (VID_MODE = $00),
+; so that a cartridge programming M1/M2/M3 itself sees what it saw on 1.x.  The
+; console entries call this first: if the card is fitted and VID_MODE is still
+; $00, InitVideo + VideoClear.  Only $00 triggers it, so a program that switched
+; to another mode and then prints is not reset behind its back.
+; Preserves: A, X, Y
+; Modifies: Flags
+VideoConsoleReady:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VideoConsoleNone
+  pha
+  lda VID_MODE
+  bne @VideoConsoleUp
+  phx
+  phy
+  jsr InitVideoImpl             ; Sets VID_MODE = $01, so no recursion
+  jsr VideoClearNow
+  ply
+  plx
+@VideoConsoleUp:
+  pla
+@VideoConsoleNone:
   rts
 
 ; VideoRowAddr — VID_CURSOR_ADDR = A * 40, for a name-table row 0-23
@@ -256,6 +286,7 @@ VideoRowAddr:
 ; Output: X = column (0-39), Y = row (0-23)
 ; Modifies: Flags
 VideoGetCursorImpl:
+  jsr VideoConsoleReady
   ldx VID_CURSOR_X
   ldy VID_CURSOR_Y
   rts
@@ -340,6 +371,7 @@ VideoScrollImpl:
 ; Preserves: A, X, Y (callers like ChrinImpl, BasPrintStr and Wozmon depend on this)
 ; Modifies: Flags
 VideoChroutImpl:
+  jsr VideoConsoleReady
   pha
   phx
   phy
@@ -437,6 +469,7 @@ VideoChroutImpl:
 ; Preserves: A, X, Y
 ; Modifies: Flags
 VideoChroutRawImpl:
+  jsr VideoConsoleReady
   pha
   phx
   phy
@@ -556,11 +589,22 @@ KernalInitImpl:
   jsr InitSIDImpl
 @SkipSID:
 
+  stz VID_MODE                  ; No console set up since KernalInit
+  stz VID_TOP
   jsr ProbeVideo                ; Sets HW_VID if present
-  lda HW_PRESENT
-  and #HW_VID
-  beq @SkipVideo
-  jsr InitVideoImpl             ; Also loads the character set
+  bit HW_PRESENT
+  bpl @SkipVideo
+  ; The card as it is after its own reset, so that a warm KernalInit matches a
+  ; power-on: the legacy submode, unscrolled, port A reading STAT0 (the probe
+  ; restored that).  No InitVideo — the console comes up on first use
+  ; (VideoConsoleReady), and a cartridge that drives the card itself finds it
+  ; where a 1.x ROM left a TMS9918.
+  ldx #VDP_VMODE
+  jsr @ZeroReg
+  ldx #VDP_L0SCRX
+  jsr @ZeroReg
+  ldx #VDP_L0SCRY
+  jsr @ZeroReg
 @SkipVideo:
 
   ; Console auto-detection — determine IO_MODE from available hardware
@@ -588,6 +632,9 @@ KernalInitImpl:
 
 @ConsoleDone:
   rts
+@ZeroReg:                       ; X = register
+  lda #$00
+  jmp VdpSetReg
 
 ; KernalVersion — Return BIOS version in registers
 ; Output: A = major version, X = minor version
@@ -1166,6 +1213,7 @@ SidSetVolumeImpl:
 VideoSetColorImpl:
   bit HW_PRESENT                ; Video is bit 7 — see VideoClear
   bpl @VideoSetColorNone
+  jsr VideoConsoleReady
   sta VID_PEN
   sta VC_REG                    ; Data byte
   lda #($80 | VDP_COLOR)

@@ -19,17 +19,18 @@ concurrency:
 # unrelated cc65 change can turn this repo red on a morning nobody touched it.
 #
 # The emulator, because the suite runs on it and its `main` is not this repo's
-# business. It stays a tag rather than `main` for the same reason it always
-# was: CI should see the emulator a developer sees, so an `xfail` that is stale
-# here is stale there too. The pin moves when a release the suite needs goes
-# out — v2.6.0 is the one that reads the DS1511Y's TE bit the way the datasheet
-# does, and the case asserting the clock still runs after SETTIME needs it. On
-# v2.5.1 and earlier the emulator carried the same inversion the ROM did, so a
-# correct ROM looks like a stopped clock there.
+# business. This branch is BIOS 2.x, which drives a PICOVDP and nothing else,
+# so the emulator has to be one whose video card is a PICOVDP. No release is
+# yet: the card lives on the emulator's v3-vdp branch until 3.x is tagged. So
+# the pin is a commit on that branch, not the branch name, which would move
+# under the suite on a morning nobody touched this repo. It moves to the commit
+# that implements the card's font register, and then to the 3.x tag, which is
+# what a developer installs. Until then, build that commit's CLI to run the
+# suite locally (tests/README.md). The 1.x ROMs keep their own pin on v1.x.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v2.6.0
+  EMULATOR_REF: 4a7b6567d6379e8ebb3b729c890d4c37b2215afc
 
 jobs:
   test:

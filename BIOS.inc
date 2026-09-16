@@ -175,6 +175,7 @@ RTC_RAM_ADDR        := $8810
 RTC_RAM_DATA        := $8813
 ; DS1511Y Control Register B Bits
 RTC_CTRL_B_TE       := %10000000         ; Transfer Enable — 1 = counters update the user registers once a second, 0 = inhibited
+RTC_CTRL_B_BME      := %00100000         ; Burst Mode Enable — 1 = RTC_RAM_ADDR auto-increments on each access of RTC_RAM_DATA
 ; DS1511Y Month Register (05H) — upper 3 bits are control bits, low 5 are month
 RTC_MON_MASK        := %00011111         ; Month value occupies the low 5 bits
 RTC_MON_EOSC        := %10000000         ; Oscillator Start/Stop (0 = oscillator running)

@@ -1654,6 +1654,14 @@ ProbeSID:
 ; Restores original NVRAM value afterward
 ; Modifies: Flags, A
 ProbeRTC:
+  ; BME is battery-backed and undefined at power-up, like TE beside it.  Left set,
+  ; every access of RTC_RAM_DATA below would advance the address latch: the
+  ; read-back would compare against the wrong byte, HW_RTC would never be set,
+  ; and the restore would land on a third address.  So clear it before the RAM
+  ; ports are touched — read-modify-write, since Control B also holds TE.
+  lda RTC_CTRL_B
+  and #<~RTC_CTRL_B_BME
+  sta RTC_CTRL_B
   stz RTC_RAM_ADDR              ; Select NVRAM address 0
   lda RTC_RAM_DATA              ; Save existing value
   pha

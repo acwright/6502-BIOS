@@ -42,3 +42,8 @@ tests/fixtures/*.bin
 # AI prompts
 *.prompt.md
 OPTIMIZE.md
+
+# Planning documents are kept local
+VDP-ASSESSMENT.md
+VDP-PLAN.md
+/PLAN.md

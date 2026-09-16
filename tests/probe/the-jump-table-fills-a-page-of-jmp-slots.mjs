@@ -10,9 +10,9 @@
 // the Monitor keep working, because they call the labels — and every cartridge
 // ever shipped breaks.
 //
-// The table is 85 slots, not 59. The 59 published ones are followed by 26
-// reserved slots that all jump to a bare `rts`, and one pad byte, filling
-// $A000-$A0FF exactly. That padding is not decoration: it is the mechanism that
+// The table is 85 slots, however many are published. The published ones —
+// tests/fixtures/jumptable.json, 72 in 2.0 — are followed by reserved slots
+// that all jump to a bare `rts`, and one pad byte, filling $A000-$A0FF exactly. That padding is not decoration: it is the mechanism that
 // makes "stable across BIOS versions" true, because a new entry point appends
 // into reserved space instead of pushing the table into the Kernal behind it.
 // So it is asserted as carefully as the published half — including that calling
@@ -22,18 +22,25 @@
 // Which routine sits at which published slot is the-jump-table-addresses-
 // are-pinned's job. This case does not care about names.
 
+import { PINNED } from './the-jump-table-addresses-are-pinned.mjs'
+
 export const name = 'the jump table is 85 three-byte JMP slots filling exactly one page'
 
 const TABLE_START = 0xa000
 const TABLE_END = 0xa100 // exclusive
 const SLOT_SIZE = 3
-const PUBLISHED = 59 // $A000..$A0AE — the README's table
-const RESERVED = 26 // $A0B1..$A0FE — `jmp UnimplementedStub`
-const SLOTS = PUBLISHED + RESERVED
+const SLOTS = 85
+// The published slots come first, in order — the README's table and the
+// pinned fixture — and every slot after them is reserved: `jmp UnimplementedStub`.
+const PUBLISHED = Object.keys(PINNED).length
 
 const hex = (n) => `$${n.toString(16).toUpperCase().padStart(4, '0')}`
 
 export async function run(m) {
+  Object.keys(PINNED).forEach((slot, index) => {
+    m.assertEqual(slot, hex(TABLE_START + index * SLOT_SIZE), `pinned slot ${index}: the published slots run on from $A000 without a gap`)
+  })
+
   const last = TABLE_START + SLOTS * SLOT_SIZE
   m.assertWord(last, TABLE_END - 1, 'the slots plus one pad byte fill the page')
 

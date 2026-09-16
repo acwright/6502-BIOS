@@ -100,8 +100,13 @@ NvErase:        jmp NvEraseImpl         ; $A0A8 - Zero all 16 bytes of a slot (X
 NvFind:         jmp NvFindImpl          ; $A0AB - Lowest slot owned by A ($00 = first free) → X
 NvFormat:       jmp NvFormatImpl        ; $A0AE - Erase all 16 slots
 
-; Reserved entries ($A0B1-$A0FE)
-.repeat 26
+; --- PICOVDP ---
+VdpInfo:        jmp VdpInfoImpl         ; $A0B1 - Card found at boot → A=VDP_FW, X=VDP_CAPS, Y=$AC; carry set if none
+VdpWriteReg:    jmp VdpWriteRegImpl     ; $A0B4 - Write register (A=value, X=0-127), keeping VID_MODE and the LxCTRL shadows
+VdpSetMode:     jmp VdpSetModeImpl      ; $A0B7 - Write VMODE (A=1-4); carry set if out of range
+
+; Reserved entries ($A0BA-$A0FE)
+.repeat 23
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -157,20 +162,102 @@ VdpSetReg:
   sta VC_REG
   rts
 
-; VdpWriteRegImpl — write a VDP register, if a card is fitted
+; === PICOVDP entries ($A0B1-$A0D5) ===
+;
+; Each one returns carry set, having written nothing, when no card is fitted
+; (HW_VID clear) or an argument is out of range, and carry clear otherwise.
+; Port A only, and VBANK = 0, VINC = +1 on the way out, like the console.
+
+; VdpInfo — What the probe found
+; Output: A = VDP_FW (STAT5), X = VDP_CAPS (STAT6), Y = VDP_ID ($AC); with no
+;         card A = X = Y = 0 and carry set
+; Modifies: Flags, A, X, Y
+VdpInfoImpl:
+  lda VDP_FW                    ; Both $00 when the probe found no card
+  ldx VDP_CAPS
+  ldy #$00
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpNoCard
+  ldy #VDP_ID
+  clc
+  rts
+
+; VdpWriteReg — Write a VDP register, keeping the Kernal's records of it
 ; Input: A = value, X = register (0-127)
-; Output: carry set, and nothing written, if no video card is fitted
+; A VMODE write sets VID_MODE: the mode, with b7 (disturbed) set when it takes
+; the card to Text or the legacy submode from anything else, so that only
+; InitVideo can say the Text console is intact.  L0CTRL and L1CTRL, which read
+; back as nothing, are kept in VDP_L0CTRL_SHADOW and VDP_L1CTRL_SHADOW.
+; Output: carry set, and nothing written, if no card or X > 127
+; Preserves: X, Y
 ; Modifies: Flags, A
-; Kernal-internal for now (BASIC's COLOR border); VDP-PLAN §6 publishes it as
-; VdpWriteReg, keeping VID_MODE and the LxCTRL shadows.
 VdpWriteRegImpl:
   bit HW_PRESENT                ; Video is bit 7 — see VideoClear
-  bpl @VdpWriteRegNone
+  bpl VdpNoCard
+  cpx #$80
+  bcs VdpNoCard
+  cpx #VDP_VMODE
+  bne @VdpWriteRegL0
+  pha
+  and #$0F                      ; The mode, b3:0
+  cmp #$02
+  bcs @VdpWriteRegMode          ; Compact, Graphics, Full: the mode itself
+  cmp VID_MODE
+  beq @VdpWriteRegMode          ; Text over the Text console, or legacy over legacy
+  ora #$80                      ; Anything else back to Text or legacy: disturbed
+@VdpWriteRegMode:
+  sta VID_MODE
+  pla
+@VdpWriteRegL0:
+  cpx #VDP_L0CTRL
+  bne @VdpWriteRegL1
+  sta VDP_L0CTRL_SHADOW
+@VdpWriteRegL1:
+  cpx #VDP_L1CTRL
+  bne @VdpWriteRegSet
+  sta VDP_L1CTRL_SHADOW
+@VdpWriteRegSet:
   jsr VdpSetReg
   clc
   rts
-@VdpWriteRegNone:
+
+; The shared exit for no card or a bad argument
+VdpNoCard:
   sec
+  rts
+
+; VdpSetMode — Set VMODE: 1 Text, 2 Compact, 3 Graphics, 4 Full
+; Only the register (and VID_MODE, as VdpWriteReg keeps it): the tables, layers
+; and sprites are the caller's to lay out.  The Text console proper is
+; InitVideo.
+; Input: A = mode (1-4)
+; Output: carry set, and nothing written, if no card or A is out of range
+; Modifies: Flags, A, X
+VdpSetModeImpl:
+  cmp #$01
+  bcc VdpNoCard
+  cmp #$05
+  bcs VdpNoCard
+  ldx #VDP_VMODE
+  bra VdpWriteRegImpl
+
+; VdpReadStat — A = STATn for n in A, leaving STATSEL_A = 0 (no card check)
+; Modifies: Flags, A
+VdpReadStat:
+  jsr VdpSelectStat
+  lda VC_STATUS
+  pha
+  lda #$00                      ; STATSEL_A back to STAT0, without reading it
+  jsr VdpSelectStat
+  pla
+  rts
+
+; VdpSelectStat — STATSEL_A = A (no card check)
+; Modifies: Flags, A
+VdpSelectStat:
+  sta VC_REG
+  lda #($80 | VDP_STATSEL_A)
+  sta VC_REG
   rts
 
 ; VideoClear — Fill the screen with spaces in the current pen, cursor home
@@ -621,6 +708,10 @@ KernalInitImpl:
   jsr @ZeroReg
   ldx #VDP_L0SCRY
   jsr @ZeroReg
+  lda #$3C                      ; LxCTRL as the card resets them (SPEC §5), for
+  sta VDP_L0CTRL_SHADOW         ;   VdpSetScroll and VdpLayer before anything
+  lda #$0C                      ;   has written them
+  sta VDP_L1CTRL_SHADOW
 @SkipVideo:
 
   ; Console auto-detection — determine IO_MODE from available hardware
@@ -1890,29 +1981,21 @@ ProbeVideo:
                                 ;   a TMS9918A, clear the flags that could
                                 ;   otherwise read as $AC)
   lda #$04
-  jsr @Stat                     ; STAT4
+  jsr VdpSelectStat
+  lda VC_STATUS                 ; STAT4
   cmp #VDP_ID
-  bne @ProbeVideoDone
+  bne @ProbeVideoDone           ; Not a PICOVDP: nothing more is written
   lda #$05
-  jsr @Stat
+  jsr VdpSelectStat
+  lda VC_STATUS
   sta VDP_FW                    ; STAT5: firmware version, BCD
   lda #$06
-  jsr @Stat
+  jsr VdpReadStat               ; And STATSEL_A back to STAT0
   sta VDP_CAPS                  ; STAT6: capability bits
-  lda #$00                      ; STATSEL_A back to STAT0, without reading it
-  sta VC_REG
-  lda #($80 | VDP_STATSEL_A)
-  sta VC_REG
   lda HW_PRESENT
   ora #HW_VID
   sta HW_PRESENT
 @ProbeVideoDone:
-  rts
-@Stat:                          ; A = status register → A = its value
-  sta VC_REG
-  lda #($80 | VDP_STATSEL_A)
-  sta VC_REG
-  lda VC_STATUS
   rts
 
 ; ProbeGPIO — VIA DDR register read-back test

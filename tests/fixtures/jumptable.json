@@ -57,5 +57,8 @@
   "$A0A5": "NvWrite",
   "$A0A8": "NvErase",
   "$A0AB": "NvFind",
-  "$A0AE": "NvFormat"
+  "$A0AE": "NvFormat",
+  "$A0B1": "VdpInfo",
+  "$A0B4": "VdpWriteReg",
+  "$A0B7": "VdpSetMode"
 }

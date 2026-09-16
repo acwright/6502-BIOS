@@ -282,7 +282,7 @@ TOK_SETDATE     = $B0
 TOK_NVRAM       = $B1
 TOK_PAUSE       = $B2
 TOK_BANK        = $B3
-TOK_BRK         = $B4
+TOK_SCREEN      = $B4           ; BRK in 1.x
 TOK_MEM         = $B5
 TOK_SGN         = $B6
 TOK_INT         = $B7
@@ -315,6 +315,23 @@ TOK_DISK        = $D1           ; select current CF disk bank
 TOK_BLOAD       = $D2           ; binary load to address
 TOK_BSAVE       = $D3           ; binary save from address
 TOK_FORMAT      = $D4           ; erase current disk directory
+; 2.0: the PICOVDP and the save slots.  Statements run on from FORMAT, so one
+; BasExtAddrTbl covers $D1-$DF; the functions follow them.
+TOK_VPOKE       = $D5
+TOK_VREG        = $D6
+TOK_PALETTE     = $D7
+TOK_VSYNC       = $D8
+TOK_VLOAD       = $D9
+TOK_SPRITE      = $DA
+TOK_SCROLL      = $DB
+TOK_LAYER       = $DC
+TOK_NVSAVE      = $DD
+TOK_NVLOAD      = $DE
+TOK_NVERASE     = $DF
+TOK_VPEEK       = $E0
+TOK_VSTAT       = $E1
+TOK_NVSTAT      = $E2
+TOK_NVFIND      = $E3
 
 ; =============================================================================
 ;   E R R O R   C O D E S
@@ -5712,11 +5729,12 @@ EvalAtom:
         ; allow it through even though it sits below TOK_SGN.
         cmp     #TOK_NVRAM
         beq     @fnDisp
-        ; Try function dispatch.
+        ; Try function dispatch.  Every token from SGN up goes to FnDispatch,
+        ; whose table holds $B6-$D0 and $E0-$E3: anything else it is handed --
+        ; the statements $D1-$DF in between -- is not in it, and is a SYNTAX
+        ; ERROR there.
         cmp     #TOK_SGN
         bcc     @synErr
-        cmp     #TOK_MAX+1
-        bcs     @synErr
 @fnDisp:
         jmp     FnDispatch
 @synErr:
@@ -5813,8 +5831,8 @@ FnInkey:
         jmp     SngFlt
 
 ; ---------------------------------------------------------------------------
-; FnDispatch -- A holds a function token in [TOK_SGN..TOK_MAX].  Dispatch
-; via FnTable, which pairs (token, handler-1).
+; FnDispatch -- A holds a token from TOK_SGN up.  Dispatch via FnTable, which
+; pairs (token, handler-1); a token the table does not hold is a SYNTAX ERROR.
 ; ---------------------------------------------------------------------------
 FnDispatch:
         ldx     #0
@@ -6690,11 +6708,11 @@ BasExecuteStatement:
         pha
         jmp     ChrGet
 @ext:
-        ; Extended statement tokens DISK/BLOAD/BSAVE/FORMAT ($D1-$D4),
+        ; Extended statement tokens DISK through NVERASE ($D1-$DF),
         ; dispatched through BasExtAddrTbl.
         sec
         sbc     #(TOK_DISK - TOK_BASE)
-        cmp     #4
+        cmp     #(TOK_NVERASE + 1 - TOK_DISK)
         bcs     @synErr
         asl     a
         tay
@@ -8907,7 +8925,7 @@ BasTokenAddrTbl:
         .word   BasCmdNvram-1           ; $B1 NVRAM
         .word   BasCmdPause-1           ; $B2 PAUSE
         .word   BasCmdBank-1            ; $B3 BANK
-        .word   SynErr-1                ; $B4 BRK  (retired in 2.0)
+        .word   SynErr-1                ; $B4 SCREEN
         .word   BasCmdMem-1             ; $B5 MEM
 
 ; Extended statement tokens, from TOK_DISK ($D1).  Entries are (handler-1), as
@@ -8917,6 +8935,17 @@ BasExtAddrTbl:
         .word   BasCmdBload-1           ; $D2 BLOAD
         .word   BasCmdBsave-1           ; $D3 BSAVE
         .word   BasCmdFormat-1          ; $D4 FORMAT
+        .word   SynErr-1                ; $D5 VPOKE
+        .word   SynErr-1                ; $D6 VREG
+        .word   SynErr-1                ; $D7 PALETTE
+        .word   SynErr-1                ; $D8 VSYNC
+        .word   SynErr-1                ; $D9 VLOAD
+        .word   SynErr-1                ; $DA SPRITE
+        .word   SynErr-1                ; $DB SCROLL
+        .word   SynErr-1                ; $DC LAYER
+        .word   SynErr-1                ; $DD NVSAVE
+        .word   SynErr-1                ; $DE NVLOAD
+        .word   SynErr-1                ; $DF NVERASE
 
 ; =============================================================================
 ;   K E Y W O R D   T A B L E
@@ -8980,7 +9009,7 @@ KeywordTbl:
         .byte   "NVRA",'M'|$80          ; $B1 NVRAM
         .byte   "PAUS",'E'|$80          ; $B2 PAUSE
         .byte   "BAN",'K'|$80           ; $B3 BANK
-        .byte   "BR",'K'|$80            ; $B4 BRK
+        .byte   "SCREE",'N'|$80         ; $B4 SCREEN (BRK in 1.x)
         .byte   "ME",'M'|$80            ; $B5 MEM
         ; Functions
         .byte   "SG",'N'|$80            ; $B6 Sgn
@@ -9014,6 +9043,23 @@ KeywordTbl:
         .byte   "BLOA",'D'|$80          ; $D2 BLOAD
         .byte   "BSAV",'E'|$80          ; $D3 BSAVE
         .byte   "FORMA",'T'|$80         ; $D4 FORMAT
+        ; 2.0 statements
+        .byte   "VPOK",'E'|$80          ; $D5 VPOKE
+        .byte   "VRE",'G'|$80           ; $D6 VREG
+        .byte   "PALETT",'E'|$80        ; $D7 PALETTE
+        .byte   "VSYN",'C'|$80          ; $D8 VSYNC
+        .byte   "VLOA",'D'|$80          ; $D9 VLOAD
+        .byte   "SPRIT",'E'|$80         ; $DA SPRITE
+        .byte   "SCROL",'L'|$80         ; $DB SCROLL
+        .byte   "LAYE",'R'|$80          ; $DC LAYER
+        .byte   "NVSAV",'E'|$80         ; $DD NVSAVE
+        .byte   "NVLOA",'D'|$80         ; $DE NVLOAD
+        .byte   "NVERAS",'E'|$80        ; $DF NVERASE
+        ; 2.0 functions
+        .byte   "VPEE",'K'|$80          ; $E0 VPEEK
+        .byte   "VSTA",'T'|$80          ; $E1 VSTAT
+        .byte   "NVSTA",'T'|$80         ; $E2 NVSTAT
+        .byte   "NVFIN",'D'|$80         ; $E3 NVFIND
         .byte   0
 
 ; =============================================================================

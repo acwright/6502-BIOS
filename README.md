@@ -73,7 +73,7 @@ The two silent rows are silent because a screen and a speaker have nothing to re
 
 A full interactive floating-point BASIC interpreter is included, with a feature surface comparable to Microsoft 6502 BASIC. Programs are typed line-numbered and executed with `RUN`. Numeric variables hold 5-byte (40-bit) floating-point values; a `$` suffix makes the name a string variable. Each name can additionally be dimensioned as a 1-D array via `DIM`. Multiple statements per line are separated by `:`.
 
-> **Variable names:** any length, letters and digits, but **only the first two characters are significant** — the usual Microsoft BASIC rule. `COUNT` and `COURSE` are the same variable (`CO`), and `PRINT COUNT` after `COUNT = 7 : COURSE = 9` prints `9`. A name may not contain a keyword: `SCORE` will not parse, because it contains `OR`.
+> **Variable names:** any length, letters and digits, but **only the first two characters are significant** — the usual Microsoft BASIC rule. `COUNT` and `COURSE` are the same variable (`CO`), and `PRINT COUNT` after `COUNT = 7 : COURSE = 9` prints `9`. A name may not contain a keyword: `SCORE` will not parse, because it contains `OR`. 2.0's keywords count too, so a 1.x listing whose names begin `VREG`, `LAYER`, `SCROLL`, `SCREEN`, `SPRITE`, `PALETTE`, `VSYNC`, `VLOAD`, `VPOKE`, `VPEEK`, `VSTAT` or `NV` followed by `SAVE`, `LOAD`, `ERASE`, `STAT` or `FIND` crunches differently on 2.0. A tokenized 1.x program loads unchanged, except that a 1.x `BRK` statement (token `$B4`) is now `SCREEN` with no argument, a `?SYNTAX ERROR`.
 
 > **Numeric range:** ~±1.7 × 10³⁸, **nine significant digits** (`PRINT 1 / 3` gives ` .333333333`, `PRINT SQR(2)` gives ` 1.41421356`). Numbers print with a leading-space sign convention (positive numbers prefixed by a space, negative by `-`). Boolean expressions evaluate to `-1` (true) or `0` (false).
 
@@ -105,7 +105,6 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `DIM` | `DIM var(size) [, var(size) ...]` | Dimension a 1-D array (numeric or string), valid indices `0..size`. `REDIM'D ARRAY` if already dimensioned. Only one dimension is supported |
 | `DEF FN` | `DEF FN A(X) = expr` | Define a single-argument numeric user function. Call with `FN A(value)` |
 | `POKE` | `POKE addr, value` | Write byte `value` to memory address `addr` |
-| `BRK` | `BRK` | Reserved: `?SYNTAX ERROR`. A `BRK` *instruction* prints a report (see [Machine Code from BASIC](#machine-code-from-basic)) |
 
 **Storage & System**
 

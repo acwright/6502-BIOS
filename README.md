@@ -30,7 +30,7 @@ The probe-and-boot sequence is:
 8. **Splash screen** — displayed on the active console:
 
 ```
-  -- 6502 BIOS v1.5 --
+  -- 6502 BIOS v1.6 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
@@ -67,7 +67,7 @@ All hardware-dependent operations are guarded at every level — Kernal, BASIC, 
 - **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
 
 The two silent rows are silent because a screen and a speaker have nothing to report back — the statement had no answer to return, so there is nothing an error could say. The rows that move *data* (CompactFlash, RTC) raise `NO DEVICE` instead, because there the program asked for something it did not get. Either way the arguments are parsed and range-checked first: `LOCATE 24,0` and `VOL 16` are `ILLEGAL QUANTITY` on a machine with no screen and no sound card, so a program is wrong or right everywhere rather than only where it was written.
-- **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, and `NVRAM` (write) in BASIC print `NO DEVICE`; `NVRAM()` (read) returns 0
+- **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, and `NVRAM` (write) in BASIC print `NO DEVICE`; `NVRAM()` (read) returns 0; the save-slot routines `NvStat` through `NvFormat` set carry without touching the card
 
 ### BASIC
 
@@ -186,6 +186,49 @@ Two rules for `.prg` files:
 | `SETTIME <hh>, <mm>, <ss>` | Set the RTC time |
 | `SETDATE <cc>, <yy>, <mm>, <dd>` | Set the RTC date |
 | `NVRAM <addr>, <value>` | Write a byte to RTC NVRAM at address 0–255 |
+
+#### `SAVEMGR.BAS` — save slots from BASIC
+
+BASIC has no save-slot statements, but `NVRAM` reaches every byte, and the slot format (see [NVRAM Save Slots](#nvram-save-slots)) is simple enough to implement directly. This program lists the 16 slots. Its subroutines read, write and erase a slot the same way the Kernal does, so a save written from BASIC loads in a machine-code game, and the other way round.
+
+```basic
+10 REM SAVEMGR - LIST THE NVRAM SAVE SLOTS
+20 DIM D(13)
+30 FOR S = 0 TO 15
+40 GOSUB 1000
+50 PRINT "SLOT";S;": ";
+60 IF T = 0 THEN PRINT "FREE"
+70 IF T = 1 THEN PRINT "ID";I
+80 IF T = 2 THEN PRINT "DAMAGED ID";I
+90 NEXT S
+100 END
+1000 REM STATUS OF SLOT S: T = 0 FREE, 1 VALID, 2 DAMAGED; I = OWNER ID
+1010 B = S * 16 : I = NVRAM(B) : T = 0
+1020 IF I = 0 THEN RETURN
+1030 C = 166 : V = I : GOSUB 1500
+1040 FOR K = 2 TO 15 : V = NVRAM(B + K) : GOSUB 1500 : NEXT K
+1050 T = 2 : IF C = NVRAM(B + 1) THEN T = 1
+1060 RETURN
+1500 REM CHECKSUM STEP: C = ROTATE-LEFT(C) EOR V
+1510 C = C * 2 : IF C > 255 THEN C = C - 255
+1520 C = (C OR V) - (C AND V)
+1530 RETURN
+2000 REM WRITE D(0)-D(13) TO SLOT S AS OWNER I (1-255)
+2010 B = S * 16 : C = 166 : V = I : GOSUB 1500
+2020 FOR K = 0 TO 13 : V = D(K) : GOSUB 1500 : NEXT K
+2030 NVRAM B, I : NVRAM B + 1, C
+2040 FOR K = 0 TO 13 : NVRAM B + 2 + K, D(K) : NEXT K
+2050 RETURN
+3000 REM READ SLOT S INTO D(0)-D(13), ONLY IF T = 1
+3010 GOSUB 1000 : IF T <> 1 THEN RETURN
+3020 FOR K = 0 TO 13 : D(K) = NVRAM(B + 2 + K) : NEXT K
+3030 RETURN
+4000 REM ERASE SLOT S
+4010 B = S * 16 : FOR K = 0 TO 15 : NVRAM B + K, 0 : NEXT K
+4020 RETURN
+```
+
+To save, set `S`, `I` and `D(0)`–`D(13)` and `GOSUB 2000`. To load, set `S` and `GOSUB 3000`, then check `T`. BASIC has no `XOR`, so line 1520 builds it from `OR` and `AND`, and line 1510 is the rotate: doubling a byte and subtracting 255 when it overflows moves bit 7 round to bit 0.
 
 **Functions & Expressions**
 
@@ -335,6 +378,60 @@ When an XModem transfer is initiated, the system prints `XMODEM RX READY` (recei
 
 A DS1511Y RTC provides time and date. `RtcReadTime` returns hours/minutes/seconds in `A`/`X`/`Y` (binary). `RtcReadDate` returns date/month/year. 256 bytes of battery-backed NVRAM are accessible via `RtcReadNVRAM` / `RtcWriteNVRAM`.
 
+#### NVRAM Save Slots
+
+The NVRAM is also a game-save area of **16 slots**, which the Kernal reads and writes by slot number (`NvStat`, `NvRead`, `NvWrite`, `NvErase`, `NvFind`, `NvFormat`, from `$A09F`). Slot `n` occupies NVRAM `n*16` to `n*16+15`:
+
+| Offset | Contents |
+|--------|----------|
+| `+$0` | Owner ID. `$00` means the slot is free; any other value is an identity byte the game chooses |
+| `+$1` | Checksum |
+| `+$2–$F` | 14 payload bytes |
+
+The checksum covers the owner ID and the 14 payload bytes, in that order, skipping the checksum byte itself:
+
+```
+ck = $A6
+for each byte b:  ck = rotate_left_8(ck) EOR b
+```
+
+The rotate catches transposed bytes, which a plain sum would miss. The nonzero seed stops an all-`$FF` slot, which is what an erased or unpowered part holds, from passing. Each slot is validated on its own, with no shared directory, so one damaged slot never takes the others with it.
+
+`NvStat` reports a slot as `NV_EMPTY` (0, owner ID `$00`), `NV_VALID` (1, checksum agrees) or `NV_BAD` (2, checksum does not). All six follow the same rules:
+
+- **Carry set means the call did nothing.** That covers no RTC fitted, a slot number of 16 or more, `NvWrite` given `NV_ID` = 0 (use `NvErase`), `NvFind` with no match, and `NvRead` on a slot that is not `NV_VALID`. A failed `NvRead` still returns the status in `A` and the owner ID in `Y`, so a game can tell "no save yet" from "your save is damaged". It never writes the buffer.
+- **`X` is preserved** by `NvStat`, `NvRead`, `NvWrite` and `NvErase`, so a loop over the slots needs no reload. `NvRead` and `NvWrite` clobber `STR_PTR` (`$02–$03`), as `PrintStr` does.
+- **The caller's decimal and interrupt flags come back unchanged.** A game that keeps its score in decimal mode can save safely. Interrupts are held off for the few hundred microseconds a slot copy takes, because the copy uses the DS1511Y's burst mode, where every access of the data port moves the address. For the same reason, **an NMI handler must not touch NVRAM**, since NMI cannot be masked.
+- **Burst mode is off again on return**, so `RtcReadNVRAM` / `RtcWriteNVRAM` keep their one-byte-per-call behaviour.
+- `NvFind` matches damaged slots as well as valid ones, and returns the lowest-numbered match. A game that finds its ID and then gets carry from `NvRead` knows its save was damaged, rather than starting over as if it had none.
+
+A typical startup and save, where `SAVE_BUF` is the game's own 14 bytes:
+
+```asm
+        lda #MY_GAME_ID
+        jsr NvFind              ; X = my slot, carry set if none
+        bcc @Load
+        lda #$00
+        jsr NvFind              ; X = first free slot
+        bcs @NoRoom
+        stx SaveSlot
+        ...
+@Load:  stx SaveSlot
+        lda #<SAVE_BUF
+        ldy #>SAVE_BUF
+        jsr NvRead              ; carry set, A = NV_BAD: tell the player
+        ...
+        ; later, to save
+        lda #MY_GAME_ID
+        sta NV_ID
+        ldx SaveSlot
+        lda #<SAVE_BUF
+        ldy #>SAVE_BUF
+        jsr NvWrite
+```
+
+From BASIC, see [`SAVEMGR.BAS`](#savemgrbas--save-slots-from-basic).
+
 ### Sound
 
 A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone on voice 1. Use `SidPlayNote` to play any frequency on any of the three voices, `SidSilence` to stop all voices, and `SidSetVolume` to set the master volume (0–15).
@@ -363,7 +460,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack — and therefore BASIC's `GOSUB` and `FOR` frames, which are pushed onto it |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime, `NV_ID` at `$0390`) |
 | `$0400–$04FF` | 256B | `BAS_LINBUF` — the raw input line, as typed |
 | `$0500–$05FF` | 256B | `BAS_TOKBUF` — tokenizing scratch |
 | `$0600–$07FF` | 512B | `FS_SECTOR_BUF` — CompactFlash sector buffer, overwritten by **any** filesystem call (`LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT`) |

@@ -12,8 +12,8 @@ Two cases fail on v2.4.0 — the emulator fixes they need shipped in v2.4.1.
 against an emulator checkout, which is what `.github/workflows/ci.yml` does on
 every push.
 
-PLAN.md is the map: what the suite is for, what it covers, and what to do when it
-finds a BIOS bug. FINDINGS.md is what it has found and not yet resolved.
+This file is the map: how a run works, and how to write a case at each tier.
+FINDINGS.md is what the suite has found and not yet resolved.
 
 ## How a run works
 

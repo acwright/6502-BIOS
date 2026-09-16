@@ -93,6 +93,14 @@ export async function run(m) {
   await statement(m, 'LOCATE 5,5')
   await statement(m, 'COLOR 1,0')
   await statement(m, 'COLOR 1,0,5')
+  await statement(m, 'SCREEN 2')
+  await statement(m, 'SCREEN 0')
+  await statement(m, 'VPOKE 1000,65')
+  await statement(m, 'VREG 13,3')
+  await statement(m, 'PALETTE 1,15,15,15')
+  await statement(m, 'VSYNC')
+  await statement(m, 'VLOAD "NOPE.BIN",0')
+  await statement(m, 'PRINT VPEEK(0)')
 
   // VideoSetCursor is the odd one out: it touches no register at all, only the
   // three RAM bytes that say where the next character goes. So its half of the

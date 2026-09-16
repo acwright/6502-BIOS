@@ -143,3 +143,35 @@ export function assertBlank(m, lines, what = 'the screen') {
     m.fail(`${what}: row ${dirty} is not blank. The screen reads:\n${render(lines)}`)
   }
 }
+
+// Type a program in after a NEW, and wait until its last line has echoed.
+// Lines are typed without waiting on each other: the keyboard buffer holds
+// them, and only the last echo says they have all been read.
+export async function typeProgram(m, lines) {
+  await typeLine(m, 'NEW')
+  for (const line of lines) await typeLine(m, line)
+  const last = lines.at(-1)
+  await awaitScreen(m, (screen) => screen.some((l) => l.startsWith(last)), `the program typed in, to ${JSON.stringify(last)}`)
+}
+
+// Run the machine in bounded steps until the card's VMODE is `vmode` — for a
+// program that switches mode and then loops, where the screen is not text and
+// cannot be waited on. Leaves the machine paused.
+export async function awaitVmode(m, vmode, what) {
+  let last
+  for (let step = 0; step < STEPS; step++) {
+    await m.waitFor({ cycles: STEP_CYCLES, run: 'turbo', timeoutMs: 30000 })
+    await m.pause()
+    last = (await m.videoInfo()).mode.vmode
+    if (last === vmode) return
+  }
+  throw new AssertionError(`VMODE never became ${vmode} ${what}: it is ${last}`)
+}
+
+// Ctrl+C, put straight into the Kernal's input buffer through WriteBuffer
+// ($A006), as a key would. Pauses first: call6502 puts back the registers it
+// read on entry, and read from a running machine they are already stale.
+export async function ctrlC(m) {
+  await m.pause()
+  await m.call6502(0xa006, { A: 0x03 })
+}

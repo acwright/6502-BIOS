@@ -1,0 +1,35 @@
+name: with no video card, the VDP statements consume their arguments and do nothing
+# README: "Video absent — ... SCREEN, VPOKE, VREG, PALETTE, VLOAD silently
+#          skip (arguments are still consumed); VPEEK() returns 0; VSYNC waits
+#          2 cs"
+#
+# The same promise CLS, LOCATE and COLOR make (no-video-card-the-screen-
+# statements-do-nothing): a program written for a screen runs on a serial-only
+# machine. The trailing PRINT on each line is what shows the arguments were
+# consumed. no-video-card-nothing-reaches-the-vdp checks the bus.
+mode: basic
+hw: -video
+
+> SCREEN 2 : PRINT "AFTER SCREEN"
+~ ^AFTER SCREEN$
+> SCREEN 0 : PRINT "AFTER SCREEN 0"
+~ ^AFTER SCREEN 0$
+> VPOKE 1000, 65 : PRINT "AFTER VPOKE"
+~ ^AFTER VPOKE$
+> VREG 13, 3 : PRINT "AFTER VREG"
+~ ^AFTER VREG$
+> PALETTE 1, 2, 3, 4 : PRINT "AFTER PALETTE"
+~ ^AFTER PALETTE$
+> VSYNC : PRINT "AFTER VSYNC"
+~ ^AFTER VSYNC$
+# The default profile's card is blank, so a real load would say ?LOAD ERROR.
+> VLOAD "NOPE.BIN", 16384 : PRINT "AFTER VLOAD"
+~ ^AFTER VLOAD$
+! LOAD ERROR
+> PRINT VPEEK(0); VPEEK(65535)
+~ ^ 0 0$
+
+> 10 SCREEN 1 : VPOKE 0, 1 : VREG 7, 1 : PALETTE 0, 1, 2, 3 : VSYNC
+> 20 PRINT "RAN"
+> RUN
+~ ^RAN$

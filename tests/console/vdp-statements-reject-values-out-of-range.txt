@@ -1,0 +1,49 @@
+name: SCREEN, VPOKE, VREG, PALETTE, VLOAD and VPEEK reject arguments outside their range
+# README: "SCREEN <n> — 0 Text ... 3 Full", "VPOKE <addr>, <value> — addr
+#          0–65535", "VREG <reg>, <value> — reg 0–127", "PALETTE <index>, <r>,
+#          <g>, <b> — index 0–255, r/g/b 0–15"
+#
+# Ranges are checked before anything looks for the card, so a program is wrong
+# or right on this machine — which has no video card — just as it would be on
+# one with a screen. The legal ends of each range come first and say nothing.
+mode: basic
+
+> SCREEN 0
+> SCREEN 3
+> SCREEN 4
+~ \?ILLEGAL QUANTITY ERROR
+# A 1.x BRK statement is token $B4, which is now SCREEN with no argument.
+> SCREEN
+~ \?SYNTAX ERROR
+
+> VPOKE 0,0
+> VPOKE 65535,255
+> VPOKE 65536,0
+~ \?ILLEGAL QUANTITY ERROR
+> VPOKE 0,256
+~ \?ILLEGAL QUANTITY ERROR
+> VPOKE -1,0
+~ \?ILLEGAL QUANTITY ERROR
+
+> VREG 0,0
+> VREG 127,255
+> VREG 128,0
+~ \?ILLEGAL QUANTITY ERROR
+> VREG 7,256
+~ \?ILLEGAL QUANTITY ERROR
+
+> PALETTE 0,0,0,0
+> PALETTE 255,15,15,15
+> PALETTE 256,0,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> PALETTE 0,16,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> PALETTE 0,0,16,0
+~ \?ILLEGAL QUANTITY ERROR
+> PALETTE 0,0,0,16
+~ \?ILLEGAL QUANTITY ERROR
+
+> VLOAD "VRAM.BIN",65536
+~ \?ILLEGAL QUANTITY ERROR
+> PRINT VPEEK(65536)
+~ \?ILLEGAL QUANTITY ERROR

@@ -64,7 +64,7 @@ All hardware-dependent operations are guarded at every level — Kernal, BASIC, 
 - **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE`/`BLOAD`/`BSAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence`, `SidSetVolume` silently return
-- **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
+- **Video absent** — `CLS`, `LOCATE`, `COLOR`, `SCREEN`, `VPOKE`, `VREG`, `PALETTE` and `VLOAD` silently skip (arguments are still consumed); `VPEEK()` returns 0; `VSYNC` waits 2 cs; `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
 
 The two silent rows are silent because a screen and a speaker have nothing to report back — the statement had no answer to return, so there is nothing an error could say. The rows that move *data* (CompactFlash, RTC) raise `NO DEVICE` instead, because there the program asked for something it did not get. Either way the arguments are parsed and range-checked first: `LOCATE 24,0` and `VOL 16` are `ILLEGAL QUANTITY` on a machine with no screen and no sound card, so a program is wrong or right everywhere rather than only where it was written.
 - **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, and `NVRAM` (write) in BASIC print `NO DEVICE`; `NVRAM()` (read) returns 0; the save-slot routines `NvStat` through `NvFormat` set carry without touching the card
@@ -161,6 +161,14 @@ Two rules for `.prg` files:
 | `CLS` | Clear the screen and reset cursor to (0, 0) |
 | `LOCATE <row>, <col>` | Move cursor to row 0–23, column 0–39 |
 | `COLOR <fg>[, <bg>[, <border>]]` | Set the pen for text printed next (0–15 each); `bg` defaults to the current background. The border follows `bg` unless `border` is given |
+| `SCREEN <n>` | `0` the Text console (`InitVideo` + `CLS`); `1` Compact, `2` Graphics, `3` Full. `1`–`3` share one layout: layer 0 names `$0000`, attributes `$0800`, patterns `$4000` (4bpp, per-cell attributes, on); layer 1 names `$1000`, attributes `$1800`, patterns `$8000` (4bpp, off); sprite attributes `$2000`, patterns `$C000` (64 sprites, 4bpp, all at Y = 240). The tables at `$0000–$1FFF` are cleared |
+| `VPOKE <addr>, <value>` | Write a byte to VRAM, `addr` 0–65535 |
+| `VREG <reg>, <value>` | Write VDP register `reg` 0–127 (through `VdpWriteReg`) |
+| `PALETTE <index>, <r>, <g>, <b>` | Set palette entry 0–255 (at `$FC00 + 2*index`) to `r`, `g`, `b`, 0–15 each |
+| `VSYNC` | Wait for the start of the next vertical blank |
+| `VLOAD "name", <addr>` | Copy a file from the current disk into VRAM at `addr`, exactly its length. `?LOAD ERROR` if it is not there |
+
+When a program stops — `END`, `STOP`, an error, Ctrl+C, or running off its last line — and has taken the card out of the Text console with `SCREEN 1`–`3`, `VREG 13`, `SPRITE`, `SCROLL` or `LAYER`, BASIC puts the console back (`InitVideo` + `CLS`) before it prints anything. `VPOKE` and `PALETTE` do not count, so characters a program redefined in Text mode survive `END`. A direct-mode line is the same: `SCREEN 2` typed at the prompt is back to text by the next `OK`.
 
 **Sound**
 
@@ -257,6 +265,7 @@ To save, set `S`, `I` and `D(0)`–`D(13)` and `GOSUB 2000`. To load, set `S` an
 | `INKEY` | Non-blocking key read: ASCII code or `0`. No parentheses |
 | `JOY(1)` / `JOY(2)` | Joystick port 1 or 2 bitmask (R-L-D-U-Y-X-B-A). The port is **active low** — each line is pulled up and grounded by its switch — and the value is the port read raw, so a held button is a `0` bit and an untouched stick reads `$FF`. Test a direction with `IF (JOY(1) AND 16) = 0` |
 | `NVRAM(addr)` | Read byte from RTC NVRAM (returns 0 if RTC absent) |
+| `VPEEK(addr)` | Byte at VRAM address `addr`, 0–65535 (0 if no video card) |
 | `HEX(n)` | In `PRINT`, output `n` as `$xxxx` hex; in expressions, returns `n` unchanged |
 | `MIN(a,b)` / `MAX(a,b)` | Smaller / larger of `a` and `b` |
 | `var(index)` | Array element access. Array must be `DIM`-med first |

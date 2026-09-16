@@ -5938,6 +5938,8 @@ FnTable:
         .word   FnMin-1
         .byte   TOK_MAX
         .word   FnMax-1
+        .byte   TOK_VPEEK
+        .word   FnVpeek-1
         .byte   0
 
 ; ---------------------------------------------------------------------------
@@ -8801,9 +8803,9 @@ BasCmdBload:
         jsr     EvalString              ; filename -> BAS_FNAME, STR_PTR
         jsr     FsLoadFileAddr
 @done:
-        bcs     @err
+        bcs     BasLoadErr
         rts
-@err:
+BasLoadErr:
         lda     #<MsgLoadErr
         ldy     #>MsgLoadErr
         jmp     BasPrintStr
@@ -8872,6 +8874,179 @@ BasCmdFormat:
         jmp     FsFormatDisk            ; zero the directory (returns carry status)
 @abort:
         rts
+
+; ===========================================================================
+;   P I C O V D P   S T A T E M E N T S
+;
+; Silent without a card, like CLS, LOCATE and COLOR: the arguments are parsed
+; and range-checked, and then the Kernal entry each ends in skips.  Port A
+; only, through the $A0B1-$A0D5 entries, so VID_MODE and the LxCTRL shadows
+; stay true and BasTextConsole knows when a program has left Text mode.
+; ===========================================================================
+
+; SCREEN n -- 0 the Text console (InitVideo + CLS); 1 Compact, 2 Graphics,
+; 3 Full.  The three graphics modes share one layout, which fits Full's 1200-
+; byte tables (decision 2):
+;
+;   $0000 L0 names   $0800 L0 attributes   $1000 L1 names   $1800 L1 attributes
+;   $2000 sprite attributes   $4000 L0 patterns   $8000 L1 patterns
+;   $C000 sprite patterns
+;
+; Layer 0 4bpp with per-cell attributes, opaque and on; layer 1 the same but
+; off and transparent; 64 sprites at 4bpp, all parked at Y = 240, below the
+; picture.  The four tables at $0000-$1FFF are cleared; the pattern tables and
+; the palette are the program's.  VMODE goes last, through VdpWriteReg, so
+; VID_MODE says which mode the card is in.
+BasCmdScreen:
+        lda     #4                      ; 0-3
+        jsr     GetByteLim              ; X = n
+        txa
+        bne     @graphics
+        jsr     InitVideo
+        jmp     VideoClear              ; Both skip without a card
+@graphics:
+        bit     HW_PRESENT              ; Video is bit 7
+        bpl     @done
+        pha                             ; n
+        ldy     #0
+@reg:
+        ldx     ScreenLayout,y
+        lda     ScreenLayout+1,y
+        jsr     VdpWriteReg             ; Keeps X and Y
+        iny
+        iny
+        cpy     #(ScreenLayoutEnd - ScreenLayout)
+        bne     @reg
+        lda     #$40                    ; $0000, write
+        ldx     #0
+        ldy     #0
+        jsr     VdpAddress
+        ldx     #0
+        ldy     #>$2000                 ; 32 pages, the four tables
+@clear:
+        stz     VC_DATA
+        inx
+        bne     @clear
+        dey
+        bne     @clear
+        ldx     #64                     ; On into the sprite table at $2000
+@sprite:
+        lda     #240                    ; Y: the line below a 240-line picture
+        sta     VC_DATA
+        stz     VC_DATA                 ; X
+        stz     VC_DATA                 ; Pattern
+        stz     VC_DATA                 ; Attributes
+        dex
+        bne     @sprite
+        pla
+        inc     a                       ; SCREEN 1-3 is VMODE 2-4
+        ldx     #VDP_VMODE
+        jmp     VdpWriteReg
+@done:
+        rts
+
+ScreenLayout:                           ; Register, value
+        .byte   VDP_MODE1,    $40       ; Display on, 8x8 sprites unmagnified
+        .byte   VDP_L0NAME,   $00       ; $0000
+        .byte   VDP_L0ATTR,   $02       ; $0800
+        .byte   VDP_L0PAT,    $08       ; $4000
+        .byte   VDP_L0SCRX,   $00
+        .byte   VDP_L0SCRY,   $00
+        .byte   VDP_L0CTRL,   $32       ; 4bpp, per cell, on, index 0 opaque
+        .byte   VDP_L1NAME,   $04       ; $1000
+        .byte   VDP_L1ATTR,   $06       ; $1800
+        .byte   VDP_L1PAT,    $10       ; $8000
+        .byte   VDP_L1SCRX,   $00
+        .byte   VDP_L1SCRY,   $00
+        .byte   VDP_L1CTRL,   $02       ; 4bpp, per cell, off, index 0 clear
+        .byte   VDP_SPRATTR,  $40       ; $2000, where VdpSprite writes
+        .byte   VDP_SPRPAT,   $18       ; $C000
+        .byte   VDP_SPRCOUNT, 64
+        .byte   VDP_SPRCTRL,  $23       ; On, collisions, no $D0 end, 4bpp
+ScreenLayoutEnd:
+
+; VPOKE addr, value -- a byte anywhere in the 64 KB of VRAM
+; The address rides the stack across the value's evaluation, as POKE's does.
+BasCmdVpoke:
+        jsr     EvalAddrU16
+        lda     FAC+4                   ; lo
+        pha
+        lda     FAC+3                   ; hi
+        pha
+        jsr     GetComByt               ; X = value
+        txa
+        ply                             ; hi
+        plx                             ; lo
+        jmp     VdpPoke
+
+; VREG reg, value -- write register 0-127, through VdpWriteReg
+BasCmdVreg:
+        lda     #128
+        jsr     GetByteLim              ; X = reg
+        phx
+        jsr     GetComByt               ; X = value
+        txa
+        plx
+        jmp     VdpWriteReg
+
+; PALETTE index, r, g, b -- palette entry 0-255 at $FC00 + 2 * index, 0-15 each
+BasCmdPalette:
+        jsr     GetByt                  ; X = index
+        phx
+        lda     #16
+        jsr     GetComByteLim           ; X = r
+        phx
+        lda     #16
+        jsr     GetComByteLim           ; X = g
+        phx
+        lda     #16
+        jsr     GetComByteLim           ; X = b
+        stx     BAS_TMP1
+        pla                             ; g
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        ora     BAS_TMP1
+        tay                             ; $GB
+        pla                             ; $0R
+        plx                             ; index
+        jmp     VdpSetPalette
+
+; VSYNC -- wait for the start of the next vertical blank (2 cs without a card)
+BasCmdVsync     := WaitVBlank
+
+; VLOAD "name", addr -- a file from the current disk into VRAM at addr, its
+; exact length.  A data statement, so no CF card is ?NO DEVICE; no video card
+; reads nothing and says nothing.
+BasCmdVload:
+        lda     #HW_CF
+        jsr     ReqHw
+        jsr     EvalString              ; -> BAS_FNAME, STR_PTR
+        jsr     ChkCom
+        jsr     EvalAddrU16
+        lda     FAC+4
+        sta     FS_IO_ADDR
+        lda     FAC+3
+        sta     FS_IO_ADDR+1
+        bit     HW_PRESENT              ; Video is bit 7
+        bpl     @done
+        jsr     VdpLoadFile
+        bcc     @done
+        jmp     BasLoadErr
+@done:
+        rts
+
+; VPEEK(addr) -- the VRAM byte at addr; 0 without a card
+FnVpeek:
+        jsr     ParenNum
+        jsr     FacToU16
+        ldx     FAC+4
+        ldy     FAC+3
+        lda     #0                      ; What VdpPeek leaves in A without a card
+        jsr     VdpPeek
+        tay
+        jmp     SngFlt
 
 MsgFree:        .byte   " BYTES FREE  HW=",0
 MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
@@ -8949,7 +9124,7 @@ BasTokenAddrTbl:
         .word   BasCmdNvram-1           ; $B1 NVRAM
         .word   BasCmdPause-1           ; $B2 PAUSE
         .word   BasCmdBank-1            ; $B3 BANK
-        .word   SynErr-1                ; $B4 SCREEN
+        .word   BasCmdScreen-1          ; $B4 SCREEN (BRK in 1.x)
         .word   BasCmdMem-1             ; $B5 MEM
 
 ; Extended statement tokens, from TOK_DISK ($D1).  Entries are (handler-1), as
@@ -8959,11 +9134,11 @@ BasExtAddrTbl:
         .word   BasCmdBload-1           ; $D2 BLOAD
         .word   BasCmdBsave-1           ; $D3 BSAVE
         .word   BasCmdFormat-1          ; $D4 FORMAT
-        .word   SynErr-1                ; $D5 VPOKE
-        .word   SynErr-1                ; $D6 VREG
-        .word   SynErr-1                ; $D7 PALETTE
-        .word   SynErr-1                ; $D8 VSYNC
-        .word   SynErr-1                ; $D9 VLOAD
+        .word   BasCmdVpoke-1           ; $D5 VPOKE
+        .word   BasCmdVreg-1            ; $D6 VREG
+        .word   BasCmdPalette-1         ; $D7 PALETTE
+        .word   BasCmdVsync-1           ; $D8 VSYNC
+        .word   BasCmdVload-1           ; $D9 VLOAD
         .word   SynErr-1                ; $DA SPRITE
         .word   SynErr-1                ; $DB SCROLL
         .word   SynErr-1                ; $DC LAYER

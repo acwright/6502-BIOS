@@ -13,13 +13,12 @@
 // And the other half: with VID_MODE still $01 nothing is reset, so what a
 // program printed is still on the screen at the prompt.
 
-import { typeLine, awaitScreen, render } from '../lib/video.mjs'
+import { typeLine, awaitScreen, render, typeProgram, ctrlC } from '../lib/video.mjs'
 import { VID_MODE, REG_VMODE } from '../lib/cells.mjs'
 
 export const name = 'END, STOP, an error, Ctrl+C and a direct line out of Text mode all come back to the Text console'
 export const profile = 'video'
 
-const WriteBuffer = 0xa006
 const FAKE = 'POKE 915,3'
 
 async function inGraphics(m) {
@@ -34,11 +33,7 @@ async function assertText(m, lines, what) {
   m.assert(!lines.some((l) => l.includes('POKE')), `${what}: the screen was not cleared before the message. It reads:\n${render(lines)}`)
 }
 
-async function program(m, lines) {
-  await typeLine(m, 'NEW')
-  for (const line of lines) await typeLine(m, line)
-  await awaitScreen(m, (s) => s.some((l) => l.startsWith(lines.at(-1))), 'the program typed in')
-}
+const program = typeProgram
 
 const shows = (text) => (lines) => lines.some((l) => l.startsWith(text)) && lines.some((l) => l.startsWith('OK'))
 
@@ -62,10 +57,7 @@ export async function run(m) {
   await inGraphics(m)
   await typeLine(m, 'RUN')
   await m.waitFor({ cycles: 300000, run: 'turbo', timeoutMs: 30000 })
-  // Paused first: call6502 puts back the registers it read on entry, and read
-  // from a running machine they are already stale.
-  await m.pause()
-  await m.call6502(WriteBuffer, { A: 0x03 })
+  await ctrlC(m)
   const broken = await awaitScreen(m, shows('BREAK IN 20'), 'BREAK IN 20 after Ctrl+C')
   await assertText(m, broken, 'Ctrl+C')
 

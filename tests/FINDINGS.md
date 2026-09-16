@@ -66,6 +66,43 @@ made to pass.
 
 ---
 
+## A paste at 19,200 baud overruns the input buffer
+
+- **Bucket:** BIOS limitation, and an emulator one (RTS is not honoured)
+- **Found by:** `a-pasted-program-crunches-without-dropping-input`, written
+  for VDP-PLAN §5 Phase 6's crunch-speed check
+- **Phase:** 2.0, Phase 6
+- **Status:** **open**; the case is `xfail`. Not caused by 2.0's keywords:
+  the ROM before them drops the same paste.
+
+Twenty lines of the README's SAVEMGR.BAS, written to the serial port in one
+go, come back from `LIST` with lines missing. The emulator paces input at the
+line rate, 520 cycles a character at 1 MHz, and `BasCrunch` runs between two
+lines while the next is arriving. Measured from `BasCrunch`'s entry to its
+return:
+
+| Line | Before the 2.0 tokens (`fdcf151`) | With them |
+|---|--:|--:|
+| `1040 FOR K = 2 TO 15 : V = NVRAM(B + K) : GOSUB 1500 : NEXT K` | 66,970 | 79,110 |
+| `50 PRINT "SLOT";S;": ";` | 14,248 | 16,732 |
+| `100 FOR X = 0 TO 31 : VPOKE X + 32,X : NEXT X` | 60,690 | 67,751 |
+
+So a line of ordinary code costs 100-150 characters of backlog, and the
+256-byte input buffer is full after two or three lines. 2.0's longer
+`KeywordTbl` adds about 15%. Every letter that does not start a keyword walks
+the whole table, which is where the time goes.
+
+`Chrin` raises RTS once the buffer holds `$B0` bytes, so on the real machine a
+terminal with RTS/CTS flow control waits and nothing is lost. The emulator's
+`SerialConsole` does not look at RTS, and a terminal without flow control would
+drop input the same way.
+
+**What would fix it:** the emulator holding input while RTS is high, or a
+keyword index in BASIC (a first-letter table) that makes a crunch roughly ten
+times cheaper. Either turns the case into an XPASS.
+
+---
+
 ## Resolved
 
 ### BRK pushed the return address one byte too high

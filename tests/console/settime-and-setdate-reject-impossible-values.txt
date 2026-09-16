@@ -11,8 +11,8 @@ name: SETTIME and SETDATE reject a value the clock cannot hold
 # unusual.
 #
 # So this asserts the behaviour we believe is correct rather than the behaviour
-# observed, which is what PLAN.md §10 requires and why the marker above exists
-# instead of a looser assertion.
+# observed — never loosen an assertion to accommodate a bug (tests/README.md,
+# xfail) — which is why the marker above exists instead of a looser assertion.
 mode: basic
 
 # The top of each field is legal and has to stay legal — a range check that was

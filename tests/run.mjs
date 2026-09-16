@@ -13,7 +13,7 @@
 // so no case can leak into the next, and cases that deliberately wreck the
 // machine need no cleanup code at all.
 //
-// See PLAN.md for what the suite is meant to cover.
+// See tests/README.md for how a run works and how to write a case.
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'

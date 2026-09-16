@@ -14,10 +14,10 @@ export async function run(m) {
   await m.send(`PAUSE ${CENTISECONDS}\r`, /^OK/, { timeoutMs: 30000 })
   const elapsed = (await m.cycles()) - before
 
-  // A wide band on purpose. The BIOS makes no cycle guarantees (PLAN.md §1),
-  // and PAUSE falls back to a calibrated software loop when the VIA is absent,
-  // so this is here to catch PAUSE returning instantly or hanging — not to pin
-  // a timing the ROM never promised.
+  // A wide band on purpose. The BIOS makes no cycle guarantees, and PAUSE falls
+  // back to a calibrated software loop when the VIA is absent, so this is here
+  // to catch PAUSE returning instantly or hanging — not to pin a timing the ROM
+  // never promised.
   m.assert(
     elapsed > EXPECTED / 4 && elapsed < EXPECTED * 4,
     `PAUSE ${CENTISECONDS} took ${elapsed} cycles, expected roughly ${EXPECTED}`,

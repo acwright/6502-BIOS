@@ -438,6 +438,10 @@ slot, and a corrupt one, and the assertions read rather than write.
      `VDP-PLAN.md`, updated for the release.
    - **6502-PICOCALC** embeds the `v1.6` ROM and releases a new UF2, since it is a legacy
      machine shipping the final legacy BIOS. *Not yet planned.*
+   - **6502-KIMULATOR** bundles the `v1.6` ROM and releases 1.0.9. A KIM has no RTC, so the
+     only visible change is `KernalVersion` reporting 1.6. All twelve KIM series checks were
+     run under 1.6 first: identical except episode 14's version line. *Planned* in its
+     `VDP-PLAN.md`.
 
    Once emulator 2.7.0 is out, `v1.x`'s `ci.yml` moves its `EMULATOR_REF` to `v2.7.0`. That
    workflow runs only on pushes to `main` and on pull requests, so 1.x fixes go through PRs

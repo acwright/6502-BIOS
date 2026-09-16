@@ -54,7 +54,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code or inspected in the 
 | 4 | `$10` | Serial R65C51 (IO 5) |
 | 5 | `$20` | GPIO/VIA 65C22 (IO 6) |
 | 6 | `$40` | SID/ARMSID (IO 7) |
-| 7 | `$80` | Video TMS9918 (IO 8) |
+| 7 | `$80` | Video PICOVDP (IO 8) |
 
 #### Graceful Degradation
 

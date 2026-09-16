@@ -1763,37 +1763,43 @@ ProbeRAM:
   sta RAM_DATA_H                ; Restore bank-0 byte 0
   rts
 
-; ProbeVideo — TMS9918 VRAM read-back test
-; Writes $A5 to VRAM address $0000, reads it back
-; Sets HW_VID in HW_PRESENT on success
-; Modifies: Flags, A
+; ProbeVideo — identify a 6502-PICOVDP (SPEC §16)
+; Selects STAT4 on port A and looks for the identification byte.  Only a PICOVDP
+; is video: an empty slot reads something else, and a TMS9918A decodes three
+; register bits, takes the select as a harmless register 7 write, and is left
+; alone after that.  On a PICOVDP, records STAT5 in VDP_FW and STAT6 in
+; VDP_CAPS, puts STATSEL_A back to STAT0 and sets HW_VID.  STAT5 gates nothing.
+; Modifies: Flags, A, VDP_FW, VDP_CAPS
 ProbeVideo:
-  ; Write $A5 to VRAM $0000
-  lda #$00
-  sta VC_REG                    ; Low byte of address
-  lda #$40                      ; High byte $00 OR $40 for write mode
-  sta VC_REG
-  lda #$A5
-  sta VC_DATA                   ; Write data byte
-  ; Read back from VRAM $0000
-  lda #$00
-  sta VC_REG                    ; Low byte of address
-  lda #$00                      ; High byte $00, bit 6 clear for read mode
-  sta VC_REG
-  lda VC_DATA                   ; Read data byte
-  cmp #$A5
+  stz VDP_FW                    ; No card until one answers
+  stz VDP_CAPS
+  lda VC_STATUS                 ; Resynchronise the command flip-flop (and, on
+                                ;   a TMS9918A, clear the flags that could
+                                ;   otherwise read as $AC)
+  lda #$04
+  jsr @Stat                     ; STAT4
+  cmp #VDP_ID
   bne @ProbeVideoDone
+  lda #$05
+  jsr @Stat
+  sta VDP_FW                    ; STAT5: firmware version, BCD
+  lda #$06
+  jsr @Stat
+  sta VDP_CAPS                  ; STAT6: capability bits
+  lda #$00                      ; STATSEL_A back to STAT0, without reading it
+  sta VC_REG
+  lda #($80 | VDP_STATSEL_A)
+  sta VC_REG
   lda HW_PRESENT
   ora #HW_VID
   sta HW_PRESENT
-  ; Clean up probe byte — write $00 back to VRAM $0000
-  lda #$00
-  sta VC_REG                    ; Low byte of address
-  lda #$40                      ; High byte $00 OR $40 for write mode
-  sta VC_REG
-  lda #$00
-  sta VC_DATA    
 @ProbeVideoDone:
+  rts
+@Stat:                          ; A = status register → A = its value
+  sta VC_REG
+  lda #($80 | VDP_STATSEL_A)
+  sta VC_REG
+  lda VC_STATUS
   rts
 
 ; ProbeGPIO — VIA DDR register read-back test

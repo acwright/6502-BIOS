@@ -67,7 +67,7 @@ HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFla
 HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
 HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
 HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
-HW_VID              = %10000000          ; Bit 7: Video card (IO 8, TMS9918/pico9918)
+HW_VID              = %10000000          ; Bit 7: Video card (IO 8, PICOVDP)
 BAS_PENDKEY         := $030E             ; Pending key from BasCheckBreak (1 byte)
 CF_DISK             := $030F             ; Current CF "disk" bank (0-255); base LBA = CF_DISK * FS_DISK_SECTORS
 BRK_P               := $0310             ; Saved P at time of BRK
@@ -118,6 +118,21 @@ PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a progra
 
 ; Kernal NVRAM save-slot variables ($0390-$03FF)
 NV_ID               := $0390             ; Owner ID input for NvWrite ($00 is refused — that is NvErase)
+
+; Kernal video variables ($0391-$039B)
+VID_PEN             := $0391             ; Attribute byte for new output, fg<<4 | bg ($1F from KernalInit)
+VID_TOP             := $0392             ; Name-table row shown at the top of the screen (0-23); L0SCRY = VID_TOP * 8
+VID_MODE            := $0393             ; $00 = console not set up since KernalInit (card in the legacy submode);
+                                         ;   $01 = text console intact.  Otherwise low nibble = the VMODE the Kernal
+                                         ;   last set, b7 = disturbed (sprites, scroll, layers)
+VDP_FW              := $0394             ; STAT5 (firmware version, BCD) at boot; $00 if no card
+VDP_CAPS            := $0395             ; STAT6 (capability bits) at boot; $00 if no card
+VDP_L0CTRL_SHADOW   := $0396             ; Shadow of the write-only L0CTRL register
+VDP_L1CTRL_SHADOW   := $0397             ; Shadow of the write-only L1CTRL register
+VDP_P0              := $0398             ; Parameter block for VDP entries that take more than A/X/Y
+VDP_P1              := $0399
+VDP_P2              := $039A
+VDP_P3              := $039B
 
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
 
@@ -324,7 +339,54 @@ SID_FILT_BP         := %00100000         ; Band-pass filter
 SID_FILT_HP         := %01000000         ; High-pass filter
 SID_FILT_3OFF       := %10000000         ; Voice 3 off
 
-; Video Card / VGA Card (TMS9918/pico9918) | IO 8 | $9C00-$9C01
-VC_DATA             := $9C00             ; R/W
-VC_REG              := $9C01             ; Write
-VC_STATUS           := $9C01             ; Read
+; Video Card (6502-PICOVDP) | IO 8 | $9C00-$9C03
+; Two complete port pairs.  The Kernal uses port A only; port B is for interrupt
+; handlers (SPEC §4).  A register write is two writes to a command port: the
+; value, then the register number with bit 7 set.
+VC_DATA             := $9C00             ; R/W  VRAM data, port A
+VC_REG              := $9C01             ; Write  command, port A
+VC_STATUS           := $9C01             ; Read  status (STATSEL_A selects which), port A
+VC_DATA2            := $9C02             ; R/W  VRAM data, port B
+VC_REG2             := $9C03             ; Write  command, port B
+VC_STATUS2          := $9C03             ; Read  status (STATSEL_B selects which), port B
+VDP_ID              = $AC                ; STAT4, the identification byte
+; Registers (SPEC §5).  All write-only.
+VDP_MODE0           = $00                ; b1 M3
+VDP_MODE1           = $01                ; b6 display enable, b5 vblank IRQ enable, b4 M1, b3 M2, b1 sprite size, b0 magnify
+                                         ; $02-$06 are legacy aliases of L0NAME, L0ATTR, L0PAT, SPRATTR, SPRPAT
+VDP_COLOR           = $07                ; b7:4 default foreground, b3:0 backdrop/border
+VDP_VBANK           = $08                ; VRAM address bits 15:14, sampled by an address command
+VDP_VINC            = $09                ; VRAM pointer stride, signed (the Kernal assumes +1)
+VDP_IRQEN           = $0A                ; b0 vblank, b1 scanline, b2 sprite overflow, b3 collision
+VDP_IRQLINE         = $0B                ; Scanline compare value
+VDP_PALBASE         = $0C                ; Palette base, x $400 ($3F = $FC00)
+VDP_VMODE           = $0D                ; $0 legacy submode, $1 Text, $2 Compact, $3 Graphics, $4 Full
+VDP_STATSEL_B       = $0E                ; Status register port B returns
+VDP_STATSEL_A       = $0F                ; Status register port A returns
+VDP_L0NAME          = $10                ; Layer 0 name table base, x $400
+VDP_L0ATTR          = $11                ; Layer 0 attribute table base, x $400
+VDP_L0PAT           = $12                ; Layer 0 pattern table base, x $800
+VDP_L0SCRX          = $13                ; Layer 0 horizontal scroll, pixels (bit 8 = L0CTRL b6)
+VDP_L0SCRY          = $14                ; Layer 0 vertical scroll, pixels
+VDP_L0CTRL          = $15                ; b1:0 depth, b3:2 attribute source, b4 enable, b5 index 0 opaque, b6 X bit 8
+VDP_L0PAL           = $16                ; Layer 0 palette group high bits
+VDP_L1NAME          = $18                ; Layer 1 name table base, x $400
+VDP_L1ATTR          = $19                ; Layer 1 attribute table base, x $400
+VDP_L1PAT           = $1A                ; Layer 1 pattern table base, x $800
+VDP_L1SCRX          = $1B                ; Layer 1 horizontal scroll, pixels (bit 8 = L1CTRL b6)
+VDP_L1SCRY          = $1C                ; Layer 1 vertical scroll, pixels
+VDP_L1CTRL          = $1D                ; As VDP_L0CTRL
+VDP_L1PAL           = $1E                ; Layer 1 palette group high bits
+VDP_SPRATTR         = $20                ; Sprite attribute table base, x $80
+VDP_SPRPAT          = $21                ; Sprite pattern table base, x $800
+VDP_SPRCOUNT        = $22                ; Active sprite slots, 0-64
+VDP_SPRCTRL         = $23                ; b0 enable, b1 collision, b2 $D0 terminates, b3 detailed collision, b5:4 depth
+VDP_SPRLIMIT        = $24                ; Sprites drawn per scanline, 1-32
+VDP_SPRPAL          = $25                ; Sprite palette group high bits
+; STAT6 capability bits (SPEC §6)
+VDP_CAP_LAYERS      = %00000001          ; Two layers
+VDP_CAP_8BPP        = %00000010          ; 8bpp layer
+VDP_CAP_FLIP        = %00000100          ; Sprite flip
+VDP_CAP_SCROLL      = %00001000          ; Hardware scroll
+VDP_CAP_SCANIRQ     = %00010000          ; Scanline IRQ
+VDP_CAP_64K         = %00100000          ; 64 KB VRAM

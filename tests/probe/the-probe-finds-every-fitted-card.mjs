@@ -24,7 +24,7 @@ export const CARDS = [
   [0x10, 'Serial R65C51 (IO 5)'],
   [0x20, 'GPIO/VIA 65C22 (IO 6)'],
   [0x40, 'SID/ARMSID (IO 7)'],
-  [0x80, 'Video TMS9918 (IO 8)'],
+  [0x80, 'Video PICOVDP (IO 8)'],
 ]
 
 export const IO_MODE_VIDEO = 0

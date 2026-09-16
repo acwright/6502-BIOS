@@ -377,6 +377,16 @@ export class Machine {
     return this.call('screen.hash')
   }
 
+  // The card rather than the picture: registers, status and ports as the
+  // debugger sees them, without the side effects a 6502 read would have.
+  videoInfo() {
+    return this.call('video.info')
+  }
+
+  async videoRegisters() {
+    return (await this.call('video.registers')).registers
+  }
+
   key(code, down = true) {
     return this.call('input.key', { code, down })
   }

@@ -42,6 +42,10 @@ MON_IDX             := $35               ; $35     - Monitor input line index
 PE_PTR              := CF_BUF_PTR        ; $24-$25 - chain walk cursor
 PE_NEXT             := CF_LBA            ; $26-$27 - candidate next-pointer
 
+; NVRAM save-slot copy pointer.  Aliases STR_PTR, which NvRead/NvWrite clobber
+; exactly as PrintStr does — the two are never live at the same time.
+NV_PTR              := STR_PTR           ; $02-$03 - caller's buffer during a slot copy
+
 ; Stack
 STACK               := $0100             ; $0100-$01FF
 
@@ -93,7 +97,7 @@ FS_NEXT_SEC         := $034E             ; $034E-$034F - Next free sector for al
 FS_FNAME_BUF        := $0350             ; $0350-$035A - 11-byte filename buffer (8 name + 3 ext)
 BOOT_VECTOR         := $035B             ; $035B-$035C - Cart/boot redirect vector (2 bytes, 0=normal boot)
 
-; BASIC runtime variables ($035D-$03FF) - additive; assignable by BASIC
+; BASIC runtime variables ($035D-$038F) - additive; assignable by BASIC
 BAS_TXTTAB          := $035D             ; $035D-$035E - Start of program text (= $0800)
 BAS_VARTAB          := $035F             ; $035F-$0360 - End-of-program / start-of-vars pointer
 BAS_ARYTAB          := $0361             ; $0361-$0362 - Start of arrays
@@ -117,6 +121,9 @@ PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a progra
                                          ;   outside BASIC (Monitor L); 0 = none.  Cleared by KernalInit and consumed by
                                          ;   ProgramEnd, so a stale value can never be mistaken for a fresh load.
 
+; Kernal NVRAM save-slot variables ($0390-$03FF)
+NV_ID               := $0390             ; Owner ID input for NvWrite ($00 is refused — that is NvErase)
+
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
 
 ; XModem Protocol Constants
@@ -132,7 +139,7 @@ XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 1
-BIOS_VERSION_MINOR  = 5
+BIOS_VERSION_MINOR  = 6
 
 ; NOT user memory, despite the name -- kept only because Wozmon builds its input
 ; buffer on it.  Every byte of $0400-$07FF belongs to something: $0400 is
@@ -181,6 +188,16 @@ RTC_MON_MASK        := %00011111         ; Month value occupies the low 5 bits
 RTC_MON_EOSC        := %10000000         ; Oscillator Start/Stop (0 = oscillator running)
 RTC_MON_E32K        := %01000000         ; 32kHz square-wave enable (1 = SQW output disabled)
 RTC_MON_BB32        := %00100000         ; Battery-backup 32kHz SQW enable (1 = enabled in backup)
+; NVRAM save slots — slot n occupies NVRAM n*16 .. n*16+15:
+;   +0 owner ID ($00 = free), +1 checksum, +2..+15 payload
+; Checksum: ck = NV_CK_SEED, then ck = rol8(ck) EOR b for the ID and the 14 payload bytes
+NV_SLOTS            = 16                 ; Save slots in RTC NVRAM
+NV_SLOT_SIZE        = 16                 ; Bytes per slot (slot n at NVRAM n*16)
+NV_SLOT_DATA        = 14                 ; Payload bytes per slot
+NV_CK_SEED          = $A6                ; Checksum seed
+NV_EMPTY            = 0                  ; NvStat: slot is free
+NV_VALID            = 1                  ; NvStat: owner ID set, checksum agrees
+NV_BAD              = 2                  ; NvStat: owner ID set, checksum does not
 
 ; Storage Card (CompactFlash 8-bit IDE) | IO 4 | $8C00-$8C07
 ST_DATA             := $8C00             ; R/W

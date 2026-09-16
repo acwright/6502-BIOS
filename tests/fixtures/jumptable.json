@@ -51,5 +51,11 @@
   "$A093": "PrintCRLF",
   "$A096": "PrintDecU16",
   "$A099": "KBDisable",
-  "$A09C": "KBEnable"
+  "$A09C": "KBEnable",
+  "$A09F": "NvStat",
+  "$A0A2": "NvRead",
+  "$A0A5": "NvWrite",
+  "$A0A8": "NvErase",
+  "$A0AB": "NvFind",
+  "$A0AE": "NvFormat"
 }

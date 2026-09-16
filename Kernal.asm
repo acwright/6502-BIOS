@@ -92,9 +92,16 @@ PrintDecU16:    jmp PrintDecU16Impl     ; $A096 - Print unsigned 16-bit decimal 
 ; --- Keyboard encoder control (raw port access) ---
 KBDisable:      jmp KBDisableImpl       ; $A099 - Release both encoders and settle; ports free for raw read
 KBEnable:       jmp KBEnableImpl        ; $A09C - Re-enable both encoders
+; --- NVRAM save slots (DS1511Y) ---
+NvStat:         jmp NvStatImpl          ; $A09F - Slot status (X=slot) → A=status, Y=owner ID
+NvRead:         jmp NvReadImpl          ; $A0A2 - Copy a valid slot's payload (X=slot, A/Y=dest lo/hi)
+NvWrite:        jmp NvWriteImpl         ; $A0A5 - Write a slot (X=slot, A/Y=src lo/hi, NV_ID=owner ID)
+NvErase:        jmp NvEraseImpl         ; $A0A8 - Zero all 16 bytes of a slot (X=slot)
+NvFind:         jmp NvFindImpl          ; $A0AB - Lowest slot owned by A ($00 = first free) → X
+NvFormat:       jmp NvFormatImpl        ; $A0AE - Erase all 16 slots
 
-; Reserved entries ($A09F-$A0FE)
-.repeat 32
+; Reserved entries ($A0B1-$A0FE)
+.repeat 26
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -1454,6 +1461,264 @@ RtcReadNVRAMImpl:
 RtcWriteNVRAMImpl:
   stx RTC_RAM_ADDR
   sta RTC_RAM_DATA
+  rts
+
+; === NVRAM Save Slots ===
+;
+; The 256 NVRAM bytes are 16 slots of 16 bytes; slot n starts at NVRAM n*16:
+;
+;   +$0      owner ID     $00 = free, otherwise a game-chosen identity byte
+;   +$1      checksum     over the owner ID and the 14 payload bytes
+;   +$2-$F   payload
+;
+; Checksum: ck = NV_CK_SEED, then ck = rol8(ck) EOR b for each covered byte.
+; The 8-bit rotate is asl / adc #0, which is why these routines clear D.
+;
+; Contract shared by all six:
+;   * Carry set means the call did nothing: no RTC card, slot >= NV_SLOTS, and
+;     the per-routine cases documented on each.
+;   * The caller's D and I flags come back unchanged.  Interrupts are masked for
+;     the duration, because the slot copies use burst mode, where every access
+;     of RTC_RAM_DATA advances the address latch — an IRQ handler touching NVRAM
+;     mid-copy would corrupt the save.  A user NMI handler must not touch NVRAM.
+;   * BME is clear on exit, so RtcReadNVRAM / RtcWriteNVRAM keep their
+;     single-byte behaviour.
+;   * While BME is set, RTC_RAM_DATA is only ever touched with plain absolute
+;     addressing: one instruction, one bus access, one step of the latch.
+
+; NvStat — Report a slot's state
+; Input: X = slot (0-15)
+; Output: A = NV_EMPTY / NV_VALID / NV_BAD, Y = owner ID, C clear
+;         C set on no RTC or bad slot (A, Y undefined)
+; Modifies: Flags (D and I preserved), A, Y
+NvStatImpl:
+  php
+  sei
+  cld
+  jsr NvCheck
+  bcs NvFail
+  jsr NvScan
+  jmp NvOk
+
+; NvRead — Copy a valid slot's 14 payload bytes to the caller's buffer
+; Input: X = slot (0-15), A/Y = destination lo/hi
+; Output: A = status, Y = owner ID; C clear and the buffer written only if A = NV_VALID
+;         C set on no RTC or bad slot (A, Y undefined), or a slot that is not
+;         valid (A = its status, Y = its owner ID) — the buffer is untouched
+; Modifies: Flags (D and I preserved), A, Y, NV_PTR
+NvReadImpl:
+  php
+  sei
+  cld
+  sta NV_PTR
+  sty NV_PTR+1
+  jsr NvCheck
+  bcs NvFail
+  jsr NvScan
+  cmp #NV_VALID
+  bne NvFail                    ; Nothing copied until the slot has validated
+  phy                           ; Owner ID
+  jsr NvBurstStart
+  lda RTC_RAM_DATA              ; Step past the owner ID...
+  lda RTC_RAM_DATA              ;   ...and the checksum
+  ldy #0
+@Copy:
+  lda RTC_RAM_DATA
+  sta (NV_PTR),y
+  iny
+  cpy #NV_SLOT_DATA
+  bne @Copy
+  jsr NvBurstEnd
+  ply
+  lda #NV_VALID
+  jmp NvOk
+
+; NvOk / NvFail — Common exits: restore the caller's flags, then report
+; Entered by jmp with the P byte an entry's php pushed on top of the stack.
+; A, X and Y pass through untouched.
+NvOk:
+  plp
+  clc
+  rts
+NvFail:
+  plp
+  sec
+  rts
+
+; NvFind — Find the lowest slot whose owner ID is A
+; Matches any non-free slot, valid or damaged; A = $00 finds the lowest free slot.
+; Input: A = owner ID
+; Output: X = slot, C clear; C set if no slot matched (X undefined)
+; Modifies: Flags (I preserved), A, X, RTC_TMP
+NvFindImpl:
+  php
+  sei
+  sta RTC_TMP
+  lda HW_PRESENT
+  and #HW_RTC
+  beq NvFail
+  ldx #0
+@Next:
+  txa
+  asl a
+  asl a
+  asl a
+  asl a
+  sta RTC_RAM_ADDR              ; One byte per slot, so no burst: the latch is
+  lda RTC_RAM_DATA              ;   set afresh each time
+  cmp RTC_TMP
+  beq NvOk
+  inx
+  cpx #NV_SLOTS
+  bne @Next
+  beq NvFail
+
+; NvErase — Zero all 16 bytes of a slot, so nothing of the old save is legible
+; Input: X = slot (0-15)
+; Output: C clear; C set on no RTC or bad slot
+; Modifies: Flags (I preserved), A, Y
+NvEraseImpl:
+  php
+  sei
+  jsr NvCheck
+  bcs NvFail
+  jsr NvBurstStart
+  ldy #NV_SLOT_SIZE
+@Zero:
+  stz RTC_RAM_DATA
+  dey
+  bne @Zero
+  jsr NvBurstEnd
+  jmp NvOk
+
+; NvWrite — Write a slot: owner ID, checksum and 14 payload bytes
+; Input: X = slot (0-15), A/Y = source lo/hi, NV_ID = owner ID ($01-$FF)
+; Output: C clear; C set on no RTC, bad slot, or NV_ID = 0 (nothing written)
+; Modifies: Flags (D and I preserved), A, Y, NV_PTR
+NvWriteImpl:
+  php
+  sei
+  cld
+  sta NV_PTR
+  sty NV_PTR+1
+  jsr NvCheck
+  bcs NvFail
+  lda NV_ID
+  beq NvFail                    ; ID 0 marks a free slot — that is NvErase
+  lda #NV_CK_SEED               ; Checksum first, from the caller's buffer
+  asl a
+  adc #$00
+  eor NV_ID
+  ldy #0
+@Sum:
+  asl a
+  adc #$00
+  eor (NV_PTR),y
+  iny
+  cpy #NV_SLOT_DATA
+  bne @Sum
+  sta RTC_TMP
+  jsr NvBurstStart
+  lda NV_ID
+  sta RTC_RAM_DATA
+  lda RTC_TMP
+  sta RTC_RAM_DATA
+  ldy #0
+@Copy:
+  lda (NV_PTR),y
+  sta RTC_RAM_DATA
+  iny
+  cpy #NV_SLOT_DATA
+  bne @Copy
+  jsr NvBurstEnd
+  jmp NvOk
+
+; NvFormat — Erase all 16 slots
+; Output: C clear; C set on no RTC
+; Modifies: Flags, A, X, Y
+NvFormatImpl:
+  ldx #NV_SLOTS-1
+@Next:
+  jsr NvEraseImpl
+  bcs @Done
+  dex
+  bpl @Next
+@Done:
+  rts
+
+; NvCheck — Fail unless an RTC is fitted and X names a slot
+; Input: X = slot
+; Output: C set if no RTC or X >= NV_SLOTS
+; Modifies: Flags, A
+NvCheck:
+  lda HW_PRESENT
+  and #HW_RTC
+  beq @Fail
+  cpx #NV_SLOTS                 ; C = X >= NV_SLOTS
+  rts
+@Fail:
+  sec
+  rts
+
+; NvScan — Read slot X's header and validate its checksum
+; Input: X = slot (already checked), D clear, interrupts masked
+; Output: A = NV_EMPTY / NV_VALID / NV_BAD, Y = owner ID
+; Modifies: Flags, A, Y, RTC_TMP
+NvScan:
+  jsr NvBurstStart
+  lda RTC_RAM_DATA              ; Owner ID
+  pha
+  sta RTC_TMP
+  lda #NV_CK_SEED               ; Fold in the owner ID
+  asl a
+  adc #$00
+  eor RTC_TMP
+  ldy RTC_RAM_DATA              ; Stored checksum
+  sty RTC_TMP
+  ldy #NV_SLOT_DATA
+@Sum:
+  asl a                         ; Rotate left: bit 7 into carry...
+  adc #$00                      ;   ...and back into bit 0
+  eor RTC_RAM_DATA              ; Next payload byte
+  dey
+  bne @Sum
+  eor RTC_TMP                   ; 0 when the checksum agrees
+  sta RTC_TMP
+  jsr NvBurstEnd
+  ply                           ; Y = owner ID
+  beq @Empty
+  lda RTC_TMP
+  beq @Valid
+  lda #NV_BAD
+  rts
+@Valid:
+  lda #NV_VALID
+  rts
+@Empty:
+  lda #NV_EMPTY
+  rts
+
+; NvBurstStart — Point the NVRAM latch at slot X and enable burst mode
+; Input: X = slot
+; Modifies: Flags, A
+NvBurstStart:
+  txa
+  asl a                         ; Slot base = slot * 16
+  asl a
+  asl a
+  asl a
+  sta RTC_RAM_ADDR
+  lda RTC_CTRL_B                ; Read-modify-write: Control B also holds TE
+  ora #RTC_CTRL_B_BME
+  sta RTC_CTRL_B
+  rts
+
+; NvBurstEnd — Disable burst mode
+; Modifies: Flags, A
+NvBurstEnd:
+  lda RTC_CTRL_B
+  and #<~RTC_CTRL_B_BME
+  sta RTC_CTRL_B
   rts
 
 ; === Hardware Probes ===

@@ -377,7 +377,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 
 All public Kernal entry points are accessed through stable 3-byte `jmp` slots. Call these addresses from your own code — the implementation behind each slot can change without breaking your program.
 
-The table is a fixed 256 bytes: the 51 published slots below, then 34 reserved slots (`$A099–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
+The table is a fixed 256 bytes: the 59 published slots below, then 26 reserved slots (`$A0B1–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
 
 | Address | Label | Description |
 |---------|-------|-------------|
@@ -434,6 +434,12 @@ The table is a fixed 256 bytes: the 51 published slots below, then 34 reserved s
 | `$A096` | `PrintDecU16` | Print an unsigned 16-bit value as decimal, no leading zeros: `A`=lo, `X`=hi |
 | `$A099` | `KBDisable` | Disable both keyboard encoders and wait for them to release the ports (~200 µs). Modifies `A`, flags |
 | `$A09C` | `KBEnable` | Re-enable both keyboard encoders. Modifies `A`, flags |
+| `$A09F` | `NvStat` | Save-slot status: `X`=slot (0–15) → `A`=`NV_EMPTY`/`NV_VALID`/`NV_BAD`, `Y`=owner ID. `X` preserved; carry set if no RTC or bad slot |
+| `$A0A2` | `NvRead` | Copy a valid slot's 14 payload bytes: `X`=slot, `A`/`Y`=destination lo/hi → `A`=status, `Y`=owner ID. Carry set and buffer untouched unless the slot is `NV_VALID`. `X` preserved; clobbers `STR_PTR` |
+| `$A0A5` | `NvWrite` | Write a slot: `X`=slot, `A`/`Y`=source lo/hi, `NV_ID` ($0390)=owner ID (1–255). Carry set and nothing written if no RTC, bad slot or `NV_ID`=0. `X` preserved; clobbers `STR_PTR` |
+| `$A0A8` | `NvErase` | Zero all 16 bytes of a slot: `X`=slot. Carry set if no RTC or bad slot. `X` preserved |
+| `$A0AB` | `NvFind` | Lowest slot whose owner ID is `A` (valid or damaged); `A`=0 finds the lowest free slot → `X`=slot. Carry set if none |
+| `$A0AE` | `NvFormat` | Erase all 16 save slots. Carry set if no RTC |
 
 ### Cartridge Support
 

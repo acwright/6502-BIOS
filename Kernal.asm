@@ -109,9 +109,10 @@ VdpPeek:        jmp VdpPeekImpl         ; $A0BD - Read VRAM byte at X/Y = addres
 VdpSetPalette:  jmp VdpSetPaletteImpl   ; $A0C0 - Palette entry X = 0-255 ← A = $0R, Y = $GB (at $FC00 + 2X)
 WaitVBlank:     jmp WaitVBlankImpl      ; $A0C3 - Return at the start of the next vertical blank (STAT0 untouched)
 VdpLoadFile:    jmp VdpLoadFileImpl     ; $A0C6 - Load named file (STR_PTR) into VRAM at FS_IO_ADDR, exactly FS_FILE_SIZE bytes
+VdpLoadFont:    jmp VdpLoadFontImpl     ; $A0C9 - Copy built-in font A into L0PAT and wait for it (carry set until Phase 8)
 
-; Reserved entries ($A0C9-$A0FE)
-.repeat 18
+; Reserved entries ($A0CC-$A0FE)
+.repeat 17
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -330,6 +331,17 @@ WaitVBlankImpl:
   lda #$00
   jsr VdpSelectStat             ; STATSEL_A back to STAT0, without reading it
   clc
+  rts
+
+; VdpLoadFont — Load one of the card's built-in fonts into the pattern table
+; The published slot for SPEC draft 0.5's FONT register.  Until the Kernal
+; loads the font from the card (VDP-PLAN §5 Phase 8), InitVideo still uploads
+; the character set from ROM, and this returns carry set having done nothing.
+; Input: A = font ID
+; Output: carry set
+; Modifies: Flags
+VdpLoadFontImpl:
+  sec
   rts
 
 ; VdpAddress — Point port A at any VRAM address (no card check)

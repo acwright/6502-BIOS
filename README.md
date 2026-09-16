@@ -442,7 +442,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 
 All public Kernal entry points are accessed through stable 3-byte `jmp` slots. Call these addresses from your own code — the implementation behind each slot can change without breaking your program.
 
-The table is a fixed 256 bytes: the 65 published slots below, then 20 reserved slots (`$A0C3–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
+The table is a fixed 256 bytes: the 66 published slots below, then 19 reserved slots (`$A0C6–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
 
 | Address | Label | Description |
 |---------|-------|-------------|
@@ -511,6 +511,7 @@ The table is a fixed 256 bytes: the 65 published slots below, then 20 reserved s
 | `$A0BA` | `VdpPoke` | Write one VRAM byte: `A`=value, `X`/`Y`=address lo/hi, anywhere in the 64 KB (`VBANK` is set for the address and put back to 0). Carry set and nothing written if no card |
 | `$A0BD` | `VdpPeek` | Read one VRAM byte: `X`/`Y`=address lo/hi → `A`. Carry set if no card |
 | `$A0C0` | `VdpSetPalette` | Set a palette entry: `X`=entry (0–255), `A`=`$0R`, `Y`=`$GB`, written at `$FC00 + 2X`, where `InitVideo` puts `PALBASE`. Carry set and nothing written if no card |
+| `$A0C3` | `WaitVBlank` | Return at the start of the next vertical blank, by polling `STAT3` b0 on port A; `STAT0`'s flags and the `STAT1` latches are left untouched, and `STATSEL_A` is put back to 0. No card: a 2 cs `SysDelay`, carry set. Modifies `A`, `X`, `Y` |
 
 ### Cartridge Support
 

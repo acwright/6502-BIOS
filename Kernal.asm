@@ -107,9 +107,10 @@ VdpSetMode:     jmp VdpSetModeImpl      ; $A0B7 - Write VMODE (A=1-4); carry set
 VdpPoke:        jmp VdpPokeImpl         ; $A0BA - Write VRAM byte A at X/Y = address lo/hi (all 64 KB)
 VdpPeek:        jmp VdpPeekImpl         ; $A0BD - Read VRAM byte at X/Y = address lo/hi → A
 VdpSetPalette:  jmp VdpSetPaletteImpl   ; $A0C0 - Palette entry X = 0-255 ← A = $0R, Y = $GB (at $FC00 + 2X)
+WaitVBlank:     jmp WaitVBlankImpl      ; $A0C3 - Return at the start of the next vertical blank (STAT0 untouched)
 
-; Reserved entries ($A0C3-$A0FE)
-.repeat 20
+; Reserved entries ($A0C6-$A0FE)
+.repeat 19
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -295,6 +296,38 @@ VdpSetPaletteImpl:
   sta VC_DATA
   pla
   sta VC_DATA
+  clc
+  rts
+
+; WaitVBlank — Return at the start of the next vertical blank
+; Polls STAT3 b0 on port A: waits while the display is in blanking, then until
+; it is, and puts STATSEL_A back to 0.  Not STAT0's F: reading STAT0 clears
+; F, OVF and COL and the STAT1 latches a program or its interrupt handler may
+; be relying on, and this leaves them all as they were.
+; No card: waits 2 cs through SysDelay instead, so a loop paced by it still
+; runs at about the speed it would, and returns carry set.
+; Modifies: Flags, A, X, Y
+WaitVBlankImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bmi @WaitVBlankCard
+  lda #2
+  ldx #0
+  jsr SysDelay
+  sec
+  rts
+@WaitVBlankCard:
+  lda #$03
+  jsr VdpSelectStat             ; STAT3
+@WaitVBlankOut:
+  lda VC_STATUS
+  lsr a                         ; b0, vertical blanking, into carry
+  bcs @WaitVBlankOut            ; Still in the last one
+@WaitVBlankIn:
+  lda VC_STATUS
+  lsr a
+  bcc @WaitVBlankIn             ; Not yet in the next
+  lda #$00
+  jsr VdpSelectStat             ; STATSEL_A back to STAT0, without reading it
   clc
   rts
 

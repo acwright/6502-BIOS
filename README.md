@@ -442,7 +442,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 
 All public Kernal entry points are accessed through stable 3-byte `jmp` slots. Call these addresses from your own code — the implementation behind each slot can change without breaking your program.
 
-The table is a fixed 256 bytes: the 68 published slots below, then 17 reserved slots (`$A0CC–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
+The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved slots (`$A0D8–$A0FE`) that return immediately, then one pad byte. New entry points are appended into the reserved space, so no existing address ever moves. Calling a reserved slot on a BIOS that has not filled it in yet returns cleanly rather than crashing.
 
 | Address | Label | Description |
 |---------|-------|-------------|
@@ -514,6 +514,10 @@ The table is a fixed 256 bytes: the 68 published slots below, then 17 reserved s
 | `$A0C3` | `WaitVBlank` | Return at the start of the next vertical blank, by polling `STAT3` b0 on port A; `STAT0`'s flags and the `STAT1` latches are left untouched, and `STATSEL_A` is put back to 0. No card: a 2 cs `SysDelay`, carry set. Modifies `A`, `X`, `Y` |
 | `$A0C6` | `VdpLoadFile` | Load a named file from the current disk into VRAM: `STR_PTR`=filename, `FS_IO_ADDR` ($037F)=VRAM address (any of the 64 KB) → `FS_FILE_SIZE`. Writes exactly the file's bytes, never the rest of its last sector. Carry set if no card (nothing read), or not found or read error. Clobbers `XFER_REMAIN` and `FS_SECTOR_BUF` |
 | `$A0C9` | `VdpLoadFont` | Load a built-in font from the card into the pattern table `L0PAT` names: `A`=font ID. **Not yet implemented in this build:** returns carry set having written nothing (the character set still comes from ROM) |
+| `$A0CC` | `VdpSprite` | Write a sprite's attributes: `X`=sprite (0–63), `VDP_P0`–`VDP_P3` (`$0398–$039B`)=Y, X bits 7:0, pattern, attributes (b7 = X bit 8). Assumes the attribute table at VRAM `$2000` (`SPRATTR`=`$40`, where `SCREEN` 1–3 put it); after moving it, use `VdpPoke`. `X` preserved; carry set and nothing written if no card or `X` > 63 |
+| `$A0CF` | `VdpSetScroll` | Scroll a layer: `X`=layer (0–1), `A`=x bits 7:0, `Y`=y, `VDP_P0`=x bit 8 (0 or not). Writes `LxSCRX`, `LxSCRY` and `LxCTRL` b6, keeping `LxCTRL`'s other bits. Carry set and nothing written if no card or `X` > 1 |
+| `$A0D2` | `VdpLayer` | Show or hide a layer: `X`=layer (0–1), `A`=0 hides, anything else shows. Sets or clears `LxCTRL` b4, keeping its other bits. Carry set and nothing written if no card or `X` > 1 |
+| `$A0D5` | `VdpStatus` | Read a status register on port A: `X`=0–15 → `A`=`STATn`, with `STATSEL_A` put back to 0. Reading `STAT0` clears its flags and `STAT1` its latches (SPEC §6). `X`, `Y` preserved; carry set if no card or `X` > 15 |
 
 ### Cartridge Support
 

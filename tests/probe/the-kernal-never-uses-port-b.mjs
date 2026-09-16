@@ -8,7 +8,10 @@
 // work perfectly well in every test that reads the screen — the pair addresses
 // the same VRAM and registers. So the claim is made on the bus: a write
 // watchpoint on port B across a boot, a screen's worth of scrolling, CLS and
-// COLOR with a border. Later VDP statements belong on this list as they land.
+// COLOR with a border, and a call to each of the 13 VDP entries. Later VDP
+// statements belong on this list as they land.
+
+import * as vdp from '../lib/vdp.mjs'
 
 export const name = 'the Kernal never writes port B'
 export const profile = 'video'
@@ -56,6 +59,32 @@ export async function run(m) {
     await runWatched(m, null, (f) => /^OK/m.test(f), 'booting to the prompt')
     await runWatched(m, 'FOR I=1 TO 30 : PRINT "LINE";I : NEXT', (f) => /^LINE 30/m.test(f), 'printing 30 lines')
     await runWatched(m, 'COLOR 6,15,4 : CLS : PRINT "DONE"', (f) => /^DONE/m.test(f), 'COLOR and CLS')
+
+    // The entries, each called through its slot with the watchpoint armed. A
+    // stop on the watchpoint instead of the return breakpoint is a port B write.
+    await m.write(0x7e00, [...Buffer.from('NOPE.BIN', 'ascii'), 0])
+    await m.write(0x0002, [0x00, 0x7e])
+    for (const [label, address, regs] of [
+      ['VdpInfo', vdp.VdpInfo, {}],
+      ['VdpWriteReg', vdp.VdpWriteReg, { A: 0x44, X: 0x07 }],
+      ['VdpSetMode', vdp.VdpSetMode, { A: 1 }],
+      ['VdpPoke', vdp.VdpPoke, { A: 0x55, X: 0x00, Y: 0xc0 }],
+      ['VdpPeek', vdp.VdpPeek, { X: 0x00, Y: 0xc0 }],
+      ['VdpSetPalette', vdp.VdpSetPalette, { X: 1, A: 0x00, Y: 0x00 }],
+      ['WaitVBlank', vdp.WaitVBlank, {}],
+      ['VdpLoadFile', vdp.VdpLoadFile, {}],
+      ['VdpLoadFont', vdp.VdpLoadFont, { A: 0 }],
+      ['VdpSprite', vdp.VdpSprite, { X: 3 }],
+      ['VdpSetScroll', vdp.VdpSetScroll, { X: 1, A: 8, Y: 8 }],
+      ['VdpLayer', vdp.VdpLayer, { X: 1, A: 1 }],
+      ['VdpStatus', vdp.VdpStatus, { X: 4 }],
+    ]) {
+      const returnTo = await m.plantCall(address, regs)
+      const result = await m.runTo(returnTo, 20000)
+      if (result.stop?.kind !== 'breakpoint') {
+        m.fail(`${label}: stopped on ${JSON.stringify(result.stop)} at PC $${result.registers.PC.toString(16).toUpperCase()}`)
+      }
+    }
   } finally {
     await m.clearBreaks()
   }

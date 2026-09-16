@@ -66,5 +66,9 @@
   "$A0C0": "VdpSetPalette",
   "$A0C3": "WaitVBlank",
   "$A0C6": "VdpLoadFile",
-  "$A0C9": "VdpLoadFont"
+  "$A0C9": "VdpLoadFont",
+  "$A0CC": "VdpSprite",
+  "$A0CF": "VdpSetScroll",
+  "$A0D2": "VdpLayer",
+  "$A0D5": "VdpStatus"
 }

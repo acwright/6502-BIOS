@@ -110,9 +110,13 @@ VdpSetPalette:  jmp VdpSetPaletteImpl   ; $A0C0 - Palette entry X = 0-255 ← A 
 WaitVBlank:     jmp WaitVBlankImpl      ; $A0C3 - Return at the start of the next vertical blank (STAT0 untouched)
 VdpLoadFile:    jmp VdpLoadFileImpl     ; $A0C6 - Load named file (STR_PTR) into VRAM at FS_IO_ADDR, exactly FS_FILE_SIZE bytes
 VdpLoadFont:    jmp VdpLoadFontImpl     ; $A0C9 - Copy built-in font A into L0PAT and wait for it (carry set until Phase 8)
+VdpSprite:      jmp VdpSpriteImpl       ; $A0CC - Sprite X = 0-63 ← VDP_P0-P3 = Y, X lo, pattern, attributes (table at $2000)
+VdpSetScroll:   jmp VdpSetScrollImpl    ; $A0CF - Layer X = 0-1 scroll: A = x lo, Y = y, VDP_P0 = x bit 8
+VdpLayer:       jmp VdpLayerImpl        ; $A0D2 - Layer X = 0-1 off (A = 0) or on
+VdpStatus:      jmp VdpStatusImpl       ; $A0D5 - Read status register X = 0-15 on port A → A
 
-; Reserved entries ($A0CC-$A0FE)
-.repeat 17
+; Reserved entries ($A0D8-$A0FE)
+.repeat 13
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -342,6 +346,133 @@ WaitVBlankImpl:
 ; Modifies: Flags
 VdpLoadFontImpl:
   sec
+  rts
+
+; VdpSprite — Write one sprite's four attribute bytes
+; The attribute table is taken to be at VRAM $2000 (SPRATTR = $40), where
+; BASIC's SCREEN 1-3 puts it; a program that moves SPRATTR writes its sprites
+; with VdpPoke.  Sets VID_MODE b7 (disturbed).
+; Input: X = sprite (0-63), VDP_P0 = Y, VDP_P1 = X bits 7:0, VDP_P2 = pattern,
+;        VDP_P3 = attributes (b7 = X bit 8, b6 priority, b5:4 flips, b3:0
+;        sub-palette; SPEC §10)
+; Output: carry set, and nothing written, if no card or X > 63
+; Preserves: X
+; Modifies: Flags, A, Y
+VdpSpriteImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VdpSpriteNone
+  cpx #64
+  bcs @VdpSpriteNone
+  phx
+  txa
+  asl a                         ; 4 bytes a sprite: at most 252
+  asl a
+  tax
+  ldy #>$2000
+  lda #$40                      ; Write
+  jsr VdpAddress
+  ldx #$00
+@VdpSpriteByte:
+  lda VDP_P0,x
+  sta VC_DATA
+  inx
+  cpx #4
+  bne @VdpSpriteByte
+  plx
+  bra VdpDisturbed
+@VdpSpriteNone:
+  sec
+  rts
+
+; VdpSetScroll — Scroll a layer
+; Writes LxSCRX, LxSCRY, and LxCTRL with b6 = X bit 8 and its other bits from
+; the shadow.  Sets VID_MODE b7 (disturbed).
+; Input: X = layer (0-1), A = x bits 7:0, Y = y, VDP_P0 = x bit 8 (0 or not)
+; Output: carry set, and nothing written, if no card or X > 1
+; Modifies: Flags, A, X
+VdpSetScrollImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpLayerNone
+  cpx #2
+  bcs VdpLayerNone
+  phy                           ; y
+  pha                           ; x
+  lda VDP_L0CTRL_SHADOW,x
+  and #<~$40
+  ldy VDP_P0
+  beq @VdpSetScrollCtrl
+  ora #$40                      ; X bit 8
+@VdpSetScrollCtrl:
+  jsr VdpWriteLayerCtrl         ; X = LxCTRL
+  dex                           ; LxSCRX
+  dex
+  pla
+  jsr VdpWriteRegImpl
+  inx                           ; LxSCRY
+  pla
+  jsr VdpWriteRegImpl
+  bra VdpDisturbed
+
+; VdpLayer — Show or hide a layer
+; Sets or clears LxCTRL b4, keeping its other bits from the shadow.  Sets
+; VID_MODE b7 (disturbed).
+; Input: X = layer (0-1), A = 0 to hide, anything else to show
+; Output: carry set, and nothing written, if no card or X > 1
+; Modifies: Flags, A, X
+VdpLayerImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpLayerNone
+  cpx #2
+  bcs VdpLayerNone
+  tay                           ; Sets Z from A
+  lda VDP_L0CTRL_SHADOW,x
+  and #<~$10
+  cpy #$00
+  beq @VdpLayerOff
+  ora #$10                      ; Enable
+@VdpLayerOff:
+  jsr VdpWriteLayerCtrl
+VdpDisturbed:                   ; VID_MODE b7: sprites, scroll or layers moved
+  lda VID_MODE
+  ora #$80
+  sta VID_MODE
+  clc
+  rts
+VdpLayerNone:
+  sec
+  rts
+
+; VdpWriteLayerCtrl — LxCTRL = A for layer X (0-1) through VdpWriteReg, so the
+; shadow follows (no checks)
+; Output: X = the register, $15 or $1D
+; Modifies: Flags, A, X
+VdpWriteLayerCtrl:
+  pha
+  txa
+  asl a                         ; 0 or 8, carry clear
+  asl a
+  asl a
+  adc #VDP_L0CTRL
+  tax
+  pla
+  jmp VdpWriteRegImpl
+
+; VdpStatus — Read a status register through port A
+; Selects STATn with STATSEL_A, reads it, and puts STATSEL_A back to 0 without
+; reading STAT0.  Reading STAT0 itself clears its flags, and STAT1 its
+; latches, as SPEC §6 says.
+; Input: X = status register (0-15)
+; Output: A = its value; carry set, and nothing read, if no card or X > 15
+; Preserves: X, Y
+; Modifies: Flags, A
+VdpStatusImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpLayerNone
+  cpx #16
+  bcs VdpLayerNone
+  txa
+  jsr VdpReadStat
+  clc
   rts
 
 ; VdpAddress — Point port A at any VRAM address (no card check)

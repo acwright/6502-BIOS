@@ -2,9 +2,9 @@
 # README: "SQR(x) — Square root", "EXP(x) — e raised to x",
 #         "LOG(x) — Natural logarithm"
 #
-# Six significant digits, so every comparison is against a tolerance rather
-# than an exact equality — PLAN.md §11.5. 0.001 is loose enough to survive the
-# format and tight enough that a wrong function cannot pass.
+# Six significant digits, so every comparison is against a tolerance rather than
+# an exact equality. 0.001 is loose enough to survive the format and tight
+# enough that a wrong function cannot pass.
 10 IF ABS(SQR(144) - 12) > .001 THEN PRINT "FAIL SQR(144)=";SQR(144) : END
 20 IF ABS(SQR(2) - 1.41421) > .001 THEN PRINT "FAIL SQR(2)=";SQR(2) : END
 30 IF SQR(0) <> 0 THEN PRINT "FAIL SQR(0)=";SQR(0) : END

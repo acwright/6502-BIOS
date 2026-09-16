@@ -5,8 +5,8 @@
 // jumping to the Monitor's entry point, so the user gets the banner *and* the
 // `BRK AT $xxxx` line and the register display. That is deliberate and useful —
 // entering the Monitor with the machine's state on screen is better than
-// entering it blind — so the triage (PLAN.md §10.1) is a doc bug: the code is
-// right and the README sentence was stale. It now says what happens.
+// entering it blind — so the triage is a doc bug: the code is right and the
+// README sentence was stale. It now says what happens.
 //
 // Asserting the fuller output rather than just the banner is the point. A regex
 // that only looked for `6502 MONITOR` would keep passing if the BRK entry were

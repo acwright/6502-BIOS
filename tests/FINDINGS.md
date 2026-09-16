@@ -5,12 +5,12 @@ case points at a heading here, because an `xfail` with nowhere to point is a
 bug parked and forgotten — which is the failure mode the marker exists to
 prevent.
 
-Triage follows PLAN.md §10.1: a **BIOS bug** is fixed in the ROM and the test
-stays as written; a **doc bug** means the code was right and the README is
+Triage sorts each one into a bucket: a **BIOS bug** is fixed in the ROM and the
+test stays as written; a **doc bug** means the code was right and the README is
 corrected instead.
 
 A finding leaves this file when it is fixed, and gains a pinned regression case
-under PLAN.md §6.12 on the way out.
+on the way out — see *Every fix adds a case* in `tests/README.md`.
 
 ---
 
@@ -60,8 +60,9 @@ decision about the emulator, not a defect blocking this suite.
 **A trap for whoever does fix it.** `src/tests/CPU.test.ts` currently asserts
 the stub — `expect(cpu.pc).toBe(0x8001)` under a comment reading "STP executes
 and consumes cycles (instruction completes)". Those tests encode the bug and
-will resist a correct implementation, exactly the failure mode PLAN.md §10.4
-warns about. They have to be rewritten as part of the fix, not made to pass.
+will resist a correct implementation — tests that describe what the code does
+rather than what it should. They have to be rewritten as part of the fix, not
+made to pass.
 
 ---
 
@@ -142,12 +143,13 @@ which under active low means *everything held*. `FnJoy`'s absent path returns
 be inferred. Pinned by `tests/probe/joy-without-a-via-reads-released.mjs`.
 
 **How it closed out.** Both emulator fixes were held uncommitted through phases
-3–7 per PLAN.md §10.7, and went out with BIOS v1.4 in emulator v2.4.1 — the
-emulator bundles the ROM, so the two had to ship together anyway. The `xfail`
-came off this case and off `monitor-go-and-jsr.txt` after that release, which is
-what §10.7 step 5 is for. The suite reported both as **unexpectedly passing**
-against a build of the fixed emulator before the markers were touched, which is
-the mechanism working: a drive-by fix cannot leave a stale marker behind.
+3–7, per the release order in the test-suite plan (`git show 873317f:PLAN.md`,
+§10.7), and went out with BIOS v1.4 in emulator v2.4.1 — the emulator bundles
+the ROM, so the two had to ship together anyway. The `xfail` came off this case
+and off `monitor-go-and-jsr.txt` after that release, which is what that plan's
+step 5 is for. The suite reported both as **unexpectedly passing** against a
+build of the fixed emulator before the markers were touched, which is the
+mechanism working: a drive-by fix cannot leave a stale marker behind.
 
 ### Typing a long line could wedge the serial input path
 
@@ -174,14 +176,15 @@ after 100,000,000 more cycles: still 64/76 characters
 A byte held in the receive register, its interrupt already cleared, an empty
 input buffer, and a hundred million cycles of no progress.
 
-**The mechanism** is the one PLAN.md §6.1 recorded from phase 1, seen from the
-other side. Reading the 6551's status register clears a pending receive
-interrupt, and `SerialChroutImpl` read it once per character while waiting for
-TDRE. A byte arriving in that window lost its interrupt before `Irq` could see
-it; nobody read `SC_DATA`; and because the receive register stayed full the ACIA
-would not deliver anything after it. Nothing broke the cycle. A real 6551 clears
-the flag on a status read the same way, so this wedged hardware too — anything
-sending faster than the ROM echoes, such as pasting into a terminal.
+**The mechanism** is the one under *The splash and boot menu were never shown on
+a serial console* below, seen from the other side. Reading the 6551's status
+register clears a pending receive interrupt, and `SerialChroutImpl` read it once
+per character while waiting for TDRE. A byte arriving in that window lost its
+interrupt before `Irq` could see it; nobody read `SC_DATA`; and because the
+receive register stayed full the ACIA would not deliver anything after it.
+Nothing broke the cycle. A real 6551 clears the flag on a status read the same
+way, so this wedged hardware too — anything sending faster than the ROM echoes,
+such as pasting into a terminal.
 
 **The fix** is that the transmit wait loop now collects such a byte itself:
 `BIT #SC_STATUS_RDRF` on the status it just read, and if one is waiting,
@@ -198,8 +201,9 @@ sending faster than the ROM echoes, such as pasting into a terminal.
   `WriteBuffer`'s `ldx`/`sta`/`inc` of `WRITE_PTR` is not atomic against `Irq`
   doing the same thing for a keyboard byte.
 
-**Proved both ways** per PLAN.md §10.3. The pinned case builds the interleaving
-rather than waiting for it — `SEI`, a delay long enough for the ACIA to deliver,
+**Proved both ways** — watched failing on the pre-fix ROM, per `tests/README.md`
+(*Every fix adds a case*). The pinned case builds the interleaving rather than
+waiting for it — `SEI`, a delay long enough for the ACIA to deliver,
 `JSR SerialChrout`, `CLI` — so it fails deterministically on the pre-fix ROM
 with `RDRF=1` and an empty buffer, and passes on the fixed one. And the original
 symptom: 300 attempts under load with no stall, where the pre-fix ROM wedged on

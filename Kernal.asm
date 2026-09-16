@@ -104,9 +104,12 @@ NvFormat:       jmp NvFormatImpl        ; $A0AE - Erase all 16 slots
 VdpInfo:        jmp VdpInfoImpl         ; $A0B1 - Card found at boot → A=VDP_FW, X=VDP_CAPS, Y=$AC; carry set if none
 VdpWriteReg:    jmp VdpWriteRegImpl     ; $A0B4 - Write register (A=value, X=0-127), keeping VID_MODE and the LxCTRL shadows
 VdpSetMode:     jmp VdpSetModeImpl      ; $A0B7 - Write VMODE (A=1-4); carry set if out of range
+VdpPoke:        jmp VdpPokeImpl         ; $A0BA - Write VRAM byte A at X/Y = address lo/hi (all 64 KB)
+VdpPeek:        jmp VdpPeekImpl         ; $A0BD - Read VRAM byte at X/Y = address lo/hi → A
+VdpSetPalette:  jmp VdpSetPaletteImpl   ; $A0C0 - Palette entry X = 0-255 ← A = $0R, Y = $GB (at $FC00 + 2X)
 
-; Reserved entries ($A0BA-$A0FE)
-.repeat 23
+; Reserved entries ($A0C3-$A0FE)
+.repeat 20
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -240,6 +243,87 @@ VdpSetModeImpl:
   bcs VdpNoCard
   ldx #VDP_VMODE
   bra VdpWriteRegImpl
+
+; VdpPoke — Write one byte anywhere in VRAM
+; Input: A = value, X = address low, Y = address high ($0000-$FFFF)
+; Output: carry set, and nothing written, if no card
+; Modifies: Flags, A, X
+VdpPokeImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpNoCard
+  pha
+  lda #$40                      ; Write
+  jsr VdpAddress
+  pla
+  sta VC_DATA
+  clc
+  rts
+
+; VdpPeek — Read one byte anywhere in VRAM
+; Input: X = address low, Y = address high ($0000-$FFFF)
+; Output: A = the byte; carry set, and nothing read, if no card
+; Modifies: Flags, A, X
+VdpPeekImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpNoCard
+  lda #$00                      ; Read: the address command prefetches it
+  jsr VdpAddress
+  lda VC_DATA
+  clc
+  rts
+
+; VdpSetPalette — Set one palette entry in VRAM, at $FC00 + 2 * entry
+; The card takes the write into its palette at once (SPEC §11).  $FC00 is where
+; InitVideo puts PALBASE; a program that moves PALBASE writes its own.
+; Input: X = entry (0-255), A = $0R, Y = $GB
+; Output: carry set, and nothing written, if no card
+; Modifies: Flags, A, X, Y
+VdpSetPaletteImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpNoCard
+  phy                           ; $GB
+  pha                           ; $0R
+  txa
+  asl a                         ; 2 * entry: the low byte, and the carry
+  tax                           ;   into the high one
+  lda #>$FC00
+  adc #$00
+  tay
+  lda #$40                      ; Write
+  jsr VdpAddress
+  pla
+  sta VC_DATA
+  pla
+  sta VC_DATA
+  clc
+  rts
+
+; VdpAddress — Point port A at any VRAM address (no card check)
+; VBANK = the address's bits 15:14 for the address command, then back to 0:
+; the card samples it there, and the pointer carries across banks by itself.
+; Input: A = $40 to write or $00 to read, X = address low, Y = address high
+; Modifies: Flags, A, X
+VdpAddress:
+  pha                           ; Write or read
+  tya
+  asl a                         ; Bits 15:14 down to 1:0
+  rol a
+  rol a
+  and #$03
+  phx
+  ldx #VDP_VBANK
+  jsr VdpSetReg
+  pla
+  sta VC_REG                    ; Address low
+  tya
+  and #$3F
+  tsx
+  ora $0101,x                   ; With the write bit
+  sta VC_REG
+  pla
+  lda #$00
+  ldx #VDP_VBANK
+  jmp VdpSetReg
 
 ; VdpReadStat — A = STATn for n in A, leaving STATSEL_A = 0 (no card check)
 ; Modifies: Flags, A

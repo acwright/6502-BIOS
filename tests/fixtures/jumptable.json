@@ -60,5 +60,8 @@
   "$A0AE": "NvFormat",
   "$A0B1": "VdpInfo",
   "$A0B4": "VdpWriteReg",
-  "$A0B7": "VdpSetMode"
+  "$A0B7": "VdpSetMode",
+  "$A0BA": "VdpPoke",
+  "$A0BD": "VdpPeek",
+  "$A0C0": "VdpSetPalette"
 }

@@ -108,9 +108,10 @@ VdpPoke:        jmp VdpPokeImpl         ; $A0BA - Write VRAM byte A at X/Y = add
 VdpPeek:        jmp VdpPeekImpl         ; $A0BD - Read VRAM byte at X/Y = address lo/hi → A
 VdpSetPalette:  jmp VdpSetPaletteImpl   ; $A0C0 - Palette entry X = 0-255 ← A = $0R, Y = $GB (at $FC00 + 2X)
 WaitVBlank:     jmp WaitVBlankImpl      ; $A0C3 - Return at the start of the next vertical blank (STAT0 untouched)
+VdpLoadFile:    jmp VdpLoadFileImpl     ; $A0C6 - Load named file (STR_PTR) into VRAM at FS_IO_ADDR, exactly FS_FILE_SIZE bytes
 
-; Reserved entries ($A0C6-$A0FE)
-.repeat 19
+; Reserved entries ($A0C9-$A0FE)
+.repeat 18
                 jmp UnimplementedStub
 .endrepeat
 .byte $00                             ; Pad to 256 bytes ($A0FF)
@@ -2893,11 +2894,113 @@ FsLoadFileImpl:
 ; FsLoadFileAddrImpl — Load named file to FS_IO_ADDR (caller preset)
 ; Input: STR_PTR = filename, FS_IO_ADDR = destination address
 FsLoadFileAddrImpl:
+  jsr FsOpenFile
+  bcs @FsLoadErr
+  ; Set destination pointer from FS_IO_ADDR
+  lda FS_IO_ADDR
+  sta CF_BUF_PTR
+  lda FS_IO_ADDR + 1
+  sta CF_BUF_PTR + 1
+  ; Read sectors
+  ldx FS_SEC_COUNT
+  beq @FsLoadOk                 ; Zero-size file
+@FsLoadSec:
+  phx
+  jsr StReadSector              ; Read sector (advances CF_BUF_PTR by 512)
+  bcs @FsLoadSecErr
+  ; Increment LBA
+  inc CF_LBA
+  bne @FsLoadSecNext
+  inc CF_LBA + 1
+@FsLoadSecNext:
+  plx
+  dex
+  bne @FsLoadSec
+@FsLoadOk:
+  clc
+  rts
+@FsLoadSecErr:
+  plx                           ; Balance stack
+@FsLoadErr:
+  sec
+  rts
+
+; VdpLoadFile — Load a named file from the current disk into VRAM
+; Streams the file through port A to FS_IO_ADDR, anywhere in the 64 KB, and
+; writes exactly its FS_FILE_SIZE bytes: the rest of the last sector is read
+; and dropped, so a table loaded here cannot spill into the one after it.
+; Input: STR_PTR = filename, FS_IO_ADDR = VRAM address
+; Output: Carry clear = loaded, FS_FILE_SIZE = bytes written
+;         Carry set = no video card (nothing read), or not found or read error
+; Modifies: Flags, A, X, Y, CF_LBA, CF_BUF_PTR, XFER_REMAIN, FS_SECTOR_BUF
+VdpLoadFileImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bmi @VdpLoadFileCard
+  sec
+  rts
+@VdpLoadFileCard:
+  jsr FsOpenFile
+  bcs @VdpLoadFileDone
+  lda FS_FILE_SIZE              ; Bytes still to write
+  sta XFER_REMAIN
+  lda FS_FILE_SIZE + 1
+  sta XFER_REMAIN + 1
+  ldx FS_IO_ADDR
+  ldy FS_IO_ADDR + 1
+  lda #$40                      ; Write
+  jsr VdpAddress
+@VdpLoadFileSector:
+  lda XFER_REMAIN
+  ora XFER_REMAIN + 1
+  beq @VdpLoadFileOk            ; Written them all: no more sectors to read
+  lda #<FS_SECTOR_BUF
+  sta CF_BUF_PTR
+  lda #>FS_SECTOR_BUF
+  sta CF_BUF_PTR + 1
+  jsr StReadSector
+  bcs @VdpLoadFileDone
+  inc CF_LBA
+  bne @VdpLoadFileCopy
+  inc CF_LBA + 1
+@VdpLoadFileCopy:
+  dec CF_BUF_PTR + 1            ; StReadSector left it 512 bytes on
+  dec CF_BUF_PTR + 1
+  ldy #$00
+@VdpLoadFileByte:
+  lda XFER_REMAIN
+  bne @VdpLoadFileCount
+  lda XFER_REMAIN + 1
+  beq @VdpLoadFileOk            ; The file ends inside this sector
+  dec XFER_REMAIN + 1
+@VdpLoadFileCount:
+  dec XFER_REMAIN
+  lda (CF_BUF_PTR),y
+  sta VC_DATA
+  iny
+  bne @VdpLoadFileByte
+  inc CF_BUF_PTR + 1            ; The sector's second page
+  lda CF_BUF_PTR + 1
+  cmp #>(FS_SECTOR_BUF + 512)
+  bne @VdpLoadFileByte
+  bra @VdpLoadFileSector
+@VdpLoadFileOk:
+  clc
+@VdpLoadFileDone:
+  rts
+
+; FsOpenFile — Find a named file and get ready to read it
+; Shared by FsLoadFileAddr and VdpLoadFile.
+; Input: STR_PTR = filename
+; Output: Carry clear = found: FS_FILE_SIZE = its size, FS_SEC_COUNT = the
+;         sectors it spans, CF_LBA = its first sector
+;         Carry set = not found or read error
+; Modifies: Flags, A, X, Y, CF_BUF_PTR, FS_START_SEC
+FsOpenFile:
   jsr FsParseName               ; Parse filename into FS_FNAME_BUF
   jsr FsReadDir                 ; Read directory sector
-  bcs @FsLoadErr
+  bcs @FsOpenDone
   jsr FsFindFile                ; Search for filename
-  bcs @FsLoadErr                ; Not found
+  bcs @FsOpenDone               ; Not found
   ; Read file metadata from entry
   ldy #FS_ENTRY_START
   lda (CF_BUF_PTR),y
@@ -2930,33 +3033,8 @@ FsLoadFileAddrImpl:
   sta CF_LBA + 1
   stz CF_LBA + 2
   stz CF_LBA + 3
-  ; Set destination pointer from FS_IO_ADDR
-  lda FS_IO_ADDR
-  sta CF_BUF_PTR
-  lda FS_IO_ADDR + 1
-  sta CF_BUF_PTR + 1
-  ; Read sectors
-  ldx FS_SEC_COUNT
-  beq @FsLoadOk                 ; Zero-size file
-@FsLoadSec:
-  phx
-  jsr StReadSector              ; Read sector (advances CF_BUF_PTR by 512)
-  bcs @FsLoadSecErr
-  ; Increment LBA
-  inc CF_LBA
-  bne @FsLoadSecNext
-  inc CF_LBA + 1
-@FsLoadSecNext:
-  plx
-  dex
-  bne @FsLoadSec
-@FsLoadOk:
   clc
-  rts
-@FsLoadSecErr:
-  plx                           ; Balance stack
-@FsLoadErr:
-  sec
+@FsOpenDone:
   rts
 
 ; FsSaveFileImpl — Save data from PROGRAM_START to CF

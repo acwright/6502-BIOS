@@ -137,6 +137,11 @@ const SAMPLE = prgImage(markerCode)
 // card's, not the file's.
 const RAW = Uint8Array.from({ length: 300 }, (_, i) => (i * 7 + 0x21) & 0xff)
 
+// 1000 bytes for VdpLoadFile, again not a sector multiple — two sectors, the
+// second one 24 bytes into its 512 — and with no zero in it, so the zeros the
+// card holds after it are unmistakable if they reach VRAM.
+const VRAM = Uint8Array.from({ length: 1000 }, (_, i) => ((i * 11) % 255) + 1)
+
 // Eight sectors ending exactly on the disk's last one, so the next free sector
 // is 2048 and nothing more will fit. This is what makes "a file cannot spill
 // into the next disk" testable: the guard is on the *end* sector, which no
@@ -150,6 +155,7 @@ const LAYOUT = [
       { name: 'HELLO', ext: 'BAS', bytes: HELLO, what: 'a program that prints its disk' },
       { name: 'SAMPLE', ext: 'PRG', bytes: SAMPLE.bytes, what: 'a .prg: 10 SYS 2060 and its machine code' },
       { name: 'RAW', ext: 'BIN', bytes: RAW, what: '300 known bytes, for BLOAD' },
+      { name: 'VRAM', ext: 'BIN', bytes: VRAM, what: '1000 known bytes, for VdpLoadFile' },
     ],
   },
   {

@@ -39,6 +39,7 @@ const RTC = '2026-01-01T00:00:00'
 const PROFILES = {
   serial: { console: 'serial', args: [] },
   video: { console: 'video', args: ['--console', 'video'] },
+  'video-cf': { console: 'video', args: ['--console', 'video'], fixtures: true },
   cf: { console: 'serial', args: [], fixtures: true },
   nvram: { console: 'serial', args: [], nvram: true },
 }

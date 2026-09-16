@@ -64,5 +64,6 @@
   "$A0BA": "VdpPoke",
   "$A0BD": "VdpPeek",
   "$A0C0": "VdpSetPalette",
-  "$A0C3": "WaitVBlank"
+  "$A0C3": "WaitVBlank",
+  "$A0C6": "VdpLoadFile"
 }

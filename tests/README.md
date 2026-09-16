@@ -27,7 +27,7 @@ FINDINGS.md is what the suite has found and not yet resolved.
 
 One emulator per machine profile, one WebSocket per emulator, one boot per run.
 Every case starts by restoring the snapshot taken at the `OK` prompt — exact, and
-about a millisecond against the 5.36 million cycles a boot costs. Nothing leaks
+about a millisecond against the 330,000 cycles a boot costs. Nothing leaks
 between cases, so a case that wedges the machine needs no cleanup code at all.
 
 Nothing sleeps. Every wait is a bounded blocking call on the machine's own

@@ -358,11 +358,12 @@ GOSUB_STACK_MIN = $44
 ;   B A S E N T R Y   -   $C000
 ;
 ;   First byte of segment.  Reached from:
-;     * Kernal cold-boot path
-;     * Monitor 'X' command (warm re-entry)
+;     * Kernal Reset, which clears BAS_WARM, so every reset is a cold start
+;     * Kernal Break, after a BRK instruction (warm re-entry)
+;     * Wozmon's C000R (warm re-entry)
 ;
 ;   Cold-vs-warm detection: BAS_WARM holds $A5 once cold init has run.
-;   Re-entry skips banner and goes straight to the OK prompt.
+;   Re-entry skips the header and goes straight to the OK prompt.
 ; =============================================================================
 
 BasEntry:
@@ -381,11 +382,18 @@ BasEntry:
         bra     BasReadyLoop
 
 @Warm:
-        ; Warm restart - skip banner; the OK printer will lead with CRLF.
+        ; Warm restart - skip the header; the OK printer will lead with CRLF.
+        ; Whatever was running is abandoned, as after an error: back to direct
+        ; mode, with nothing for CONT to resume (it tests OLDTEXT's high byte).
+        lda     #$FF
+        sta     BAS_CURLIN
+        sta     BAS_CURLIN+1
+        stz     BAS_OLDTEXT+1
         ; A loader outside BASIC may have dropped a new image at $0800 since we
-        ; were last here (drop to the Monitor, 'L' a program, 'X' back).  Adopt
-        ; it: the old variables describe a program that no longer exists, so
-        ; ARYTAB/STREND follow VARTAB exactly as they would on a fresh LOAD.
+        ; were last here, and said how long it is in PRG_IMAGE_END (see
+        ; ProgramEnd).  Adopt it: the old variables describe a program that no
+        ; longer exists, so ARYTAB/STREND follow VARTAB exactly as they would on
+        ; a fresh LOAD.
         lda     PRG_IMAGE_END
         ora     PRG_IMAGE_END+1
         beq     BasReadyLoop
@@ -456,7 +464,7 @@ BasColdInit:
 
         ; Where does the program already sitting at $0800 end?  The Kernal owns
         ; this: it prefers a byte count recorded by a loader outside BASIC (so a
-        ; Monitor-loaded .prg keeps its machine code), falls back to a chain
+        ; .prg it placed keeps its machine code), falls back to a chain
         ; walk, and installs an empty program if there is nothing usable.
         jsr     ProgramEnd
         sta     BAS_VARTAB
@@ -518,9 +526,12 @@ BasColdInit:
 ;   B a s B a n n e r
 ; =============================================================================
 BasBanner:
-        lda     #<MsgBanner
-        ldy     #>MsgBanner
+        jsr     VideoClear              ; a fresh screen (does nothing without video)
+        jsr     BasPrintCRLF
+        lda     #<MsgHeader
+        ldy     #>MsgHeader
         jsr     BasPrintStr
+        jsr     BasPrintCRLF
         ; Print "<n> BYTES FREE" line.
         sec
         lda     BAS_MEMSIZ
@@ -531,7 +542,7 @@ BasBanner:
         jsr     GivAyf
         ; Print the byte count left-aligned: Fout always emits a leading
         ; sign character (' ' for positive, '-' for negative).  For the
-        ; banner we skip that leading space so the number lines up with
+        ; header we skip that leading space so the number lines up with
         ; the left edge of the title above it.
         jsr     Fout                    ; (Y,A) -> NUL-terminated buffer
         sta     INDEX
@@ -550,7 +561,44 @@ BasBanner:
 @bnDone:
         lda     #<MsgBytesFreeNL
         ldy     #>MsgBytesFreeNL
-        jmp     BasPrintStr
+        jsr     BasPrintStr
+        ; The fitted cards, in HW_PRESENT's bit order, one space between names.
+        ; Either RAM card prints RAM, so RAM_L is folded into RAM_H's bit and
+        ; the seven that remain are shifted out in step with HwNames.
+        lda     HW_PRESENT
+        lsr     a                       ; C = RAM_L; bit 0 is now RAM_H
+        bcc     @hwStart
+        ora     #$01
+@hwStart:
+        ldx     #0                      ; X = index into HwNames
+        ldy     #0                      ; Y = 0 until a name has been printed
+@hwBit:
+        lsr     a                       ; C = this card
+        pha
+        bcc     @hwSkip
+        tya
+        beq     @hwName
+        lda     #' '
+        jsr     Chrout                  ; Chrout keeps X and Y
+@hwName:
+        ldy     #1
+@hwChar:
+        inx
+        lda     HwNames-1,x
+        beq     @hwNext
+        jsr     Chrout
+        bra     @hwChar
+@hwSkip:
+        inx
+        lda     HwNames-1,x
+        bne     @hwSkip
+@hwNext:
+        pla                             ; the cards not yet shifted out
+        bne     @hwBit
+        jmp     BasPrintCRLF
+
+HwNames:
+        .byte   "RAM",0,"RTC",0,"CF",0,"SER",0,"VIA",0,"SID",0,"VDP",0
 
 ; =============================================================================
 ;   B a s P r i n t O K
@@ -8817,8 +8865,10 @@ ErrorMessages:
 ;   S T R I N G   C O N S T A N T S
 ; =============================================================================
 
-MsgBanner:
-        .byte   $0D,$0A,"6502 BASIC V2.0",$0D,$0A,0
+; Built from the version equates rather than typed, so the header and
+; KernalVersion ($A07B) cannot disagree about which ROM this is.
+MsgHeader:
+        .byte   .sprintf("6502 BIOS v%d.%d", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR),0
 
 MsgBytesFreeNL:
         .byte   " BYTES FREE",$0D,$0A,0

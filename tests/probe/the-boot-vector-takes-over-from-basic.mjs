@@ -15,7 +15,7 @@
 // stops the machine *before* the instruction there, so arriving is the whole
 // assertion and whatever bytes happen to be at the address are never run.
 
-export const name = 'a boot vector set after KernalInit takes over from the splash'
+export const name = 'a boot vector set after KernalInit takes over from BASIC'
 
 const BOOT_VECTOR = 0x035b
 const CF_DISK = 0x030f
@@ -45,14 +45,13 @@ export async function run(m) {
   await m.clearBreaks()
   m.assert(
     redirected.matched,
-    'the machine never reached the boot vector — it carried on to the splash and ' +
-      'the boot menu instead of honouring BOOT_VECTOR',
+    'the machine never reached the boot vector — it carried on into BASIC ' +
+      'instead of honouring BOOT_VECTOR',
   )
   m.assertEqual(redirected.stop?.kind, 'breakpoint', 'the stop')
   m.assertWord(redirected.stop?.address, TARGET, 'where the boot went')
 
   // And it took over *instead of* booting, rather than as well as.
   const printed = (await m.serialRead(cursor)).data ?? ''
-  m.assertNoMatch(printed, /6502 BASIC/, 'BASIC must not start when a boot vector is set')
-  m.assertNoMatch(printed, /6502 MONITOR/, 'the Monitor must not start when a boot vector is set')
+  m.assertNoMatch(printed, /6502 BIOS/, 'BASIC must not start when a boot vector is set')
 }

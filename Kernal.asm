@@ -76,7 +76,7 @@ StWriteSector:  jmp StWriteSectorImpl   ; $A06F - Write CF sector
 StWaitReady:    jmp StWaitReadyImpl     ; $A072 - Wait CF ready
 ; --- System ---
 SysDelay:       jmp SysDelayImpl        ; $A075 - Delay A=cnt_lo, X=cnt_hi centiseconds
-KernalInit:     jmp KernalInitImpl      ; $A078 - Initialize all hardware (caller must reset SP; no cli, no splash); rts when done
+KernalInit:     jmp KernalInitImpl      ; $A078 - Initialize all hardware (caller must reset SP; no cli); rts when done
 KernalVersion:  jmp KernalVersionImpl   ; $A07B - Get BIOS version (A=major, X=minor)
 ; --- Disk banking / addressed storage ---
 FsLoadFileAddr: jmp FsLoadFileAddrImpl  ; $A07E - Load named file to FS_IO_ADDR
@@ -261,7 +261,7 @@ VideoPutCharImpl:
 ; Uses SCROLL_BUF ($0320, 40 bytes) as temporary storage
 ; Modifies: Flags, A, X, Y
 VideoScrollImpl:
-  ; Save STR_PTR (may be in use by caller, e.g. VideoPrintStr)
+  ; Save STR_PTR (may be in use by caller, e.g. PrintStr)
   lda STR_PTR
   pha
   lda STR_PTR + 1
@@ -477,22 +477,6 @@ VideoChroutRawImpl:
   pla
   rts
 
-; VideoPrintStr — Print null-terminated string to video
-; Input: STR_PTR ($02-$03) points to string
-; Modifies: Flags, A, X, Y
-VideoPrintStrImpl:
-  ldy #$00
-@VideoPrintStrLoop:
-  lda (STR_PTR),y
-  beq @VideoPrintStrDone        ; Exit on null terminator
-  phy
-  jsr VideoChroutImpl           ; Output character via video
-  ply
-  iny
-  bne @VideoPrintStrLoop        ; Max 256 chars per string
-@VideoPrintStrDone:
-  rts
-
 ; PrintStr — Print a NUL-terminated string to the console (routed by IO_MODE
 ; through Chrout, so it works for video OR serial).  General-purpose; used by
 ; BASIC (via the BasPrintStr alias) and available to cartridges.
@@ -522,7 +506,7 @@ PrintCRLFImpl:
 ; Sets HW_PRESENT, IO_MODE, IRQ/BRK/NMI pointers, BOOT_VECTOR=0
 ; Does NOT enable interrupts (caller must cli)
 ; Does NOT reset the stack pointer (caller should do this before JSR)
-; Does NOT display splash or enter boot menu
+; Does NOT print anything or start BASIC
 ; Modifies: All registers, flags
 KernalInitImpl:
   cld                           ; Clear decimal mode
@@ -626,7 +610,7 @@ KernalVersionImpl:
 ; code (a ".prg").  Only a byte count can find the end of the machine code; a
 ; chain walk stops at the $0000 end marker.  So prefer a count recorded by a
 ; loader running outside BASIC, and fall back to the walk when there is none.
-; Input: none (reads PRG_IMAGE_END, set by Monitor L when it loads to $0800)
+; Input: none (reads PRG_IMAGE_END, set by a loader that places a .prg at $0800)
 ; Output: A = end lo, Y = end hi — the address BASIC should use for VARTAB
 ; Modifies: Flags, A, X, Y, PE_PTR, PE_NEXT, PRG_IMAGE_END (consumed)
 ; Note: writes the $00 $00 end marker at PROGRAM_START in the empty case.
@@ -706,7 +690,7 @@ ProgramEnd:
   ldy #>(PROGRAM_START + 2)
   rts
 
-; Reset — Full system startup: init hardware, beep, check boot vector, splash, boot menu
+; Reset — Full system startup: init hardware, beep, check boot vector, start BASIC
 Reset:
   ldx #$ff
   txs                           ; Reset the stack pointer
@@ -730,51 +714,20 @@ Reset:
   bra @Halt
 
 @HasConsole:
+  stz BAS_WARM                  ; A reset is a cold BASIC start: the header
+                                ;   prints and the variables are cleared, while
+                                ;   the program at $0800 is kept (ProgramEnd
+                                ;   walks its line chain)
   cli                           ; Enable interrupts before anything is printed:
                                 ;   reading the ACIA's status register clears a
                                 ;   pending receive interrupt (6551 datasheet),
                                 ;   and the transmit loop reads it on every
                                 ;   character — so a key pressed while the
-                                ;   splash prints would be sitting in the
+                                ;   header prints would be sitting in the
                                 ;   receive register with nothing left to tell
                                 ;   the handler about it.  With interrupts on,
-                                ;   it is in the input buffer before the menu
-                                ;   asks.
-
-  jsr Splash                    ; Draw the splash screen on whichever console
-                                ;   this machine has
-
-  ; Boot menu — wait for keypress with ~5-second timeout
-  ; Each iteration delays 100ms then checks for a key. 50 iterations = 5 seconds.
-  ldx #50                       ; Timeout counter: 50 × 100ms = 5 seconds
-@BootWait:
-  phx                           ; Save timeout counter
-  lda #10                       ; 10 centiseconds (100ms)
-  ldx #$00                      ; High byte = 0
-  jsr SysDelay
-  jsr BufferSize                ; A = bytes in buffer
-  plx                           ; Restore timeout counter (clobbers Z flag)
-  cmp #$00                      ; Re-test buffer size — plx overwrote Z
-  bne @BootGotKey               ; Key available — process it
-  dex
-  bne @BootWait                 ; No key yet — keep waiting
-  bra @BootBASIC                ; Timeout — auto-boot BASIC
-
-@BootGotKey:
-  jsr ReadBuffer                ; Read the keypress
-  cmp #$0D                      ; ENTER?
-  beq @BootBASIC
-  cmp #$1B                      ; ESC?
-  beq @BootMonitor
-  dex                           ; Consumed a non-menu key — decrement counter
-  bne @BootWait                 ; Keep waiting if time remains
-  bra @BootBASIC                ; Timeout — auto-boot BASIC
-
-@BootBASIC:
-  jsr VideoClear                ; Clear screen (harmless if no video)
+                                ;   it is in the input buffer when BASIC asks.
   jmp BasEntry
-@BootMonitor:
-  brk                           ; Enter monitor through BRK vector (saves/displays registers)
 
 ; Initialize the Keyboard via VIA (IO 6)
 ; Configures Port B (matrix) and Port A (PS/2) as inputs
@@ -3361,52 +3314,6 @@ XModemStrReceive:
   .byte "XMODEM RX READY", $0D, $0A, 0
 XModemStrSend:
   .byte "XMODEM TX READY", $0D, $0A, 0
-
-; Draw the splash screen on whichever console this machine has
-; Video: the two lines centred on the 40-column screen.  Serial: the same two
-; lines as plain text through Chrout — a terminal's width is the user's to
-; choose, so there is no column to centre on and the video path's cursor
-; placement has no equivalent.  The boot menu runs either way; without this a
-; serial user sat through five silent seconds never told ESC was an option.
-; Modifies: Flags, A, X, Y
-Splash:
-  lda HW_PRESENT
-  and #HW_VID
-  bne @SplashStart
-  ; No video — plain text on the serial console
-  lda #<@SplashTitle
-  ldy #>@SplashTitle
-  jsr PrintStr
-  jsr PrintCRLF
-  lda #<@SplashMenu
-  ldy #>@SplashMenu
-  jsr PrintStr
-  jmp PrintCRLF
-@SplashStart:
-  jsr VideoClear                ; Clear the video screen
-  ; Position cursor at row 10, col 10 for title
-  ldx #10
-  ldy #10
-  jsr VideoSetCursor
-  lda #<@SplashTitle
-  sta STR_PTR
-  lda #>@SplashTitle
-  sta STR_PTR + 1
-  jsr VideoPrintStrImpl
-  ; Position cursor at row 12, col 8 for boot menu (centered: (40-24)/2 = 8)
-  ldx #8
-  ldy #12
-  jsr VideoSetCursor
-  lda #<@SplashMenu
-  sta STR_PTR
-  lda #>@SplashMenu
-  sta STR_PTR + 1
-  jsr VideoPrintStrImpl
-  rts
-; Built from the version equates rather than typed, so the splash and
-; KernalVersion ($A07B) cannot disagree about which ROM this is.
-@SplashTitle: .asciiz .sprintf("-- 6502 BIOS v%d.%d --", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR)
-@SplashMenu:  .asciiz "ENTER=BASIC  ESC=MONITOR"
 
 ; NMI Handler
 Nmi:

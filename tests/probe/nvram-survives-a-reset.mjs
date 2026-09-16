@@ -52,8 +52,8 @@ export async function run(m) {
 
   // Through `coldBoot`, which anchors its wait to where the console stood
   // before the reset. Waiting for a bare `OK` would match the one this case's
-  // own last write produced, and the `PRINT` below would then be typed into the
-  // boot menu — which swallows it, a character at a time.
+  // own last write produced, and the `PRINT` below would then be typed while
+  // the machine was still booting.
   await coldBoot(m, { expect: BASIC_READY })
 
   for (const [address, value] of PATTERN) {

@@ -113,7 +113,7 @@ BAS_STKBASE         := $0375             ; Stack pointer the READY loop restores
 FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a program image placed at PROGRAM_START by a loader
-                                         ;   outside BASIC (Monitor L); 0 = none.  Cleared by KernalInit and consumed by
+                                         ;   outside BASIC; 0 = none.  Cleared by KernalInit and consumed by
                                          ;   ProgramEnd, so a stale value can never be mistaken for a fresh load.
 
 ; Kernal NVRAM save-slot variables ($0390-$03FF)
@@ -133,8 +133,8 @@ XMODEM_MAXRETRY     = 10                 ; Max retries per block during transfer
 XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (~60s)
 
 ; BIOS Version
-BIOS_VERSION_MAJOR  = 1
-BIOS_VERSION_MINOR  = 6
+BIOS_VERSION_MAJOR  = 2
+BIOS_VERSION_MINOR  = 0
 
 ; NOT user memory, despite the name -- kept only because Wozmon builds its input
 ; buffer on it.  Every byte of $0400-$07FF belongs to something: $0400 is

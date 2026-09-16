@@ -9,7 +9,7 @@
 //
 // One emulator per machine profile, one WebSocket per emulator, one boot per
 // run. Every case starts by restoring the snapshot taken at the prompt, which
-// is exact and costs about a millisecond against 5.36 million cycles to boot —
+// is exact and costs about a millisecond against 330,000 cycles to boot —
 // so no case can leak into the next, and cases that deliberately wreck the
 // machine need no cleanup code at all.
 //

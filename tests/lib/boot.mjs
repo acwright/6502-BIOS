@@ -1,50 +1,42 @@
-// Driving a machine through the boot menu, for the §6.1 cases.
+// Driving a machine through a reset, for the cases that watch the boot itself.
 //
 // Every other case in the suite starts from the snapshot taken at the `OK`
-// prompt, which is boot already over. These start from a reset and watch the
-// boot itself, so they need two things the rest of the suite does not.
-//
-// **A cursor taken before the reset.** The console's output cursor is absolute
+// prompt, which is boot already over. These start from a reset, so they need
+// **a cursor taken before the reset.** The console's output cursor is absolute
 // across the whole session and a machine reset does not rewind it, so `since: 0`
-// would match the banner printed by the run's *first* boot and the case would
+// would match the header printed by the run's *first* boot and the case would
 // pass without the machine doing anything. Every wait here is anchored to where
 // the stream stood when the reset went out.
-//
-// **Elapsed emulated cycles.** The difference between "ENTER started BASIC" and
-// "the menu timed out and started BASIC" is not in the output — it is identical
-// — it is in how long the machine took to get there. Cycles are the only thing
-// that tells the two apart, and they are exact rather than a host-clock guess.
 
-// README boot step 9: "waits ~5 seconds for a keypress". The menu is 50
-// iterations of a 100 ms `SysDelay`, so at 1 MHz that is 5 M cycles, plus the
-// probe and the beep on the way in.
-export const MENU_CYCLES = 5000000
+// The header's first line. Multiline, because it doubles as an assertion
+// against a whole boot's output; `expectFrom` takes the pattern's source and
+// applies its own line-anchor translation, so the flag is ignored on that path.
+export const HEADER = /^6502 BIOS v(\d+)\.(\d+)$/m
 
-// Multiline, because these double as assertions against a whole boot's output.
-// `expectFrom` takes the pattern's source and applies its own line-anchor
-// translation, so the flag is ignored on that path rather than conflicting.
-export const BASIC_BANNER = /^6502 BASIC V2\.0$/m
-
-// What to wait for, as opposed to what to assert afterwards. BASIC prints its
-// banner and then its free-memory line before the prompt, so a wait that
-// stopped at the banner would return output the rest of the boot had not been
-// printed into yet.
+// What to wait for, as opposed to what to assert afterwards. BASIC prints the
+// whole header before the prompt, so a wait that stopped at its first line
+// would return output the rest of the boot had not been printed into yet.
 export const BASIC_READY = /^OK$/m
 
-// Cold-reset the machine, optionally press one key at the boot menu, and wait
-// for whatever that was supposed to start. Returns the console output and the
-// emulated cycles the whole boot took.
-export async function coldBoot(m, { key = null, expect, timeoutMs = 60000 } = {}) {
+// The names the header's hardware line uses, in HW_PRESENT's bit order. Either
+// RAM card (bits 0 and 1) prints one RAM.
+export const HW_NAMES = [
+  [0x03, 'RAM'], [0x04, 'RTC'], [0x08, 'CF'], [0x10, 'SER'],
+  [0x20, 'VIA'], [0x40, 'SID'], [0x80, 'VDP'],
+]
+
+export function hardwareLine(present) {
+  return HW_NAMES.filter(([bits]) => present & bits).map(([, name]) => name).join(' ')
+}
+
+// Reset the machine and wait for whatever that was supposed to start. Cold by
+// default, which also zeroes RAM; `cold: false` is the reset button. Returns
+// the console output and the emulated cycles the whole boot took.
+export async function coldBoot(m, { cold = true, expect, timeoutMs = 60000 } = {}) {
   const { cursor } = await m.serialRead(0)
-  await m.reset(true)
+  await m.reset(cold)
   const started = await m.cycles()
   await m.start()
-
-  // The key goes out immediately. It sits in the ACIA's receive register — one
-  // byte, no overrun — until the boot menu's first IRQ after `cli` collects it,
-  // which is what a user holding ESC through a power-on does too.
-  if (key != null) await m.serialWrite(key)
-
   const result = await m.expectFrom(cursor, expect, { timeoutMs })
   return { output: result.output, cycles: (await m.cycles()) - started }
 }

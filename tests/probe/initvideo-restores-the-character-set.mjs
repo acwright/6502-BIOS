@@ -14,7 +14,7 @@
 // back the digits and the capitals and leave everything above `$20`-plus-a-page
 // as noise — which is exactly the shape of bug a spot check invites.
 
-export const name = 'InitVideo reloads the whole character set into the pattern table'
+export const name = 'InitVideo reloads the whole character set into the pattern table, and palette row 0'
 export const profile = 'video'
 
 const InitVideo = 0xa015
@@ -22,6 +22,7 @@ const InitVideo = 0xa015
 const PATTERN_TABLE = 0x0800 // in VRAM
 const CHARSET_ROM = 0xb800 // in the CPU's map
 const CHARSET_SIZE = 0x0800 // 2 KB — 256 glyphs of 8 rows
+const PALETTE_ROW_0 = 0xfc00 // in VRAM, PALBASE = $3F
 
 // `mem.read {space:'rom'}` is offset from $8000, since that is where the ROM
 // image starts.
@@ -30,7 +31,7 @@ const CHARSET_IN_ROM_IMAGE = CHARSET_ROM - 0x8000
 export async function run(m) {
   const expected = await m.read(CHARSET_IN_ROM_IMAGE, CHARSET_SIZE, 'rom')
 
-  // It is already right at boot — KernalInit calls InitVideo — so establish
+  // It is already right at boot — the header's clear brings the console up — so establish
   // that first. Otherwise a case that only checked after the restore would pass
   // against a machine whose character set was never loaded in the first place
   // and whose "restore" was the only thing that ever worked.
@@ -48,7 +49,15 @@ export async function run(m) {
     'the pattern table could not be overwritten, so the restore below proves nothing',
   )
 
+  // Palette row 0 too — the sixteen colours the console's pens name. It is
+  // compared against what the card put there at reset, which is the default
+  // palette (SPEC §11), so the ROM's copy of it is checked as well.
+  const paletteAtBoot = await m.read(PALETTE_ROW_0, 32, 'vram')
+  await m.fillMem(PALETTE_ROW_0, 32, 0x0f, 'vram')
+
   await m.call6502(InitVideo)
+
+  m.assertBytes(await m.read(PALETTE_ROW_0, 32, 'vram'), paletteAtBoot, 'palette row 0 after InitVideo')
 
   m.assertBytes(
     await m.read(PATTERN_TABLE, CHARSET_SIZE, 'vram'),

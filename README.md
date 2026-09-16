@@ -485,13 +485,13 @@ The table is a fixed 256 bytes: the 59 published slots below, then 26 reserved s
 | `$A00C` | `BufferSize` | Return number of bytes waiting in buffer |
 | `$A00F` | `SetIOMode` | Set `IO_MODE`: `A`=0 (video) or 1 (serial) |
 | `$A012` | `GetIOMode` | Get `IO_MODE` → `A` |
-| `$A015` | `InitVideo` | Initialise TMS9918 video chip — writes the mode registers **and** reloads the character set into the pattern table at `$0800` |
-| `$A018` | `VideoClear` | Clear the screen |
+| `$A015` | `InitVideo` | Put the PICOVDP in the Text-mode console — writes the registers (40×24, per-cell colour, name table `$0000`, attributes `$0400`), reloads the character set into the pattern table at `$0800` **and** restores palette row 0. Does not clear the screen |
+| `$A018` | `VideoClear` | Clear the screen to spaces in the current pen and home the cursor |
 | `$A01B` | `VideoPutChar` | Write character at current cursor position |
 | `$A01E` | `VideoSetCursor` | Set cursor: `X`=column (0–39), `Y`=row (0–23) |
 | `$A021` | `VideoGetCursor` | Get cursor: returns column in `X`, row in `Y` |
 | `$A024` | `VideoScroll` | Scroll screen up one line |
-| `$A027` | `VideoSetColor` | Set TMS9918 text colour register: `A`=`(fg<<4)\|bg` |
+| `$A027` | `VideoSetColor` | Set the pen for later output, and the border: `A`=`(fg<<4)\|bg`. Cells already on screen keep their colours |
 | `$A02A` | `VideoChroutRaw` | Output character glyph at cursor (raw, no control-code handling): `A`=char code |
 | `$A02D` | `InitSID` | Initialise SID sound chip |
 | `$A030` | `Beep` | Play a short beep tone |

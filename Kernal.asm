@@ -35,14 +35,14 @@ BufferSize:     jmp BufferSizeImpl      ; $A00C - Get buffer count
 ; --- IO Mode ---
 SetIOMode:      jmp SetIOModeImpl       ; $A00F - Set IO_MODE
 GetIOMode:      jmp GetIOModeImpl       ; $A012 - Get IO_MODE
-; --- Video (TMS9918) ---
-InitVideo:      jmp InitVideoImpl       ; $A015 - Initialize TMS9918 (mode registers + character set)
+; --- Video (PICOVDP) ---
+InitVideo:      jmp InitVideoImpl       ; $A015 - Text-mode console: registers, character set, palette row 0
 VideoClear:     jmp VideoClearImpl      ; $A018 - Clear video screen
 VideoPutChar:   jmp VideoPutCharImpl    ; $A01B - Write char at cursor
 VideoSetCursor: jmp VideoSetCursorImpl  ; $A01E - Set cursor (X=col, Y=row)
 VideoGetCursor: jmp VideoGetCursorImpl  ; $A021 - Get cursor position
 VideoScroll:    jmp VideoScrollImpl     ; $A024 - Scroll screen up one line
-VideoSetColor:  jmp VideoSetColorImpl   ; $A027 - Set TMS9918 text color (A=reg7 byte: hi=fg, lo=bg)
+VideoSetColor:  jmp VideoSetColorImpl   ; $A027 - Set the pen and the border (A = fg<<4 | bg)
 VideoChroutRaw: jmp VideoChroutRawImpl  ; $A02A - Output char to video (raw, no control-code handling)
 ; --- Sound (SID) ---
 InitSID:        jmp InitSIDImpl         ; $A02D - Initialize SID
@@ -138,9 +138,28 @@ GetIOModeImpl:
   lda IO_MODE
   rts
 
-; === TMS9918 Video Driver ===
+; === PICOVDP Video Driver ===
+;
+; The console is Text mode (VMODE $1): 40x24 cells of 6x8, a name table of 960
+; bytes at VRAM $0000 and a per-cell attribute table beside it at $0400, one
+; fg<<4 | bg byte for each cell.  A cell's name byte is at VID_CURSOR_ADDR and
+; its attribute at VID_CURSOR_ADDR | $0400.  Everything here goes through port
+; A and leaves VBANK = 0 and VINC = +1; nothing in the ROM touches port B, which
+; belongs to interrupt handlers (SPEC §4).
 
-; VideoClear — Fill name table (960 bytes at VRAM $0000) with spaces, reset cursor to (0,0)
+; VdpSetReg — write a VDP register through port A (no card check)
+; Input: A = value, X = register (0-127)
+; Modifies: Flags, A
+VdpSetReg:
+  sta VC_REG                    ; Value
+  txa
+  ora #$80                      ; Register number with the write flag
+  sta VC_REG
+  rts
+
+; VideoClear — Fill the screen with spaces in the current pen, cursor home
+; Fills the 960-byte name table at VRAM $0000 with $20 and the 960 attributes at
+; $0400 with VID_PEN, so COLOR fg,bg : CLS gives a screen of that colour.
 ; Skips silently if no video card is fitted
 ; Modifies: Flags, A, X, Y
 VideoClearImpl:
@@ -148,13 +167,23 @@ VideoClearImpl:
   bpl @VideoClearNone           ;   disturbing A — these routines take their
                                 ;   argument there.  See the note above
                                 ;   HW_PRESENT's bit definitions in BIOS.inc.
-  ; Set VRAM write address to $0000 (name table base)
-  lda #$00
+  lda #$40                      ; Name table, $0000, write
+  ldx #$20
+  jsr @Fill
+  lda #$44                      ; Attribute table, $0400, write
+  ldx VID_PEN
+  jsr @Fill
+  ; Reset cursor to (0,0)
+  stz VID_CURSOR_X
+  stz VID_CURSOR_Y
+  stz VID_CURSOR_ADDR
+  stz VID_CURSOR_ADDR + 1
+@VideoClearNone:
+  rts
+@Fill:                          ; A = address command high byte, X = fill value
+  stz VC_REG                    ; Low byte of the address
   sta VC_REG
-  lda #$40                      ; High byte $00 OR $40 for write mode
-  sta VC_REG
-  ; Fill 960 bytes with space ($20) — 3 full pages + 192 bytes
-  lda #$20
+  txa
   ldy #$00
   ldx #$03                      ; 3 full pages (768 bytes)
 @VideoClearPage:
@@ -163,18 +192,11 @@ VideoClearImpl:
   bne @VideoClearPage
   dex
   bne @VideoClearPage
-  ; Remaining 192 bytes (960 - 768)
-  ldy #192
+  ldy #192                      ; Remaining 192 bytes (960 - 768)
 @VideoClearRem:
   sta VC_DATA
   dey
   bne @VideoClearRem
-  ; Reset cursor to (0,0)
-  stz VID_CURSOR_X
-  stz VID_CURSOR_Y
-  stz VID_CURSOR_ADDR
-  stz VID_CURSOR_ADDR + 1
-@VideoClearNone:
   rts
 
 ; VideoSetCursor — Set cursor position
@@ -187,50 +209,35 @@ VideoSetCursorImpl:
   bpl @VideoSetCursorNone
   stx VID_CURSOR_X
   sty VID_CURSOR_Y
-  ; Calculate VRAM address = Y * 40 + X
-  ; Y * 40 = Y * 32 + Y * 8
-  lda #$00
-  sta VID_CURSOR_ADDR + 1       ; Clear high byte
   tya                           ; A = row
-  ; Multiply by 8: shift left 3
-  asl a
-  rol VID_CURSOR_ADDR + 1
-  asl a
-  rol VID_CURSOR_ADDR + 1
-  asl a
-  rol VID_CURSOR_ADDR + 1
-  sta VID_CURSOR_ADDR           ; Store Y*8 low byte
-  ; Save Y*8 for later addition
-  pha
-  lda VID_CURSOR_ADDR + 1
-  pha
-  ; Multiply original row by 32: shift left 5 total (Y*8 << 2)
-  lda VID_CURSOR_ADDR
-  asl a
-  rol VID_CURSOR_ADDR + 1
-  asl a
-  rol VID_CURSOR_ADDR + 1
-  sta VID_CURSOR_ADDR           ; Now holds Y*32 low byte
-  ; Add Y*8 + Y*32
-  pla                           ; Restore Y*8 high byte
-  adc VID_CURSOR_ADDR + 1       ; Carry still valid from last rol
-  sta VID_CURSOR_ADDR + 1
-  pla                           ; Restore Y*8 low byte
-  clc
+  jsr VideoRowAddr              ; VID_CURSOR_ADDR = row * 40, carry clear
+  txa                           ; Add the column
   adc VID_CURSOR_ADDR
   sta VID_CURSOR_ADDR
-  bcc @NoCarry
+  bcc @VideoSetCursorNone
   inc VID_CURSOR_ADDR + 1
-@NoCarry:
-  ; Add X (column)
-  txa
-  clc
-  adc VID_CURSOR_ADDR
-  sta VID_CURSOR_ADDR
-  bcc @SetCursorDone
-  inc VID_CURSOR_ADDR + 1
-@SetCursorDone:
 @VideoSetCursorNone:
+  rts
+
+; VideoRowAddr — VID_CURSOR_ADDR = A * 40, for a name-table row 0-23
+; Output: carry clear
+; Modifies: Flags, A
+VideoRowAddr:
+  stz VID_CURSOR_ADDR + 1
+  asl a                         ; x8 fits in a byte (23 * 8 = 184)
+  asl a
+  asl a
+  sta VID_CURSOR_ADDR
+  asl a                         ; x32 does not: carry into the high byte
+  rol VID_CURSOR_ADDR + 1
+  asl a
+  rol VID_CURSOR_ADDR + 1       ; Leaves carry clear (the high byte's b7 was 0)
+  adc VID_CURSOR_ADDR           ; x32 + x8
+  sta VID_CURSOR_ADDR
+  bcc @VideoRowAddrDone
+  inc VID_CURSOR_ADDR + 1
+  clc
+@VideoRowAddrDone:
   rts
 
 ; VideoGetCursor — Get cursor position
@@ -241,19 +248,27 @@ VideoGetCursorImpl:
   ldy VID_CURSOR_Y
   rts
 
-; VideoPutChar — Write a single character to VRAM at VID_CURSOR_ADDR
+; VideoPutChar — Write a character at VID_CURSOR_ADDR, coloured with VID_PEN
 ; Input: A = character to write
 ; Modifies: Flags
 VideoPutCharImpl:
   pha
-  ; Set VRAM write address from VID_CURSOR_ADDR
-  lda VID_CURSOR_ADDR
-  sta VC_REG                    ; Low byte of address
+  lda VID_CURSOR_ADDR           ; Name byte
+  sta VC_REG
   lda VID_CURSOR_ADDR + 1
-  ora #$40                      ; Set bit 6 for write mode
-  sta VC_REG                    ; High byte with write flag
+  ora #$40                      ; Write mode
+  sta VC_REG
   pla
-  sta VC_DATA                   ; Write character to VRAM
+  sta VC_DATA
+  pha
+  lda VID_CURSOR_ADDR           ; Attribute byte, $0400 further on
+  sta VC_REG
+  lda VID_CURSOR_ADDR + 1
+  ora #$44                      ; Write mode, + $0400
+  sta VC_REG
+  lda VID_PEN
+  sta VC_DATA
+  pla
   rts
 
 ; VideoScroll — Scroll screen up one line
@@ -534,6 +549,8 @@ KernalInitImpl:
   stz PRG_IMAGE_END + 1         ;   runs before any loader can, so a non-zero
                                 ;   value always means a loader put it there
   stz CF_DISK                   ; Reset current CF disk bank to 0
+  lda #$1F                      ; Black on white.  Only KernalInit resets the
+  sta VID_PEN                   ;   pen: NEW, RUN, CLR and errors keep it
 
   jsr InitBuffer                ; Initialize the input buffer (RAM-only, no hardware)
 
@@ -769,32 +786,87 @@ InitSIDImpl:
   sta SID_MODE_VOL
   rts
 
-; Initialize the Video Card (TMS9918)
-; Writes the eight mode registers (text mode, 40x24) and reloads the character
-; set into the pattern table at $0800, so a program that overwrote the glyphs
-; can fully restore text mode with a single call.
+; InitVideo — Put the PICOVDP in the Kernal's Text-mode console
+; Writes the register table below with the display off, reloads the character
+; set into the pattern table at $0800, restores palette row 0, sets the border
+; from VID_PEN and turns the display on.  It does not clear the screen: the
+; name and attribute tables are left as they were and shown unscrolled.  A
+; program that switched modes, moved tables or overwrote the glyphs gets the
+; console back with this one call.
+; Skips silently if no video card is fitted
 ; Modifies: Flags, A, X, Y
 InitVideoImpl:
-  ldx #$00                      ; Start with register 0
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @InitVideoNone
+  ldx #$00
 @InitVideoLoop:
-  lda @InitVideoRegData,x       ; Load register value
-  sta VC_REG                    ; Write data byte
-  txa
-  ora #$80                      ; Set bit 7 to indicate register write
-  sta VC_REG                    ; Write register number
+  lda @InitVideoRegs + 1,x      ; Value
+  sta VC_REG
+  lda @InitVideoRegs,x          ; Register | $80
+  sta VC_REG
   inx
-  cpx #$08                      ; Check if all 8 registers written
-  bne @InitVideoLoop            ; Continue until done
-  jmp InitCharacters            ; Restore the character set (tail call)
-@InitVideoRegData:
-  .byte $00                     ; R0: Mode control (no external video)
-  .byte $D0                     ; R1: 16K, display on, interrupt off, text mode M1
-  .byte $00                     ; R2: Name table at $0000 (0x00 * 0x400)
-  .byte $00                     ; R3: Color table (not used in text mode)
-  .byte $01                     ; R4: Pattern table at $0800 (0x01 * 0x800)
-  .byte $00                     ; R5: Sprite attribute table (not used in text mode)
-  .byte $00                     ; R6: Sprite pattern table (not used in text mode)
-  .byte $1F                     ; R7: Black text on white background
+  inx
+  cpx #(@InitVideoRegsEnd - @InitVideoRegs)
+  bne @InitVideoLoop
+  jsr InitCharacters            ; The font, into L0PAT = $0800
+  ; Palette row 0, 16 entries of $0R $GB at $FC00.  $FC00 is in bank 3, and
+  ; VBANK is sampled by the address command, so it goes straight back to 0.
+  lda #$03
+  ldx #VDP_VBANK
+  jsr VdpSetReg
+  stz VC_REG                    ; $FC00 = bank 3, $3C00
+  lda #($40 | $3C)
+  sta VC_REG
+  lda #$00
+  ldx #VDP_VBANK
+  jsr VdpSetReg
+  ldx #$00
+@InitVideoPalette:
+  lda @InitVideoPaletteRow0,x
+  sta VC_DATA
+  inx
+  cpx #32
+  bne @InitVideoPalette
+  lda VID_PEN                   ; Border = the pen's background
+  ldx #VDP_COLOR
+  jsr VdpSetReg
+  lda #$40                      ; Display on
+  ldx #VDP_MODE1
+  jsr VdpSetReg
+  lda #$30
+  sta VDP_L0CTRL_SHADOW
+  lda #$0C
+  sta VDP_L1CTRL_SHADOW
+  lda #$01
+  sta VID_MODE                  ; Text console intact
+  stz VID_TOP
+  ldx VID_CURSOR_X              ; The cursor keeps its screen position
+  ldy VID_CURSOR_Y
+  jmp VideoSetCursorImpl
+@InitVideoNone:
+  rts
+@InitVideoRegs:                 ; Register | $80, value
+  .byte $80 | VDP_MODE1,     $00  ; Display off, IRQ off, legacy mode bits clear
+  .byte $80 | VDP_MODE0,     $00
+  .byte $80 | VDP_VMODE,     $01  ; Text, 40x24 of 6x8
+  .byte $80 | VDP_VBANK,     $00  ; The Kernal assumes both
+  .byte $80 | VDP_VINC,      $01
+  .byte $80 | VDP_IRQEN,     $00
+  .byte $80 | VDP_STATSEL_A, $00  ; Port B's STATSEL_B is never touched
+  .byte $80 | VDP_PALBASE,   $3F  ; $FC00
+  .byte $80 | VDP_L0NAME,    $00  ; Name table $0000
+  .byte $80 | VDP_L0ATTR,    $01  ; Attributes $0400
+  .byte $80 | VDP_L0PAT,     $01  ; Patterns $0800
+  .byte $80 | VDP_L0SCRX,    $00
+  .byte $80 | VDP_L0SCRY,    $00
+  .byte $80 | VDP_L0CTRL,    $30  ; 1bpp, per-cell attributes, enabled, index 0 opaque
+  .byte $80 | VDP_L0PAL,     $00  ; Palette row 0, the TMS9918 colours
+  .byte $80 | VDP_L1CTRL,    $0C  ; Layer 1 off (its reset value)
+  .byte $80 | VDP_SPRCTRL,   $26  ; Sprites off
+@InitVideoRegsEnd:
+@InitVideoPaletteRow0:          ; SPEC §11 default palette, row 0
+  .byte $00,$00, $00,$00, $02,$C4, $06,$D7, $05,$5E, $07,$7F, $0C,$55, $04,$EE
+  .byte $0F,$55, $0F,$77, $0C,$B5, $0D,$C8, $02,$A4, $0C,$5B, $0C,$CC, $0F,$FF
 
 ; Initialize the character set
 ; Copies the 2KB character ROM into the pattern table at VRAM $0800.
@@ -1111,15 +1183,17 @@ SidSetVolumeImpl:
 @SidSetVolumeNone:
   rts
 
-; VideoSetColor — Set TMS9918 text color register
-; Input: A = color byte (high nibble = fg color, low nibble = bg color)
+; VideoSetColor — Set the pen for later output, and the border
+; Input: A = fg<<4 | bg.  VID_PEN = A, and register 7 = A, so the border follows
+; the background.  Characters already on screen keep their colours.
 ; Skips silently if no video card is fitted
 ; Modifies: Flags, A
 VideoSetColorImpl:
   bit HW_PRESENT                ; Video is bit 7 — see VideoClear
   bpl @VideoSetColorNone
+  sta VID_PEN
   sta VC_REG                    ; Data byte
-  lda #$87                      ; Register 7 | $80 (write mode flag)
+  lda #($80 | VDP_COLOR)
   sta VC_REG
 @VideoSetColorNone:
   rts

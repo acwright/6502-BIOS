@@ -1,0 +1,18 @@
+name: a BRK instruction prints its report and returns to BASIC, program kept
+# VDP-PLAN §4.5, decision 5: two lines that fit 40 columns,
+#   BREAK $nn AT $xxxx
+#   A=xx X=xx Y=xx P=xx S=xx
+# where xxxx is the BRK opcode's own address (the CPU pushes BRK + 2) and nn
+# the byte after it, then a warm start: OK, and the program still there.
+#
+# $0900 = 2304 is BRK, $42 after it. Nothing returns from a BRK, so the RTS the
+# SYS would need is not there to be reached.
+mode: basic
+
+> 10 PRINT "KEPT"
+> POKE 2304,0 : POKE 2305,66
+> SYS 2304
+~ ^BREAK \$42 AT \$0900$
+~ ^A=[0-9A-F]{2} X=[0-9A-F]{2} Y=[0-9A-F]{2} P=[0-9A-F]{2} S=[0-9A-F]{2}$
+> LIST
+~ ^10 PRINT "KEPT"$

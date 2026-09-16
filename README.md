@@ -105,7 +105,7 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `DIM` | `DIM var(size) [, var(size) ...]` | Dimension a 1-D array (numeric or string), valid indices `0..size`. `REDIM'D ARRAY` if already dimensioned. Only one dimension is supported |
 | `DEF FN` | `DEF FN A(X) = expr` | Define a single-argument numeric user function. Call with `FN A(value)` |
 | `POKE` | `POKE addr, value` | Write byte `value` to memory address `addr` |
-| `BRK` | `BRK` | Drop into the machine-code monitor. Return to BASIC with `X` |
+| `BRK` | `BRK` | Reserved: `?SYNTAX ERROR`. A `BRK` *instruction* prints a report (see [Machine Code from BASIC](#machine-code-from-basic)) |
 
 **Storage & System**
 
@@ -285,53 +285,19 @@ To save, set `S`, `I` and `D(0)`–`D(13)` and `GOSUB 2000`. To load, set `S` an
 
 > **Memory layout:** Programs grow up from `$0800`. Numeric/string scalar variables follow the program, then arrays, then the string heap which grows down from `$8000`. `MEM` and the cold-boot banner report `MEMSIZ - VARTAB` (free bytes for variables, arrays, and strings combined).
 
-### Machine Code Monitor
+### Machine Code from BASIC
 
-A full-featured Supermon-style machine-code monitor occupies the `$EE00–$FEFF` segment. It supports memory inspection, 65C02 disassembly, register manipulation, code execution, CompactFlash and serial file I/O, and number base conversion. The monitor prompt is `.`.
+There is no machine-code monitor in 2.x. Machine code is loaded, run and debugged from BASIC:
 
-The monitor is entered in three ways, and all three arrive through `BRK`, so all three print the banner, `BRK AT $xxxx`, and the register display:
-- **ESC at boot** — cold entry from the boot menu
-- **BRK from BASIC** — the `BRK` statement
-- **Hardware BRK** — any `BRK` opcode in user code
+- **`BRK` report** — a `BRK` instruction anywhere prints where it happened and the registers, then returns to the `OK` prompt with the program kept:
 
-**Memory Inspection**
+  ```
+  BREAK $42 AT $0900
+  A=09 X=00 Y=00 P=31 S=FD
+  ```
 
-| Command | Syntax | Description |
-|---------|--------|-------------|
-| `M` | `M [addr] [addr]` | Hex + ASCII memory dump (8 bytes/line); bare `M` continues from last address |
-| `D` | `D [addr] [addr]` | Disassemble 65C02 instructions (20 lines default); supports the full WDC 65C02 + Rockwell instruction set |
-| `R` | `R` | Display saved CPU registers: `PC=xxxx A=xx X=xx Y=xx SP=xx NV-BDIZC` |
-
-**Memory Manipulation**
-
-| Command | Syntax | Description |
-|---------|--------|-------------|
-| `>` | `> addr byte [byte...]` | Deposit (write) bytes starting at address |
-| `F` | `F addr addr byte` | Fill memory range with a byte value |
-| `T` | `T addr addr dest` | Transfer (copy) a memory block; handles overlapping regions |
-| `H` | `H addr addr byte [byte...]` | Hunt (search) for a byte pattern in a range |
-| `C` | `C addr addr addr` | Compare two memory regions; prints differing addresses |
-
-**Execution Control**
-
-| Command | Syntax | Description |
-|---------|--------|-------------|
-| `G` | `G [addr]` | Go — JMP to address (or saved PC); restores all registers via RTI |
-| `J` | `J [addr]` | JSR — call a subroutine; RTS returns to the monitor with register display |
-| `;` | `; PC xxxx A xx X xx ...` | Modify saved registers (any subset, any order) |
-
-**File I/O & Utilities**
-
-| Command | Syntax | Description |
-|---------|--------|-------------|
-| `L` | `L "file" [addr]` | Load from CompactFlash (with filename) or XModem (without) to address (default `$0800`). Loading at the default address lets `X` hand the program straight to BASIC, ready to `RUN` |
-| `S` | `S "file" addr addr` | Save to CompactFlash (with filename) or XModem (without) |
-| `@` | `@` | List current disk's directory (prints `DISK n` header) |
-| `#` | `# NN` | Select CF disk bank `NN` (hex 00–FF); `#` alone reports the current disk |
-| `N` | `N value` | Number conversion — hex (`$xx`), decimal (`+ddd`), or binary (`%bbbb`) input shown in all three bases |
-| `X` | `X` | Exit to BASIC |
-
-> **Wozmon easter egg:** The original Apple II Wozmon remains at `$FF00`. Enter it from the monitor with `G FF00` or from BASIC with `SYS $FF00`.
+  `$0900` is the address of the `BRK` opcode itself, `$42` the byte after it (free for a program to use as a break number), and `S` the stack pointer before the `BRK`. The registers stay in `BRK_A`/`BRK_X`/`BRK_Y`/`BRK_P`/`BRK_SP` (`$0313`/`$0314`/`$0315`/`$0310`/`$0316`), and `BRK_PCL`/`BRK_PCH` (`$0311–$0312`) hold the pushed return address, `BRK` + 2. If a program had taken the video card out of the Text console, the console is put back first. `CONT` cannot continue after a `BRK`. The report is the default handler behind `BRK_PTR` (`$0302`); a program can point `BRK_PTR` at its own, and a cartridge with no BASIC at `$C000` must.
+- **Wozmon** — the original Apple I monitor is at `$FF00`. Enter it with `SYS 65280` (`SYS $FF00`); `C000R` returns to BASIC with the program kept.
 
 ### Video
 

@@ -3343,9 +3343,16 @@ XModemStrSend:
 Nmi:
   rti
 
-; BRK Handler — saves full CPU state and warm-starts BASIC
+; BRK Handler — saves full CPU state, reports it, and warm-starts BASIC
 ; On entry from @IrqBrk: A/X/Y are the user's original values (restored by IRQ handler).
 ; The CPU's hardware push left P/PCL/PCH on the stack.
+; Prints, on the console IO_MODE names:
+;   BREAK $nn AT $xxxx
+;   A=xx X=xx Y=xx P=xx S=xx
+; xxxx is the BRK opcode's address (BRK_PC - 2), nn the byte after it, and S
+; the stack pointer before the BRK (BRK_SP + 3).  A video console that a
+; program has taken out of the Text console is put back first.  BRK_PTR stays
+; hookable; a cartridge with no BASIC at $C000 must point it elsewhere.
 Break:
   sta BRK_A                     ; Save user's A register
   stx BRK_X                     ; Save user's X register
@@ -3358,7 +3365,95 @@ Break:
   sta BRK_PCL
   pla                           ; Pull saved PCH
   sta BRK_PCH
+  ldx #$FF                      ; BasEntry resets the stack anyway, and a BRK
+  txs                           ;   reached by running off a full one has no
+                                ;   room left to print the report with
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @BreakReport
+  lda VID_MODE
+  cmp #$01
+  beq @BreakReport              ; The Text console is intact
+  jsr InitVideoImpl             ; A program moved the card on: bring the
+  jsr VideoClearNow             ;   console back to print on
+@BreakReport:
+  jsr PrintCRLF
+  lda #<KMsgBreak               ; "BREAK $"
+  ldy #>KMsgBreak
+  jsr PrintStr
+  lda BRK_PCL                   ; The opcode's address, BRK_PC - 2
+  sec
+  sbc #2
+  sta STR_PTR
+  tax
+  lda BRK_PCH
+  sbc #0
+  sta STR_PTR + 1
+  pha                           ; Its high byte, then its low byte, for later
+  phx
+  ldy #1
+  lda (STR_PTR),y               ; The byte after the BRK
+  jsr KPrintHexByte
+  lda #<KMsgAt                  ; " AT $"
+  ldy #>KMsgAt
+  jsr PrintStr
+  pla
+  tax
+  pla
+  jsr KPrintHexByte
+  txa
+  jsr KPrintHexByte
+  jsr PrintCRLF
+  ldx #0                        ; A=xx X=xx Y=xx P=xx S=xx
+@BreakReg:
+  txa
+  beq @BreakRegName
+  lda #' '
+  jsr Chrout
+@BreakRegName:
+  lda KBreakRegName,x
+  jsr Chrout
+  lda #'='
+  jsr Chrout
+  ldy KBreakRegOffset,x
+  lda BRK_P,y
+  cpx #4                        ; S: the stack pointer before the BRK pushed
+  bne @BreakRegHex              ;   PCH, PCL and P
+  adc #2                        ; Carry is set: + 3
+@BreakRegHex:
+  jsr KPrintHexByte
+  inx
+  cpx #5
+  bne @BreakReg
+  jsr PrintCRLF
   jmp BasEntry                  ; Warm start: the program is kept
+KMsgBreak:
+  .byte "BREAK $", 0
+KMsgAt:
+  .byte " AT $", 0
+KBreakRegName:
+  .byte "AXYPS"
+KBreakRegOffset:                ; From BRK_P
+  .byte BRK_A - BRK_P, BRK_X - BRK_P, BRK_Y - BRK_P, 0, BRK_SP - BRK_P
+
+; KPrintHexByte — Print A as two hex digits through Chrout
+; Preserves: X, Y
+; Modifies: Flags, A
+KPrintHexByte:
+  pha
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  jsr @KHexDigit
+  pla
+  and #$0F
+@KHexDigit:
+  cmp #10
+  bcc @KHexDec
+  adc #6                        ; Carry is set: 'A' - '0' - 10
+@KHexDec:
+  adc #'0'
+  jmp Chrout
 
 ; IRQ Handler
 Irq:

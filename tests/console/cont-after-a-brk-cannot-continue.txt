@@ -1,0 +1,21 @@
+name: CONT after a BRK raises CAN'T CONTINUE, as after an error
+# VDP-PLAN §4.4: the warm start a BRK ends in abandons whatever was running.
+# BAS_CURLIN goes back to direct mode and BAS_OLDTEXT is cleared, so CONT has
+# nothing to resume — the program stopped inside machine code, and a CONT that
+# picked up after the SYS would be running a program whose state the routine
+# may have wrecked.
+#
+# The STOP first is the contrast: the same program can be continued when it
+# stops the ordinary way, so the refusal is the BRK's doing.
+mode: basic
+
+> 10 STOP
+> 20 POKE 2304,0 : SYS 2304
+> 30 PRINT "RESUMED"
+> RUN
+~ ^BREAK IN 10
+> CONT
+~ ^BREAK \$00 AT \$0900$
+> CONT
+~ ^\?CAN'T CONTINUE ERROR
+! RESUMED

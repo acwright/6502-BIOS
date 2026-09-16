@@ -22,7 +22,7 @@
 // reach; asserting anything about it would be asserting about the emulator.
 import { escapeRegex } from '../lib/basic.mjs'
 
-export const name = 'with no serial card, the XModem LOAD and SAVE paths report NO DEVICE'
+export const name = 'with no serial card, the XModem LOAD, SAVE, BLOAD and BSAVE paths report NO DEVICE'
 
 const HW_PRESENT = 0x030d
 const HW_SC = 0x10
@@ -31,15 +31,19 @@ export async function run(m) {
   const present = await m.peek(HW_PRESENT)
   m.assert((present & HW_SC) !== 0, `expected a serial card to start with, HW_PRESENT=$${present.toString(16)}`)
 
-  // Bare LOAD and bare SAVE are the XModem paths — a filename sends them to the
-  // CF card instead. Each run clears the bit for itself, since the restore in
-  // between puts it back.
+  // Bare LOAD and bare SAVE, and BLOAD and BSAVE with no filename, are the
+  // XModem paths — a filename sends them to the CF card instead. Each run
+  // clears the bit for itself, since the restore in between puts it back.
   for (const line of [
     '10 POKE 781, PEEK(781) AND 239',
     '20 PRINT "STILL HERE"',
     '30 SAVE',
     '40 POKE 781, PEEK(781) AND 239',
     '50 LOAD',
+    '60 POKE 781, PEEK(781) AND 239',
+    '70 BSAVE 16384, 16',
+    '80 POKE 781, PEEK(781) AND 239',
+    '90 BLOAD 16384',
   ]) {
     // A stored line prints nothing back, so each one waits for its own echo.
     await m.send(`${line}\r`, escapeRegex(line))
@@ -54,6 +58,13 @@ export async function run(m) {
 
   await m.write(HW_PRESENT, [present])
   await m.send('RUN 40\r', /\?NO DEVICE ERROR IN 50/, { timeoutMs: 30000 })
+
+  // BSAVE and BLOAD with no filename are the same XModem paths, and ask for the
+  // serial card once the arguments are read.
+  await m.write(HW_PRESENT, [present])
+  await m.send('RUN 60\r', /\?NO DEVICE ERROR IN 70/, { timeoutMs: 30000 })
+  await m.write(HW_PRESENT, [present])
+  await m.send('RUN 80\r', /\?NO DEVICE ERROR IN 90/, { timeoutMs: 30000 })
 
   // And the console is still a console: the prompt takes input, which is the
   // evidence that neither run left the machine wedged.

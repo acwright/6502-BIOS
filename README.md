@@ -61,7 +61,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code or inspected in the 
 All hardware-dependent operations are guarded at every level — Kernal, BASIC, and Monitor:
 
 - **CompactFlash absent** — `LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` returns an error at once when the boot probe found no card, and times out instead of hanging on a card that stops answering
-- **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE` return an error
+- **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE`/`BLOAD`/`BSAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence`, `SidSetVolume` silently return
 - **Video absent** — `CLS`, `LOCATE`, `COLOR` silently skip (arguments are still consumed); `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
@@ -119,8 +119,8 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 | `DIR` | List current disk's directory (prints `DISK n` header) |
 | `DEL "name"` | Delete a named file from the current disk |
 | `DISK <n>` | Select CF disk bank `n` (0–255); resets to 0 on boot. Each disk is 1 MB (2048 sectors) — 256 disks = 256 MB total |
-| `BLOAD <addr>,"name"` | Load a file's raw bytes from the current disk to address `addr` |
-| `BSAVE <addr>,<len>,"name"` | Save `len` bytes from address `addr` to a named file on the current disk |
+| `BLOAD <addr>[,"name"]` | Load a file's raw bytes from the current disk to address `addr`; with no name, receive them via XModem |
+| `BSAVE <addr>,<len>[,"name"]` | Save `len` bytes from address `addr` to a named file on the current disk; with no name, send them via XModem |
 | `FORMAT` | Erase the current disk's file directory (prompts `ERASE DISK n? (Y/N)`) |
 | `BANK <n>` | Select 1KB RAM bank `n` at `$8000–$83FE` |
 | `MEM` | Print free bytes, `HW=$xx`, and `DISK n` |
@@ -290,6 +290,7 @@ To save, set `S`, `I` and `D(0)`–`D(13)` and `GOSUB 2000`. To load, set `S` an
 There is no machine-code monitor in 2.x. Machine code is loaded, run and debugged from BASIC:
 
 - **`SYS addr[,a[,x[,y]]]`** — calls a routine with those registers (0 if omitted). What it returns in `A`, `X`, `Y` and `P` is left in `BRK_A`, `BRK_X`, `BRK_Y` and `BRK_P`: `PEEK(787)`, `PEEK(788)`, `PEEK(789)` and `PEEK(784)`.
+- **`BLOAD addr[,"name"]` / `BSAVE addr,len[,"name"]`** — raw bytes to and from memory. With a filename they use the CompactFlash card; without one they transfer over XModem on the serial port, as `LOAD` and `SAVE` do. A received file ends on a 128-byte block boundary, padded with `$1A`.
 - **`BRK` report** — a `BRK` instruction anywhere prints where it happened and the registers, then returns to the `OK` prompt with the program kept:
 
   ```
@@ -337,7 +338,7 @@ Assembly programs can access disk storage directly through the Kernal jump table
 
 ### Serial I/O & XModem Transfer
 
-A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE` without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
+A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE`, and `BLOAD`/`BSAVE`, without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs and raw bytes over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
 
 When an XModem transfer is initiated, the system prints `XMODEM RX READY` (receive) or `XMODEM TX READY` (send) and waits up to ~60 seconds for the terminal program to start the transfer, giving ample time to configure and begin the transfer in your terminal program.
 

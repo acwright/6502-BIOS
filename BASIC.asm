@@ -8735,18 +8735,30 @@ BasCmdDisk:
         stx     CF_DISK
         rts
 
-; BLOAD addr, "name" -- load a file's raw bytes to addr
+; BLOAD addr[,"name"] -- load a file's raw bytes to addr, or with no name
+; receive them over XModem.  The card each path needs is asked for once the
+; arguments say which path it is.
 BasCmdBload:
-        lda     #HW_CF
-        jsr     ReqHw
         jsr     EvalAddrU16             ; FAC+3 = hi, FAC+4 = lo
         lda     z:FAC+4
         sta     FS_IO_ADDR
+        sta     XFER_PTR
         lda     z:FAC+3
         sta     FS_IO_ADDR+1
+        sta     XFER_PTR+1
+        jsr     ChrGot
+        bne     @cf
+        lda     #HW_SC
+        jsr     ReqHw
+        jsr     XModemLoad
+        bra     @done
+@cf:
+        lda     #HW_CF
+        jsr     ReqHw
         jsr     ChkCom
         jsr     EvalString              ; filename -> BAS_FNAME, STR_PTR
         jsr     FsLoadFileAddr
+@done:
         bcs     @err
         rts
 @err:
@@ -8754,24 +8766,37 @@ BasCmdBload:
         ldy     #>MsgLoadErr
         jmp     BasPrintStr
 
-; BSAVE addr, len, "name" -- save len bytes from addr to a file
+; BSAVE addr, len[,"name"] -- save len bytes from addr to a file, or with no
+; name send them over XModem
 BasCmdBsave:
-        lda     #HW_CF
-        jsr     ReqHw
         jsr     EvalAddrU16             ; addr
         lda     z:FAC+4
         sta     FS_IO_ADDR
+        sta     XFER_PTR
         lda     z:FAC+3
         sta     FS_IO_ADDR+1
+        sta     XFER_PTR+1
         jsr     ChkCom
         jsr     EvalAddrU16             ; length in bytes
         lda     z:FAC+4
         sta     FS_FILE_SIZE
+        sta     XFER_REMAIN
         lda     z:FAC+3
         sta     FS_FILE_SIZE+1
+        sta     XFER_REMAIN+1
+        jsr     ChrGot
+        bne     @cf
+        lda     #HW_SC
+        jsr     ReqHw
+        jsr     XModemSave
+        bra     @done
+@cf:
+        lda     #HW_CF
+        jsr     ReqHw
         jsr     ChkCom
         jsr     EvalString              ; filename
         jsr     FsSaveFileAddr
+@done:
         bcs     @err
         rts
 @err:

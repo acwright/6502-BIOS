@@ -29,12 +29,17 @@ whose last release is **1.6**.
   - The PICOVDP work in `6502-EMULATOR`'s `docs/handoff/6502-BIOS.md` (branch `v3-vdp`):
     card detection, hardware scroll, port B for interrupt handlers, `WaitVBlank`.
   - A console in the PICOVDP's **Text mode** (`VMODE $1`, 40×24, 6×8 cells) with a
-    **per-cell colour table**. It keeps the ROM font and every screen layout.
+    **per-cell colour table**. It keeps the same font and every screen layout.
   - **No Monitor.** The machine **boots straight to BASIC**, with a new header and a colour
-    logo drawn from the ROM font's CP437 block characters. Wozmon stays at `$FF00`.
-  - **BASIC takes the Monitor's 4.3 KB** (`$C000–$FEFF`). The Kernal (`$A000–$B7FF`) and
-    the character set (`$B800`) do not move, because cartridges overlay `$C000–$FFFF`.
-    The Kernal holds the primitives cartridges need; BASIC-only work lives in BASIC.
+    logo drawn from the font's CP437 block characters. Wozmon stays at `$FF00`.
+  - **The font lives in the PICOVDP firmware.** The card loads it into VRAM at reset and
+    on command (a new register and a capability bit, SPEC draft 0.5). ROM `$B800` holds
+    no font on 2.x.
+  - **ROM layout:** BASIC takes the Monitor's 4.3 KB (`$C000–$FEFF`), and the Kernal takes
+    all of `$A000–$BFFF`, including the space the font used. Nothing the Kernal needs goes
+    above `$C000`, because cartridges overlay `$C000–$FFFF`. The Kernal holds the
+    primitives cartridges need; BASIC-only work lives in BASIC.
+  - **No TMS9918A support.** BIOS 2.x runs only with a PICOVDP, with no fallback paths.
   - **New BASIC commands with matching Kernal entries.**
     - Core: `SCREEN`, `VPOKE`/`VPEEK`, `VREG`, `PALETTE`, `VSYNC`, `VLOAD`.
     - Second tier, if room is found: `SPRITE`, `SCROLL`, `LAYER`, `VSTAT`.
@@ -74,11 +79,15 @@ whose last release is **1.6**.
 
 **Part 2: the VDP**
 
-6. **6502-PICOVDP:** firmware proven on the PRO (its Phases 9–11). This gates the
-   hardware switch, not the software work.
+6. **6502-PICOVDP:**
+   - SPEC draft 0.5 adds the built-in font and its load command. The emulator's PICOVDP
+     card implements it first, then the firmware.
+   - Firmware proven on the PRO (its Phases 9–11) gates the hardware switch, not the
+     software work.
 7. **6502-EMULATOR:** `v3-vdp` merged, with the card as an option; tagged 3.x.
 8. **6502-BIOS:** 2.0 on `main`. This can start once step 1 is done, because the `v3-vdp`
-   emulator already runs the PICOVDP.
+   emulator already runs the PICOVDP. Its console work needs the built-in font in the
+   emulator (step 6).
 9. **6502-ASM** sets the VDP include convention. 6502-CRT, 6502-PRG, 6502-BIN and 6502-C
    follow it.
 10. **Everything else follows BIOS 2.0:**
@@ -112,8 +121,8 @@ extracts facts from, and what bastok transcribes its token table from.
   | WOZMON | `$FF00–$FFF9` | 250 | 9 |
 
 - **The layout constraint.** Cartridges overlay `$C000–$FFFF` and still call the Kernal,
-  and `InitVideo` reads the font from `$B800`. So the Kernal and CHARS must stay inside
-  `$A000–$BFFF`. Nothing the Kernal needs can move above `$C000`.
+  so everything the Kernal needs stays inside `$A000–$BFFF`. On 1.x that 8 KB holds the
+  Kernal and CHARS. On 2.x the font moves into the PICOVDP, and the Kernal has all 8 KB.
 - BASIC has 85 keywords, tokens `$80`–`$D4`, so 43 token values are free.
 - CI (`.github/workflows/ci.yml`) pins cc65 and pins the emulator to `v2.6.0`.
 - Version: `BIOS_VERSION_MAJOR/MINOR` in `BIOS.inc` (1 / 5). The splash is derived from it.
@@ -138,26 +147,31 @@ extracts facts from, and what bastok transcribes its token table from.
 1. **Version 2.0**, and retire `PLAN.md` into the record once 1.6 ships.
 2. **ROM layout.**
    - Merge MONITOR into BASIC, so BASIC is `$C000–$FEFF` (16,128 bytes).
-   - KERNAL, CHARS, WOZMON and VECTORS keep their places.
+   - Merge CHARS into KERNAL, so the Kernal is `$A000–$BFFF` (8,192 bytes). `Chars.asm`
+     and `InitCharacters` leave the ROM (see item 5).
+   - WOZMON and VECTORS keep their places.
    - Remove `MonitorEntry` and `MonitorBrkEntry` (`$EE00`/`$EE03`).
    - `BasEntry` stays at `$C000`.
    - **Put in the Kernal only what a cartridge could use.** Argument parsing, the header
      and logo, and `SCREEN`'s mode defaults live in BASIC.
-3. **Card detection** (handoff §3, SPEC §16).
-   - `STAT4` → `$AC`, into a new RAM byte (card type or `STAT6` capabilities), because
-     `HW_PRESENT` is full.
-   - Probe before `InitVideo`, and restore `STAT0`.
-4. **Behaviour on a TMS9918A.** Decide it explicitly. Recommendation: run the console in
-   the legacy submode (what 1.x does), and have every VDP-only entry and BASIC command
-   return carry set / `?NO DEVICE`. An unguarded write above register 7 aliases onto 0–7
-   and wrecks the display.
+3. **Card identification** (SPEC §16).
+   - `STAT4` → `$AC` confirms a PICOVDP. `STAT5` gives the firmware version, and
+     `STAT6`'s new font bit confirms the built-in font.
+   - Keep what the Kernal needs in a new RAM byte, because `HW_PRESENT` is full.
+   - Restore `STAT0` afterwards.
+4. **No TMS9918A support.** BIOS 2.x requires a PICOVDP with the built-in font. No
+   fallback paths are designed, and new entries define no TMS9918A behaviour. A legacy
+   machine runs BIOS 1.6.
 5. **Console in Text mode with per-cell colour.**
-   - `VMODE $1`; layer 0 at 1bpp, per-cell attribute table, index 0 opaque. The font
-     stays at `$B800`, and tables are placed per SPEC §7.
+   - `VMODE $1`; layer 0 at 1bpp, per-cell attribute table, index 0 opaque. Tables are
+     placed per SPEC §7.
+   - **The font comes from the card.** `InitVideo` issues the font load command instead
+     of uploading 2 KB, then waits for the completion rule SPEC draft 0.5 sets (for
+     example, the next vertical blank). BASIC's return to text uses the same command,
+     because a program may have overwritten the pattern table.
    - `Chrout`, `VideoChroutRaw`, `VideoPutChar`, `VideoClear` and the scroll write a colour
      byte per cell from a new pen variable. Set both VRAM addresses on port A for each
      character, keeping port B free for interrupt handlers.
-   - A text console exists only on the VDP. On a TMS9918A see item 4.
 6. **Hardware scroll** (handoff §4).
    - `L0SCRY` plus a scroll origin, folded into `VideoSetCursorImpl`, the `Chrout` paths,
      `VideoPutCharImpl` and `VideoClearImpl`.
@@ -204,18 +218,21 @@ extracts facts from, and what bastok transcribes its token table from.
     - `VdpSetMode`, `VdpWriteReg`, `VdpPoke`/`VdpPeek`, `VdpSetPalette`, `WaitVBlank`,
       `VdpLoadFile`.
     - Then `VdpSprite`, `VdpSetScroll`, `VdpLayer`, `VdpStatus`.
-    - A way to read the card type.
-    - Each has a defined TMS9918A behaviour (item 4).
-13. **Budget.** Kernal: about 1,320 bytes free after the NVRAM slots, against roughly
-    1,000 for detection, text mode, scroll, the BRK report and the VDP primitives. Tight.
-    BASIC: about 4,390 bytes for the header, commands and keyword text.
+    - `VdpLoadFont`, the font load command, for cartridges and programs that replaced the
+      pattern table.
+    - A way to read the card identification (item 3).
+13. **Budget.**
+    - **Kernal:** 8,192 bytes, 4,592 used today. After the NVRAM slots (about 230) and
+      removing `InitCharacters`, about 3,400 bytes are free. Detection, text mode, scroll,
+      the BRK report and the core and second-tier VDP primitives need roughly 1,200.
+      Comfortable.
+    - **BASIC:** about 4,390 bytes for the header, commands and keyword text. This is now
+      the binding budget.
     - **Order of spending:** core, then save slots, then second tier.
-    - **If the Kernal runs out:** first move anything BASIC-only out of it. As a last
-      resort, pack CHARS (6-bit rows save about 500 bytes, but change the `$B800` format
-      and address).
 14. **Wording.** Remove TMS9918 and Monitor mentions from `Kernal.asm`, `BIOS.inc`,
-    `Chars.asm`, `README.md` (drop the Monitor section and document the new boot) and
-    the test helpers. Fix the README's jump-table count, which says 51/34 from `$A099`
+    `README.md` (drop the Monitor section, document the new boot, and show the memory map
+    with no CHARS segment) and the test helpers. `Chars.asm` itself leaves `main`; its
+    bytes move to 6502-PICOVDP (they stay on `v1.x`). Fix the README's jump-table count, which says 51/34 from `$A099`
     where the source has 53/32 from `$A09F`.
 
 ### C. Tests and CI
@@ -226,6 +243,9 @@ extracts facts from, and what bastok transcribes its token table from.
 - `tests/probe/no-video-card-nothing-reaches-the-vdp.mjs`: watch all four ports.
 - Retitle `tests/probe/color-sets-the-tms9918-colour-register.mjs`, and add probes for
   per-cell colour and `COLOR`'s border.
+- `tests/probe/initvideo-restores-the-character-set.mjs` becomes a test that `InitVideo`
+  and the return to text issue the font load command, and that the screen draws
+  correctly after a program overwrote the pattern table.
 - New BASIC tests for every new keyword. A token-stability test: the 1.x keyword table is
   a prefix of 2.x's, except `$B4`.
 - `ci.yml` on `main`: a 3.x emulator tag with the PICOVDP card selected explicitly.
@@ -238,8 +258,10 @@ extracts facts from, and what bastok transcribes its token table from.
 - **6502-DOCS:**
   - `extract-facts.mjs --bios` reads `v1.x` for `v1` and `main` for the rewrite.
   - The keyword, Kernal and boot data change shape; the Monitor data goes.
+  - The character-set data on `main` comes from 6502-PICOVDP's font source, no longer
+    from `Chars.asm`.
 - **6502-ASM:** the VDP include is written from 2.0's `BIOS.inc` and jump table, with no
-  `MONITOR_*` names.
+  `MONITOR_*` names and no `$B800` character set.
 - **bastok:** the 2.x token table, which is 1.x plus appended keywords, with `$B4` renamed.
 - **6502-ACE:** EEPROM image and README.
 
@@ -248,21 +270,20 @@ extracts facts from, and what bastok transcribes its token table from.
 | Repository | Path | Why |
 |---|---|---|
 | 6502-EMULATOR | `~/Developer/NodeJS/6502-EMULATOR` | Bundles 1.6 (2.7.0) and 2.0 (3.x); `docs/handoff/6502-BIOS.md` on `v3-vdp`; CI runs on it |
-| 6502-PICOVDP | `~/Developer/C/6502-PICOVDP` | `SPEC.md` §7 (VRAM layout), §8 (attributes), §9 (Text mode), §16 (detection), §17 (BIOS changes) |
+| 6502-PICOVDP | `~/Developer/C/6502-PICOVDP` | `SPEC.md` §7 (VRAM layout), §8 (attributes), §9 (Text mode), §16 (detection), §17 (BIOS changes); draft 0.5's built-in font and load command, which 2.0's console depends on; the font's bytes move there |
 | 6502-DOCS | `~/Developer/NodeJS/6502-DOCS` | Documents 1.6 (`v1`) and 2.x (`main`), extracted from this source per branch |
 | 6502-ASM (then CRT, PRG, BIN, C) | `~/Developer/Assembly/6502-ASM` | Legacy include takes 1.6's entries; the VDP include tracks 2.0 |
 | bastok | `~/Developer/NodeJS/bastok` | Token table transcribed from `BASIC.asm` |
-| 6502-EHBASIC, vc83basic | `~/Developer/Assembly/6502-EHBASIC`, `~/Developer/Github/vc83basic` | Cartridges that rely on the Kernal staying below `$C000` and on jump-table addresses not moving |
+| 6502-EHBASIC, vc83basic | `~/Developer/Assembly/6502-EHBASIC`, `~/Developer/Github/vc83basic` | Cartridges that rely on the Kernal staying below `$C000` and on jump-table addresses not moving; `InitVideo` gets them the built-in font |
 | cffs, 6502-PRG, 6502-BIN | `~/Developer/NodeJS/cffs`, … | READMEs that describe Monitor workflows |
 
 ## Questions for VDP-PLAN.md
 
-1. What a 2.x ROM does on a TMS9918A (item 4).
-2. The new keyword chosen for token `$B4`.
-3. `SCREEN`'s layer defaults per mode, and exactly what "back to text" restores.
-4. Save-slot command syntax.
-5. Whether `SYS` leaves registers readable after the call, and where.
-6. The logo design.
-7. The pen's RAM location and whether `COLOR` values persist across `NEW`/`RUN`.
-8. What the Kernal's `VideoSetColor` means on 2.x: set the pen (and whether it also writes
+1. The new keyword chosen for token `$B4`.
+2. `SCREEN`'s layer defaults per mode, and exactly what "back to text" restores.
+3. Save-slot command syntax.
+4. Whether `SYS` leaves registers readable after the call, and where.
+5. The logo design.
+6. The pen's RAM location and whether `COLOR` values persist across `NEW`/`RUN`.
+7. What the Kernal's `VideoSetColor` means on 2.x: set the pen (and whether it also writes
    register 7). Cartridges' `COLOR` statements (EhBASIC, vc83basic) inherit the answer.

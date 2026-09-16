@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # v1.x takes 1.6.x fixes directly, and a push there has to be tested too.
+    branches: [main, v1.x]
   pull_request:
   workflow_dispatch:
 
@@ -25,11 +26,12 @@ concurrency:
 # out — v2.6.0 is the one that reads the DS1511Y's TE bit the way the datasheet
 # does, and the case asserting the clock still runs after SETTIME needs it. On
 # v2.5.1 and earlier the emulator carried the same inversion the ROM did, so a
-# correct ROM looks like a stopped clock there.
+# correct ROM looks like a stopped clock there. v2.7.0 is the last 2.x release
+# and bundles v1.6, so it is the emulator the 1.x line is tested on for good.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v2.6.0
+  EMULATOR_REF: v2.7.0
 
 jobs:
   test:

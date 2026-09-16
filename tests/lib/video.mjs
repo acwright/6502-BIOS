@@ -37,6 +37,10 @@ const CPS = 400
 const STEP_CYCLES = 500000
 const STEPS = 24
 
+// The Kernal scrolls the console by moving layer 0's origin, and the pinned
+// emulator's `screen.text` applies that origin, so its lines are the screen as a
+// user sees it and need no rotating here. probe/screen-text-shows-the-scrolled-
+// console pins that; if it fails, this is the function to change.
 export async function screen(m) {
   return m.screenText()
 }

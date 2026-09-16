@@ -82,7 +82,7 @@ XFER_IO_SAVE        := $0319             ; Saved IO_MODE before switching to ser
 BAS_DATAPTR         := $031A             ; $031A-$031B - DATA read position (2 bytes)
 BAS_STOPLINE        := $031C             ; $031C-$031D - Saved BAS_CURLINE for CONT (2 bytes)
 BAS_STOPTXT         := $031E             ; $031E-$031F - Saved BAS_TXTPTR for CONT (2 bytes)
-SCROLL_BUF          := $0320             ; $0320-$0347 - 40-byte scroll temp buffer
+; $0320-$0347 unassigned (1.x's SCROLL_BUF; the console scrolls in hardware)
 ; Filesystem temp vars ($0348+)
 FS_START_SEC        := $0348             ; $0348-$0349 - File start sector (2 bytes)
 FS_FILE_SIZE        := $034A             ; $034A-$034B - File size in bytes (2 bytes)

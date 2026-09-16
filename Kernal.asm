@@ -159,7 +159,8 @@ VdpSetReg:
 
 ; VideoClear — Fill the screen with spaces in the current pen, cursor home
 ; Fills the 960-byte name table at VRAM $0000 with $20 and the 960 attributes at
-; $0400 with VID_PEN, so COLOR fg,bg : CLS gives a screen of that colour.
+; $0400 with VID_PEN, so COLOR fg,bg : CLS gives a screen of that colour, and
+; takes the scroll origin back to row 0.
 ; Skips silently if no video card is fitted
 ; Modifies: Flags, A, X, Y
 VideoClearImpl:
@@ -173,6 +174,10 @@ VideoClearImpl:
   lda #$44                      ; Attribute table, $0400, write
   ldx VID_PEN
   jsr @Fill
+  stz VID_TOP                   ; Unscrolled
+  lda #$00
+  ldx #VDP_L0SCRY
+  jsr VdpSetReg
   ; Reset cursor to (0,0)
   stz VID_CURSOR_X
   stz VID_CURSOR_Y
@@ -200,8 +205,9 @@ VideoClearImpl:
   rts
 
 ; VideoSetCursor — Set cursor position
-; Input: X = column (0-39), Y = row (0-23)
-; Calculates VRAM address = Y * 40 + X and stores in VID_CURSOR_ADDR
+; Input: X = column (0-39), Y = row (0-23), on the screen as shown
+; VID_CURSOR_ADDR = ((Y + VID_TOP) mod 24) * 40 + X, the cell's place in the
+; name table once the scroll origin is folded in
 ; Skips silently if no video card is fitted
 ; Modifies: Flags, A
 VideoSetCursorImpl:
@@ -209,7 +215,13 @@ VideoSetCursorImpl:
   bpl @VideoSetCursorNone
   stx VID_CURSOR_X
   sty VID_CURSOR_Y
-  tya                           ; A = row
+  tya                           ; Screen row to name-table row:
+  clc                           ;   (row + VID_TOP) mod 24
+  adc VID_TOP
+  cmp #24
+  bcc @VideoSetCursorRow
+  sbc #24                       ; Carry is set
+@VideoSetCursorRow:
   jsr VideoRowAddr              ; VID_CURSOR_ADDR = row * 40, carry clear
   txa                           ; Add the column
   adc VID_CURSOR_ADDR
@@ -271,90 +283,53 @@ VideoPutCharImpl:
   pla
   rts
 
-; VideoScroll — Scroll screen up one line
-; Copies VRAM rows 1-23 to rows 0-22 (920 bytes), clears row 23 with spaces
-; Uses SCROLL_BUF ($0320, 40 bytes) as temporary storage
+; VideoScroll — Scroll the screen up one line, in hardware
+; Moves the display origin down a row (VID_TOP, and L0SCRY = VID_TOP * 8) and
+; blanks the row that was at the top, which is now the bottom line, in the
+; current pen.  The name table does not move.  The cursor keeps its screen
+; position, so its VRAM address is worked out again.
+; Skips silently if no video card is fitted
 ; Modifies: Flags, A, X, Y
 VideoScrollImpl:
-  ; Save STR_PTR (may be in use by caller, e.g. PrintStr)
-  lda STR_PTR
-  pha
-  lda STR_PTR + 1
-  pha
-  ; Source starts at row 1 (VRAM offset 40=$28), dest at row 0 (offset 0)
-  ; We process 23 rows, copying each row up by one
-  lda #<40                      ; Source address low = 40 (row 1)
-  sta STR_PTR
-  lda #>40
-  sta STR_PTR + 1
-
-  ldx #23                       ; 23 rows to copy
-@ScrollRowLoop:
-  phx                           ; Save row counter
-
-  ; Set VRAM read address (source row)
-  lda STR_PTR
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VideoScrollNone
+  lda VID_TOP
+  pha                           ; The row leaving the top
+  inc a
+  cmp #24
+  bcc @VideoScrollTop
+  lda #$00
+@VideoScrollTop:
+  sta VID_TOP
+  asl a                         ; x8 pixels (at most 184)
+  asl a
+  asl a
+  ldx #VDP_L0SCRY
+  jsr VdpSetReg
+  pla
+  jsr VideoRowAddr              ; VID_CURSOR_ADDR = that row * 40
+  lda #$40                      ; Its names, write mode
+  ldx #$20
+  jsr @VideoScrollRow
+  lda #$44                      ; Its attributes, write mode, + $0400
+  ldx VID_PEN
+  jsr @VideoScrollRow
+  ldx VID_CURSOR_X              ; Put the cursor back on its screen cell
+  ldy VID_CURSOR_Y
+  jmp VideoSetCursorImpl
+@VideoScrollNone:
+  rts
+@VideoScrollRow:                ; A = address high bits, X = fill value
+  ora VID_CURSOR_ADDR + 1
+  ldy VID_CURSOR_ADDR
+  sty VC_REG
   sta VC_REG
-  lda STR_PTR + 1
-  sta VC_REG                    ; Bit 6 clear = read mode
-  ; Read 40 bytes into SCROLL_BUF
-  ldy #$00
-@ScrollRead:
-  lda VC_DATA
-  sta SCROLL_BUF,y
-  iny
-  cpy #40
-  bne @ScrollRead
-
-  ; Set VRAM write address (dest = source - 40)
-  lda STR_PTR
-  sec
-  sbc #40
-  sta VC_REG                    ; Dest address low
-  lda STR_PTR + 1
-  sbc #$00
-  ora #$40                      ; Set bit 6 for write mode
-  sta VC_REG                    ; Dest address high
-
-  ; Write 40 bytes from SCROLL_BUF
-  ldy #$00
-@ScrollWrite:
-  lda SCROLL_BUF,y
-  sta VC_DATA
-  iny
-  cpy #40
-  bne @ScrollWrite
-
-  ; Advance source pointer by 40 for next row
-  lda STR_PTR
-  clc
-  adc #40
-  sta STR_PTR
-  bcc @ScrollNoCarry
-  inc STR_PTR + 1
-@ScrollNoCarry:
-  plx                           ; Restore row counter
-  dex
-  bne @ScrollRowLoop
-
-  ; Clear bottom row (row 23) with spaces
-  ; Row 23 address = 23 * 40 = 920 = $0398
-  lda #$98                      ; Low byte of $0398
-  sta VC_REG
-  lda #$03
-  ora #$40                      ; Write mode
-  sta VC_REG
-  lda #$20                      ; Space character
+  txa
   ldy #40
-@ScrollClearBottom:
+@VideoScrollFill:
   sta VC_DATA
   dey
-  bne @ScrollClearBottom
-  ; Restore STR_PTR
-  pla
-  sta STR_PTR + 1
-  pla
-  sta STR_PTR
+  bne @VideoScrollFill
   rts
 
 ; VideoChrout — Output character to video display

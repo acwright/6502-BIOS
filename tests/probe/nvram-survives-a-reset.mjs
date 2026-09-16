@@ -13,8 +13,16 @@
 // what the user was keeping.
 
 import { coldBoot, BASIC_READY } from '../lib/boot.mjs'
+import {
+  NvRead, NvWrite, NV_ID, NV_VALID, NV_SLOT_DATA, SRC, DEST, payloadFor, callNv, lo, hi,
+} from '../lib/nvslots.mjs'
 
-export const name = 'NVRAM survives a reset, and the probe that runs across it'
+export const name = 'NVRAM and a save slot survive a reset, and the probe that runs across it'
+
+// A save slot clear of every address in PATTERN, so the two cannot mask each
+// other: slot 9 is NVRAM $90-$9F.
+const SLOT = 9
+const OWNER = 0x6d
 
 // Chosen to look nothing like the values a probe or an uninitialised card would
 // leave: not 0, not $FF, not the address.
@@ -37,6 +45,11 @@ export async function run(m) {
     m.assertByte(await m.peek(address, 'nvram'), value, `NVRAM $${address.toString(16)} before the reset`)
   }
 
+  // And a save slot, which is what a game actually leaves for its next run.
+  await m.write(SRC, payloadFor(SLOT))
+  await m.write(NV_ID, OWNER)
+  m.assertEqual((await callNv(m, NvWrite, { X: SLOT, A: lo(SRC), Y: hi(SRC) })).carry, false, 'NvWrite before the reset')
+
   // Through `coldBoot`, which anchors its wait to where the console stood
   // before the reset. Waiting for a bare `OK` would match the one this case's
   // own last write produced, and the `PRINT` below would then be typed into the
@@ -50,6 +63,13 @@ export async function run(m) {
       `NVRAM $${address.toString(16)} after the reset — the bytes did not survive`,
     )
   }
+
+  await m.fillMem(DEST, NV_SLOT_DATA, 0)
+  const r = await callNv(m, NvRead, { X: SLOT, A: lo(DEST), Y: hi(DEST) })
+  m.assertEqual(r.carry, false, `NvRead of slot ${SLOT} after the reset: carry`)
+  m.assertByte(r.A, NV_VALID, `NvRead of slot ${SLOT} after the reset: status`)
+  m.assertByte(r.Y, OWNER, `NvRead of slot ${SLOT} after the reset: owner ID`)
+  m.assertBytes(await m.read(DEST, NV_SLOT_DATA), payloadFor(SLOT), `the save in slot ${SLOT} after the reset`)
 
   // And BASIC reads the same thing the chip holds, which is the half a direct
   // memory read cannot check.

@@ -22,6 +22,10 @@ hw: -video
 ~ ^AFTER LOCATE$
 > COLOR 1, 2 : PRINT "AFTER COLOR"
 ~ ^AFTER COLOR$
+> COLOR 1 : PRINT "AFTER COLOR FG"
+~ ^AFTER COLOR FG$
+> COLOR 1, 2, 3 : PRINT "AFTER COLOR BORDER"
+~ ^AFTER COLOR BORDER$
 
 # Consumed to the last argument, not just past the first: an expression, and
 # then a second statement on the same line.
@@ -35,6 +39,8 @@ hw: -video
 > LOCATE 24, 0
 ~ \?ILLEGAL QUANTITY ERROR
 > COLOR 16, 0
+~ \?ILLEGAL QUANTITY ERROR
+> COLOR 1, 2, 16
 ~ \?ILLEGAL QUANTITY ERROR
 
 # And a program runs through all three without stopping.

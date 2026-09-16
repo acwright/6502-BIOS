@@ -161,7 +161,7 @@ Two rules for `.prg` files:
 |---------|--------|
 | `CLS` | Clear the screen and reset cursor to (0, 0) |
 | `LOCATE <row>, <col>` | Move cursor to row 0–23, column 0–39 |
-| `COLOR <fg>, <bg>` | Set TMS9918 text foreground/background colours (0–15 each) |
+| `COLOR <fg>[, <bg>[, <border>]]` | Set the pen for text printed next (0–15 each); `bg` defaults to the current background. The border follows `bg` unless `border` is given |
 
 **Sound**
 
@@ -335,7 +335,7 @@ The monitor is entered in three ways, and all three arrive through `BRK`, so all
 
 ### Video
 
-Output is displayed on a TMS9918 video chip in 40×24 text mode. The screen scrolls upward automatically when the cursor reaches the bottom. The Kernal tracks cursor position and exposes routines for direct character and cursor manipulation.
+Output is displayed on a 6502-PICOVDP in 40×24 Text mode, with a colour for every cell. The screen scrolls upward automatically, in hardware, when the cursor reaches the bottom. The Kernal tracks cursor position and exposes routines for direct character and cursor manipulation.
 
 ### Keyboard
 

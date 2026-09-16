@@ -8315,7 +8315,10 @@ BasCmdLocate:
         ply                             ; Y = row
         jmp     VideoSetCursor
 
-; COLOR fg, bg
+; COLOR fg[, bg[, border]]
+;   The pen for later output, through VideoSetColor, which also sets the border
+;   to bg.  bg defaults to the current pen's.  A border then writes register 7
+;   again as fg<<4 | border.
 BasCmdColor:
         lda     #16                     ; colours 0-15
         jsr     GetByteLim              ; X = fg
@@ -8325,12 +8328,33 @@ BasCmdColor:
         asl     a
         asl     a
         pha                             ; fg must survive FrmEvl -> stack, not ZP
+        lda     VID_PEN
+        and     #$0F
+        tax                             ; X = bg if none is given
+        jsr     ChrGot
+        cmp     #','
+        bne     @bg
         lda     #16
         jsr     GetComByteLim           ; X = bg, already known to fit a nibble
+@bg:
+        stx     BAS_TMP1
+        pla
+        pha
+        ora     BAS_TMP1
+        jsr     VideoSetColor
+        jsr     ChrGot
+        cmp     #','
+        bne     @done
+        lda     #16
+        jsr     GetComByteLim           ; X = border
         stx     BAS_TMP1
         pla
         ora     BAS_TMP1
-        jmp     VideoSetColor
+        ldx     #VDP_COLOR
+        jmp     VdpWriteRegImpl         ; Skips without a card
+@done:
+        pla
+        rts
 
 ; VOL n
 BasCmdVol:

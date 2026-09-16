@@ -52,6 +52,20 @@ export async function run(m) {
   // that uses it. Literals never went near it.
   const peeked = await printedIn(m, 'POKE 4096,4 : COLOR 7, PEEK(4096)')
   m.assertByte(peeked.attribute, 0x74, 'COLOR 7, PEEK(4096) — the foreground has to survive the second argument')
+  const border = await printedIn(m, 'POKE 4096,3 : COLOR 7, 4, PEEK(4096)')
+  m.assertByte(border.border, 0x73, 'COLOR 7, 4, PEEK(4096) — the foreground has to survive the third argument')
+
+  // The background is optional and defaults to the pen's: after COLOR 7,4
+  // above, COLOR 9 keeps the 4. printedIn clears first, and CLS does not reset
+  // the pen, so the 4 is still there.
+  const fgOnly = await printedIn(m, 'COLOR 9')
+  m.assertByte(fgOnly.attribute, 0x94, 'COLOR 9 — the background stays the pen\'s')
+
+  // A third argument is the border alone: the pen is fg,bg and register 7 ends
+  // up fg<<4 | border.
+  const bordered = await printedIn(m, 'COLOR 2,5,12')
+  m.assertByte(bordered.attribute, 0x25, 'COLOR 2,5,12 — the attribute of the next cell')
+  m.assertByte(bordered.border, 0x2c, 'COLOR 2,5,12 — register 7')
 
   // And the slot, which takes the byte already packed.
   await m.call6502(VideoSetColor, { A: 0x3d })

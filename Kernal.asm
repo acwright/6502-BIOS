@@ -157,6 +157,22 @@ VdpSetReg:
   sta VC_REG
   rts
 
+; VdpWriteRegImpl — write a VDP register, if a card is fitted
+; Input: A = value, X = register (0-127)
+; Output: carry set, and nothing written, if no video card is fitted
+; Modifies: Flags, A
+; Kernal-internal for now (BASIC's COLOR border); VDP-PLAN §6 publishes it as
+; VdpWriteReg, keeping VID_MODE and the LxCTRL shadows.
+VdpWriteRegImpl:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VdpWriteRegNone
+  jsr VdpSetReg
+  clc
+  rts
+@VdpWriteRegNone:
+  sec
+  rts
+
 ; VideoClear — Fill the screen with spaces in the current pen, cursor home
 ; Fills the 960-byte name table at VRAM $0000 with $20 and the 960 attributes at
 ; $0400 with VID_PEN, so COLOR fg,bg : CLS gives a screen of that colour, and

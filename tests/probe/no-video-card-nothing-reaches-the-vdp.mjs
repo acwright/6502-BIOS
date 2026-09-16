@@ -18,9 +18,9 @@ import { expectNoWrites } from '../lib/writes.mjs'
 
 export const name = 'with no video card, nothing is written to the VDP'
 
-// BIOS.inc: the TMS9918 is two addresses, data and register.
+// BIOS.inc: the PICOVDP is two port pairs, data and command, $9C00-$9C03.
 const VC_DATA = 0x9c00
-const VC_REG = 0x9c01
+const VC_REG2 = 0x9c03
 
 const HW_PRESENT = 0x030d
 const HW_VID = 0x80
@@ -29,14 +29,16 @@ const HW_VID = 0x80
 const VID_CURSOR_X = 0x0307
 
 // The published slots, from the pinned jump table.
+const INIT_VIDEO = 0xa015
 const VIDEO_CLEAR = 0xa018
+const VIDEO_SCROLL = 0xa024
 const VIDEO_SET_CURSOR = 0xa01e
 const VIDEO_SET_COLOR = 0xa027
 
 const statement = (m, text) =>
   expectNoWrites(m, {
     start: VC_DATA,
-    end: VC_REG,
+    end: VC_REG2,
     what: `${text.trim()} with no video fitted`,
     body: () => m.serialWrite(`${text}\r`),
   })
@@ -45,7 +47,7 @@ const statement = (m, text) =>
 // return breakpoint means it touched nothing, on the watchpoint means it did.
 async function slotStop(m, address, { A = 0, X = 0, Y = 0 } = {}) {
   await m.clearBreaks()
-  await m.watch(VC_DATA, 'write', { end: VC_REG })
+  await m.watch(VC_DATA, 'write', { end: VC_REG2 })
   const before = await m.regs()
   const returnTo = await m.plantCall(address, { A, X, Y })
   const result = await m.runTo(returnTo)
@@ -60,7 +62,9 @@ export async function run(m) {
   m.assert((present & HW_VID) === 0, 'this profile was supposed to have no video card')
 
   const slots = [
+    [INIT_VIDEO, 'InitVideo ($A015)', {}],
     [VIDEO_CLEAR, 'VideoClear ($A018)', {}],
+    [VIDEO_SCROLL, 'VideoScroll ($A024)', {}],
     [VIDEO_SET_COLOR, 'VideoSetColor ($A027)', { A: 0x1f }],
   ]
 
@@ -88,6 +92,7 @@ export async function run(m) {
   await statement(m, 'CLS')
   await statement(m, 'LOCATE 5,5')
   await statement(m, 'COLOR 1,0')
+  await statement(m, 'COLOR 1,0,5')
 
   // VideoSetCursor is the odd one out: it touches no register at all, only the
   // three RAM bytes that say where the next character goes. So its half of the

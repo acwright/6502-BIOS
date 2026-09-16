@@ -429,6 +429,7 @@ BasEntry:
 ; BasReadyLoop - REPL: print OK, read a line, dispatch.
 ; -----------------------------------------------------------------------------
 BasReadyLoop:
+        jsr     BasTextConsole          ; the prompt needs the Text console
         jsr     BasPrintOK
 @nextline:
         jsr     BasReadLine             ; fills BAS_LINBUF, NUL-terminated
@@ -1855,7 +1856,7 @@ BasError:
         ; is then the honest answer: resuming onto a frame that is no longer
         ; there is how ?NEXT WITHOUT FOR turns up two statements later.
         stz     BAS_OLDTEXT+1
-        jsr     BasPrintCRLF
+        jsr     BasTextCRLF
         lda     #'?'
         jsr     Chrout
         lda     BAS_TMP3
@@ -1897,6 +1898,29 @@ BasStopDirect:
         sta     BAS_CURLIN
         sta     BAS_CURLIN+1
         jmp     BasReadyLoop
+
+; BasTextCRLF - BasTextConsole, then a CRLF: how an error, a STOP and a Ctrl+C
+;   break start their message, so it lands on a screen that can show it.
+BasTextCRLF:
+        jsr     BasTextConsole
+        jmp     BasPrintCRLF
+
+; BasTextConsole - put the Text console back once a program has stopped.
+;   A program that left the card in another mode (SCREEN 1-3, VREG 13, SPRITE,
+;   SCROLL, LAYER -- anything that took VID_MODE off $01) would otherwise get
+;   its error, its BREAK and the OK prompt written into a name table nobody can
+;   read.  InitVideo + CLS, only then: VPOKE and PALETTE leave VID_MODE alone,
+;   so glyphs a program redefined in Text mode survive END.  No card: nothing.
+BasTextConsole:
+        bit     HW_PRESENT              ; Video is bit 7
+        bpl     @done
+        lda     VID_MODE
+        cmp     #$01
+        beq     @done
+        jsr     InitVideo
+        jmp     VideoClear
+@done:
+        rts
 
 ; BasPrintErrorMsg - print message #A from the error-message table.
 ;   Each message is NUL-terminated; the table is a sequence of those.
@@ -6760,7 +6784,7 @@ BasCheckBreak:
         ldx     BAS_STKBASE             ; Back to the statement boundary, not to
         txs                             ;   an empty stack: the loop this broke
                                         ;   out of is meant to still be there
-        jsr     BasPrintCRLF
+        jsr     BasTextCRLF
         lda     #<MsgBreak
         ldy     #>MsgBreak
         jsr     BasPrintStr
@@ -7212,7 +7236,7 @@ BasCmdStop:
         txs                             ;   and GOSUB frames for CONT
         bcc     @end
         ; STOP path: print "BREAK[ IN nnnn]".
-        jsr     BasPrintCRLF
+        jsr     BasTextCRLF
         lda     #<MsgBreak
         ldy     #>MsgBreak
         jsr     BasPrintStr

@@ -6690,8 +6690,8 @@ BasExecuteStatement:
         pha
         jmp     ChrGet
 @ext:
-        ; Extended statement tokens DISK/BLOAD/BSAVE/FORMAT ($D1-$D4).
-        ; Bodies live in the Kernal via BasExtAddrTbl (thin-BASIC strategy).
+        ; Extended statement tokens DISK/BLOAD/BSAVE/FORMAT ($D1-$D4),
+        ; dispatched through BasExtAddrTbl.
         sec
         sbc     #(TOK_DISK - TOK_BASE)
         cmp     #4
@@ -8663,10 +8663,89 @@ BasCmdMem:
         jsr     BasPrintCRLF
         jmp     FsPrintDisk             ; print "DISK n" line
 
+; DISK n -- select the current CF disk bank (0-255)
+BasCmdDisk:
+        jsr     GetByt                  ; X = value 0-255
+        stx     CF_DISK
+        rts
+
+; BLOAD addr, "name" -- load a file's raw bytes to addr
+BasCmdBload:
+        lda     #HW_CF
+        jsr     ReqHw
+        jsr     EvalAddrU16             ; FAC+3 = hi, FAC+4 = lo
+        lda     z:FAC+4
+        sta     FS_IO_ADDR
+        lda     z:FAC+3
+        sta     FS_IO_ADDR+1
+        jsr     ChkCom
+        jsr     EvalString              ; filename -> BAS_FNAME, STR_PTR
+        jsr     FsLoadFileAddr
+        bcs     @err
+        rts
+@err:
+        lda     #<MsgLoadErr
+        ldy     #>MsgLoadErr
+        jmp     BasPrintStr
+
+; BSAVE addr, len, "name" -- save len bytes from addr to a file
+BasCmdBsave:
+        lda     #HW_CF
+        jsr     ReqHw
+        jsr     EvalAddrU16             ; addr
+        lda     z:FAC+4
+        sta     FS_IO_ADDR
+        lda     z:FAC+3
+        sta     FS_IO_ADDR+1
+        jsr     ChkCom
+        jsr     EvalAddrU16             ; length in bytes
+        lda     z:FAC+4
+        sta     FS_FILE_SIZE
+        lda     z:FAC+3
+        sta     FS_FILE_SIZE+1
+        jsr     ChkCom
+        jsr     EvalString              ; filename
+        jsr     FsSaveFileAddr
+        bcs     @err
+        rts
+@err:
+        lda     #<MsgSaveErr
+        ldy     #>MsgSaveErr
+        jmp     BasPrintStr
+
+; FORMAT -- erase (zero) the current disk's directory, with confirmation
+BasCmdFormat:
+        lda     #HW_CF
+        jsr     ReqHw
+        lda     #<MsgEraseDisk
+        ldy     #>MsgEraseDisk
+        jsr     BasPrintStr
+        lda     CF_DISK
+        sta     FS_FILE_SIZE
+        stz     FS_FILE_SIZE+1
+        jsr     FsPrintSize             ; print disk number (decimal)
+        lda     #<MsgConfirm
+        ldy     #>MsgConfirm
+        jsr     BasPrintStr
+@wait:
+        jsr     Chrin                   ; wait for a key (echoes)
+        bcc     @wait
+        and     #$DF                    ; fold to uppercase
+        pha
+        jsr     BasPrintCRLF
+        pla
+        cmp     #'Y'
+        bne     @abort
+        jmp     FsFormatDisk            ; zero the directory (returns carry status)
+@abort:
+        rts
+
 MsgFree:        .byte   " BYTES FREE  HW=",0
 MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
 MsgSaveErr:     .byte   "?SAVE ERROR",$0D,$0A,0
 MsgDelErr:      .byte   "?DEL ERROR",$0D,$0A,0
+MsgEraseDisk:   .byte   "ERASE DISK ",0
+MsgConfirm:     .byte   "? (Y/N) ",0
 
 ; Wrappers so the dispatch table can call existing routines that expect
 ; TXTPTR positioned already.
@@ -8739,6 +8818,14 @@ BasTokenAddrTbl:
         .word   BasCmdBank-1            ; $B3 BANK
         .word   SynErr-1                ; $B4 BRK  (retired in 2.0)
         .word   BasCmdMem-1             ; $B5 MEM
+
+; Extended statement tokens, from TOK_DISK ($D1).  Entries are (handler-1), as
+; above; BasExecuteStatement's @ext bounds the index.
+BasExtAddrTbl:
+        .word   BasCmdDisk-1            ; $D1 DISK
+        .word   BasCmdBload-1           ; $D2 BLOAD
+        .word   BasCmdBsave-1           ; $D3 BSAVE
+        .word   BasCmdFormat-1          ; $D4 FORMAT
 
 ; =============================================================================
 ;   K E Y W O R D   T A B L E

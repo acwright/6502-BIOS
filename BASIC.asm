@@ -8234,13 +8234,55 @@ BasFixChain:
 
 ; --- Statements -----------------------------------------------------------
 
-; SYS addr -- jump indirectly to address (RTS returns to caller).
+; SYS addr[,a[,x[,y]]] -- call a machine-code routine; RTS comes back here.
+; A, X and Y are loaded from the optional arguments (0 when omitted) and the
+; routine is entered with decimal mode and the interrupt mask clear.  What it
+; returns in A, X, Y and P is left in BRK_A/X/Y/P (PEEK 787/788/789/784), the
+; bytes a BRK report reads from.  The arguments wait there too: FrmEvl owns
+; every zero-page scratch byte, and nothing else runs between the last
+; argument and the call.
 BasCmdSys:
         jsr     EvalAddrU16
-        lda     FAC+4
-        sta     INDEX
+        lda     FAC+4                   ; lo, and hi, across the evaluations
+        pha
         lda     FAC+3
+        pha
+        stz     BRK_A
+        stz     BRK_X
+        stz     BRK_Y
+        ldx     #0
+@arg:
+        jsr     ChrGot
+        cmp     #','
+        bne     @call
+        phx
+        jsr     GetComByt               ; X = value
+        txa
+        plx
+        sta     BRK_A,x
+        inx
+        cpx     #3
+        bne     @arg
+@call:
+        pla
         sta     INDEX+1
+        pla
+        sta     INDEX
+        jsr     @go
+        php
+        sta     BRK_A
+        stx     BRK_X
+        sty     BRK_Y
+        pla
+        sta     BRK_P
+        cld
+        rts
+@go:
+        lda     BRK_A
+        ldx     BRK_X
+        ldy     BRK_Y
+        cld
+        cli
         jmp     (INDEX)
 
 ; ---------------------------------------------------------------------------

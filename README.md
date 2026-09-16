@@ -111,7 +111,7 @@ A full interactive floating-point BASIC interpreter is included, with a feature 
 
 | Command | Effect |
 |---------|--------|
-| `SYS <addr>` | Call a machine-code routine; `RTS` returns to BASIC |
+| `SYS <addr>[,a[,x[,y]]]` | Call a machine-code routine with `A`, `X` and `Y` set (0 if omitted), decimal mode and the interrupt mask clear; `RTS` returns to BASIC. Afterwards `PEEK(787)`, `PEEK(788)`, `PEEK(789)` and `PEEK(784)` are the `A`, `X`, `Y` and `P` it returned |
 | `LOAD "name"` | Load a named file from CompactFlash to `$0800` |
 | `SAVE "name"` | Save the current program to CompactFlash |
 | `LOAD` (no arg) | Receive a program via XModem on the serial port |
@@ -289,6 +289,7 @@ To save, set `S`, `I` and `D(0)`–`D(13)` and `GOSUB 2000`. To load, set `S` an
 
 There is no machine-code monitor in 2.x. Machine code is loaded, run and debugged from BASIC:
 
+- **`SYS addr[,a[,x[,y]]]`** — calls a routine with those registers (0 if omitted). What it returns in `A`, `X`, `Y` and `P` is left in `BRK_A`, `BRK_X`, `BRK_Y` and `BRK_P`: `PEEK(787)`, `PEEK(788)`, `PEEK(789)` and `PEEK(784)`.
 - **`BRK` report** — a `BRK` instruction anywhere prints where it happened and the registers, then returns to the `OK` prompt with the program kept:
 
   ```

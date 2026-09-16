@@ -11,8 +11,8 @@ mode: basic
 
 > 10 PRINT "KEPT"
 > POKE 2304,0 : POKE 2305,66
-> SYS 2304
+> SYS 2304,1,2,3
 ~ ^BREAK \$42 AT \$0900$
-~ ^A=[0-9A-F]{2} X=[0-9A-F]{2} Y=[0-9A-F]{2} P=[0-9A-F]{2} S=[0-9A-F]{2}$
+~ ^A=01 X=02 Y=03 P=[0-9A-F]{2} S=[0-9A-F]{2}$
 > LIST
 ~ ^10 PRINT "KEPT"$

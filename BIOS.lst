@@ -13149,836 +13149,878 @@ Current file: BIOS.asm
 002899r 2               
 002899r 2               ; --- Statements -----------------------------------------------------------
 002899r 2               
-002899r 2               ; SYS addr -- jump indirectly to address (RTS returns to caller).
+002899r 2               ; SYS addr[,a[,x[,y]]] -- call a machine-code routine; RTS comes back here.
+002899r 2               ; A, X and Y are loaded from the optional arguments (0 when omitted) and the
+002899r 2               ; routine is entered with decimal mode and the interrupt mask clear.  What it
+002899r 2               ; returns in A, X, Y and P is left in BRK_A/X/Y/P (PEEK 787/788/789/784), the
+002899r 2               ; bytes a BRK report reads from.  The arguments wait there too: FrmEvl owns
+002899r 2               ; every zero-page scratch byte, and nothing else runs between the last
+002899r 2               ; argument and the call.
 002899r 2               BasCmdSys:
 002899r 2  20 rr rr             jsr     EvalAddrU16
-00289Cr 2  A5 12                lda     FAC+4
-00289Er 2  85 20                sta     INDEX
-0028A0r 2  A5 11                lda     FAC+3
-0028A2r 2  85 21                sta     INDEX+1
-0028A4r 2  6C 20 00             jmp     (INDEX)
-0028A7r 2               
-0028A7r 2               ; ---------------------------------------------------------------------------
-0028A7r 2               ; Byte arguments, with the ranges the README documents.
-0028A7r 2               ;
-0028A7r 2               ; GetByt itself only rejects a value that will not fit in a byte.  Every
-0028A7r 2               ; statement below has a narrower range than that -- a volume of 0-15, a screen
-0028A7r 2               ; row of 0-23, an hour of 0-23 -- and each of them used to take whatever byte
-0028A7r 2               ; it was handed and fold it into something legal.  VOL 16 masked to 4 bits and
-0028A7r 2               ; set the volume to *zero*; LOCATE 24,0 pointed the cursor past the end of the
-0028A7r 2               ; name table; SETTIME 24,61,61 wrote BCD the DS1511Y has no values for.  None
-0028A7r 2               ; of them said anything.
-0028A7r 2               ;
-0028A7r 2               ; So the range travels with the fetch.  A = one past the highest legal value;
-0028A7r 2               ; anything from there up raises ILLEGAL QUANTITY, as NVRAM's address already
-0028A7r 2               ; did.  GetComByteLim is the same thing preceded by the comma between two
-0028A7r 2               ; arguments, and it costs a byte *less* per site than the `jsr ChkCom /
-0028A7r 2               ; jsr GetByt` pair it replaces -- which is how thirteen range checks fit into
-0028A7r 2               ; a segment that had one byte spare.
-0028A7r 2               ;
-0028A7r 2               ; The limit is parked on the stack across the fetch rather than in scratch:
-0028A7r 2               ; GetByt runs the whole expression evaluator, which reaches BAS_TMP3 itself.
-0028A7r 2               ; Between the `pla` and the `cpx` nothing runs at all, so the byte is safe
-0028A7r 2               ; there and nowhere earlier.
-0028A7r 2               ; ---------------------------------------------------------------------------
-0028A7r 2               
-0028A7r 2               ; GetComByt - a comma, then an unchecked byte argument.
-0028A7r 2               GetComByt:
-0028A7r 2  20 rr rr             jsr     ChkCom
-0028AAr 2  4C rr rr             jmp     GetByt
-0028ADr 2               
-0028ADr 2               ; GetComByteLim / GetByteLim - the same, with a range.  X = value.
-0028ADr 2               GetComByteLim:
-0028ADr 2  48                   pha                             ; the limit, across the comma
-0028AEr 2  20 rr rr             jsr     ChkCom
-0028B1r 2  68                   pla
-0028B2r 2               GetByteLim:
-0028B2r 2  48                   pha                             ; and across the evaluator
-0028B3r 2  20 rr rr             jsr     GetByt                  ; X = value
-0028B6r 2  68                   pla
-0028B7r 2  85 3E                sta     BAS_TMP3
-0028B9r 2  E4 3E                cpx     BAS_TMP3
-0028BBr 2  B0 01                bcs     BasRangeErr             ; value >= limit
-0028BDr 2  60                   rts
-0028BEr 2               BasRangeErr:
-0028BEr 2  4C rr rr             jmp     IqErr
-0028C1r 2               
-0028C1r 2               ; The five statements below reach hardware that a machine may not have fitted,
-0028C1r 2               ; and none of them raises ?NO DEVICE for it: a screen or a speaker has no answer
-0028C1r 2               ; to return, so there is nothing an error could tell the program that silence
-0028C1r 2               ; does not.  A game that beeps on a hit keeps playing on a machine with no sound
-0028C1r 2               ; card.  The skip lives in the Kernal routine each one ends in, which is what
-0028C1r 2               ; makes the same promise to a cartridge calling the slot directly; the arguments
-0028C1r 2               ; are parsed and range-checked here either way, so a program is wrong or right
-0028C1r 2               ; on every machine rather than on the one it was written on.
-0028C1r 2               ;
-0028C1r 2               ; The statements that read or write *data* — the CF and RTC ones below — do
-0028C1r 2               ; raise ?NO DEVICE, and for the same reason: they have an answer to return and
-0028C1r 2               ; cannot.
-0028C1r 2               
-0028C1r 2               ; CLS
-0028C1r 2               BasCmdCls:
-0028C1r 2  4C rr rr             jmp     VideoClear
-0028C4r 2               
-0028C4r 2               ; LOCATE row, col
-0028C4r 2               BasCmdLocate:
-0028C4r 2  A9 18                lda     #24                     ; rows 0-23
-0028C6r 2  20 rr rr             jsr     GetByteLim              ; X = row
-0028C9r 2  DA                   phx
-0028CAr 2  A9 28                lda     #40                     ; columns 0-39
-0028CCr 2  20 rr rr             jsr     GetComByteLim           ; X = col
-0028CFr 2  7A                   ply                             ; Y = row
-0028D0r 2  4C rr rr             jmp     VideoSetCursor
-0028D3r 2               
-0028D3r 2               ; COLOR fg[, bg[, border]]
-0028D3r 2               ;   The pen for later output, through VideoSetColor, which also sets the border
-0028D3r 2               ;   to bg.  bg defaults to the current pen's.  A border then writes register 7
-0028D3r 2               ;   again as fg<<4 | border.
-0028D3r 2               BasCmdColor:
-0028D3r 2  A9 10                lda     #16                     ; colours 0-15
-0028D5r 2  20 rr rr             jsr     GetByteLim              ; X = fg
-0028D8r 2  8A                   txa
-0028D9r 2  0A                   asl     a
-0028DAr 2  0A                   asl     a
-0028DBr 2  0A                   asl     a
-0028DCr 2  0A                   asl     a
-0028DDr 2  48                   pha                             ; fg must survive FrmEvl -> stack, not ZP
-0028DEr 2  AD 91 03             lda     VID_PEN
-0028E1r 2  29 0F                and     #$0F
-0028E3r 2  AA                   tax                             ; X = bg if none is given
-0028E4r 2  20 rr rr             jsr     ChrGot
-0028E7r 2  C9 2C                cmp     #','
-0028E9r 2  D0 05                bne     @bg
-0028EBr 2  A9 10                lda     #16
-0028EDr 2  20 rr rr             jsr     GetComByteLim           ; X = bg, already known to fit a nibble
-0028F0r 2               @bg:
-0028F0r 2  86 3A                stx     BAS_TMP1
-0028F2r 2  68                   pla
-0028F3r 2  48                   pha
-0028F4r 2  05 3A                ora     BAS_TMP1
-0028F6r 2  20 rr rr             jsr     VideoSetColor
-0028F9r 2  20 rr rr             jsr     ChrGot
-0028FCr 2  C9 2C                cmp     #','
-0028FEr 2  D0 0F                bne     @done
-002900r 2  A9 10                lda     #16
-002902r 2  20 rr rr             jsr     GetComByteLim           ; X = border
-002905r 2  86 3A                stx     BAS_TMP1
-002907r 2  68                   pla
-002908r 2  05 3A                ora     BAS_TMP1
-00290Ar 2  A2 07                ldx     #VDP_COLOR
-00290Cr 2  4C rr rr             jmp     VdpWriteRegImpl         ; Skips without a card
-00290Fr 2               @done:
-00290Fr 2  68                   pla
-002910r 2  60                   rts
-002911r 2               
-002911r 2               ; VOL n
-002911r 2               BasCmdVol:
-002911r 2  A9 10                lda     #16                     ; volume 0-15
-002913r 2  20 rr rr             jsr     GetByteLim              ; X = vol
-002916r 2  8A                   txa
-002917r 2  4C rr rr             jmp     SidSetVolume
-00291Ar 2               
-00291Ar 2               ; SOUND voice, freq, dur (freq=Hz, dur=centisec)
-00291Ar 2               ;   Hz -> SID register: reg = Hz * 16.75 ≈ Hz<<4 + Hz - Hz/4
-00291Ar 2               BasCmdSound:
-00291Ar 2  A9 04                lda     #4                      ; voices 1-3, after Commodore BASIC V3.5
-00291Cr 2  20 rr rr             jsr     GetByteLim              ; X = voice
-00291Fr 2  CA                   dex                             ; 0-indexed for SidPlayNote
-002920r 2  30 9C                bmi     BasRangeErr             ; voice 0 underflowed to $FF
-002922r 2  DA                   phx                             ; voice (0-indexed) on stack
-002923r 2  20 rr rr             jsr     ChkCom
-002926r 2  20 rr rr             jsr     EvalU16                 ; freq Hz: hi=FAC+3, lo=FAC+4
-002929r 2                       ; Compute reg = Hz<<4 + Hz - Hz/4
-002929r 2  A5 12                lda     FAC+4
-00292Br 2  85 3A                sta     BAS_TMP1
-00292Dr 2  A5 11                lda     FAC+3
-00292Fr 2  85 3B                sta     BAS_TMP1+1
-002931r 2  A5 3A                lda     BAS_TMP1
-002933r 2  85 3C                sta     BAS_TMP2
-002935r 2  A5 3B                lda     BAS_TMP1+1
-002937r 2  85 3D                sta     BAS_TMP2+1
-002939r 2  A2 04                ldx     #4
-00293Br 2               @shl:
-00293Br 2  06 3A                asl     BAS_TMP1
-00293Dr 2  26 3B                rol     BAS_TMP1+1
-00293Fr 2  CA                   dex
-002940r 2  D0 F9                bne     @shl
-002942r 2  18                   clc
-002943r 2  A5 3A                lda     BAS_TMP1
-002945r 2  65 3C                adc     BAS_TMP2
-002947r 2  85 3A                sta     BAS_TMP1
-002949r 2  A5 3B                lda     BAS_TMP1+1
-00294Br 2  65 3D                adc     BAS_TMP2+1
-00294Dr 2  85 3B                sta     BAS_TMP1+1
-00294Fr 2  46 3D                lsr     BAS_TMP2+1
-002951r 2  66 3C                ror     BAS_TMP2
-002953r 2  46 3D                lsr     BAS_TMP2+1
-002955r 2  66 3C                ror     BAS_TMP2
-002957r 2  38                   sec
-002958r 2  A5 3A                lda     BAS_TMP1
-00295Ar 2  E5 3C                sbc     BAS_TMP2
-00295Cr 2  48                   pha                             ; freqLo
-00295Dr 2  A5 3B                lda     BAS_TMP1+1
-00295Fr 2  E5 3D                sbc     BAS_TMP2+1
-002961r 2  48                   pha                             ; freqHi
-002962r 2  20 rr rr             jsr     ChkCom
-002965r 2  20 rr rr             jsr     EvalU16                 ; dur in FAC+3/+4
-002968r 2                       ; Stack (top-down): freqHi, freqLo, voice
-002968r 2  7A                   ply                             ; Y = freqHi
-002969r 2  FA                   plx                             ; X = freqLo
-00296Ar 2  68                   pla                             ; A = voice
-00296Br 2  20 rr rr             jsr     SidPlayNote
-00296Er 2  A5 12                lda     FAC+4
-002970r 2  A6 11                ldx     FAC+3
-002972r 2  20 rr rr             jsr     SysDelay
-002975r 2  4C rr rr             jmp     SidSilence
-002978r 2               
-002978r 2               ; TIME
-002978r 2               BasCmdTime:
-002978r 2  A9 04                lda     #HW_RTC
-00297Ar 2  20 rr rr             jsr     ReqHw
-00297Dr 2  20 rr rr             jsr     RtcReadTime             ; A=hours, X=min, Y=sec
-002980r 2  5A                   phy
-002981r 2  DA                   phx
-002982r 2  20 rr rr             jsr     BasPr2D                 ; print hours
-002985r 2  A9 3A                lda     #':'
-002987r 2  20 rr rr             jsr     Chrout
-00298Ar 2  68                   pla
-00298Br 2  20 rr rr             jsr     BasPr2D
-00298Er 2  A9 3A                lda     #':'
-002990r 2  20 rr rr             jsr     Chrout
-002993r 2  68                   pla
-002994r 2  20 rr rr             jsr     BasPr2D
-002997r 2  4C rr rr             jmp     BasPrintCRLF
-00299Ar 2               
-00299Ar 2               ; DATE
-00299Ar 2               BasCmdDate:
-00299Ar 2  A9 04                lda     #HW_RTC
-00299Cr 2  20 rr rr             jsr     ReqHw
-00299Fr 2  20 rr rr             jsr     RtcReadDate             ; A=day, X=month, Y=year
-0029A2r 2  48                   pha
-0029A3r 2  DA                   phx
-0029A4r 2  5A                   phy
-0029A5r 2  AD 0B 03             lda     RTC_BUF_CENT
-0029A8r 2  20 rr rr             jsr     BasPr2D
-0029ABr 2  68                   pla
-0029ACr 2  20 rr rr             jsr     BasPr2D
-0029AFr 2  A9 2D                lda     #'-'
-0029B1r 2  20 rr rr             jsr     Chrout
-0029B4r 2  68                   pla
-0029B5r 2  20 rr rr             jsr     BasPr2D
-0029B8r 2  A9 2D                lda     #'-'
-0029BAr 2  20 rr rr             jsr     Chrout
-0029BDr 2  68                   pla
-0029BEr 2  20 rr rr             jsr     BasPr2D
-0029C1r 2  4C rr rr             jmp     BasPrintCRLF
-0029C4r 2               
-0029C4r 2               ; SETTIME h, m, s
-0029C4r 2               BasCmdSettime:
-0029C4r 2  A9 04                lda     #HW_RTC
-0029C6r 2  20 rr rr             jsr     ReqHw
-0029C9r 2  A9 18                lda     #24                     ; hours 0-23
-0029CBr 2  20 rr rr             jsr     GetByteLim              ; X = h
-0029CEr 2  DA                   phx
-0029CFr 2  A9 3C                lda     #60                     ; minutes 0-59
-0029D1r 2  20 rr rr             jsr     GetComByteLim           ; X = m
-0029D4r 2  DA                   phx
-0029D5r 2  A9 3C                lda     #60                     ; seconds 0-59
-0029D7r 2  20 rr rr             jsr     GetComByteLim           ; X = s
-0029DAr 2  8A                   txa
-0029DBr 2  A8                   tay                             ; Y = s
-0029DCr 2  FA                   plx                             ; X = m
-0029DDr 2  68                   pla                             ; A = h
-0029DEr 2  4C rr rr             jmp     RtcWriteTime
-0029E1r 2               
-0029E1r 2               ; SETDATE c, y, m, d
-0029E1r 2               BasCmdSetdate:
-0029E1r 2  A9 04                lda     #HW_RTC
-0029E3r 2  20 rr rr             jsr     ReqHw
-0029E6r 2  A9 64                lda     #100                    ; century 0-99, as two BCD digits
-0029E8r 2  20 rr rr             jsr     GetByteLim
-0029EBr 2  8E 0B 03             stx     RTC_BUF_CENT
-0029EEr 2  A9 64                lda     #100                    ; year 0-99
-0029F0r 2  20 rr rr             jsr     GetComByteLim
-0029F3r 2  DA                   phx                             ; year
-0029F4r 2  A9 0D                lda     #13                     ; months 1-12, so reject 0 as well
-0029F6r 2  20 rr rr             jsr     GetComByteLim
-0029F9r 2  E0 01                cpx     #1
-0029FBr 2  90 10                bcc     @bad
-0029FDr 2  DA                   phx                             ; month
-0029FEr 2  A9 20                lda     #32                     ; days 1-31.  Which months are short is
-002A00r 2  20 rr rr             jsr     GetComByteLim           ;   left alone: it needs a table and a
-002A03r 2  E0 01                cpx     #1                      ;   leap rule for one wrong day a year,
-002A05r 2  90 06                bcc     @bad                    ;   and the DS1511Y does not check it
-002A07r 2                                                       ;   either
-002A07r 2  8A                   txa
-002A08r 2  FA                   plx                             ; X=month
-002A09r 2  7A                   ply                             ; Y=year
-002A0Ar 2  4C rr rr             jmp     RtcWriteDate
-002A0Dr 2               @bad:                                   ; BasRangeErr is out of branch reach
-002A0Dr 2  4C rr rr             jmp     IqErr
-002A10r 2               
-002A10r 2               ; NVRAM addr, val
-002A10r 2               BasCmdNvram:
-002A10r 2  A9 04                lda     #HW_RTC
-002A12r 2  20 rr rr             jsr     ReqHw
-002A15r 2  20 rr rr             jsr     GetByt                  ; addr; GetByt's own 0-255 is the range
-002A18r 2  DA                   phx
-002A19r 2  20 rr rr             jsr     GetComByt               ; X=val
-002A1Cr 2  8A                   txa                             ; A=val
-002A1Dr 2  FA                   plx                             ; X=addr
-002A1Er 2  4C rr rr             jmp     RtcWriteNVRAM
-002A21r 2               
-002A21r 2               ; WAIT addr, mask
-002A21r 2               ; As with POKE, the address must survive evaluation of the second argument,
-002A21r 2               ; which is free to trample BAS_TMP1 (FacToU16, MID$/LEFT$/RIGHT$, ...).
-002A21r 2               BasCmdWait:
-002A21r 2  20 rr rr             jsr     EvalAddrU16
-002A24r 2  A5 11                lda     FAC+3                   ; hi
-002A26r 2  48                   pha
-002A27r 2  A5 12                lda     FAC+4                   ; lo
-002A29r 2  48                   pha
-002A2Ar 2  20 rr rr             jsr     GetComByt               ; X = mask
-002A2Dr 2  86 3C                stx     BAS_TMP2
-002A2Fr 2  68                   pla
-002A30r 2  85 3A                sta     BAS_TMP1
-002A32r 2  68                   pla
-002A33r 2  85 3B                sta     BAS_TMP1+1
-002A35r 2               @poll:
-002A35r 2  20 rr rr             jsr     BasCheckBreak
-002A38r 2  A0 00                ldy     #0
-002A3Ar 2  B1 3A                lda     (BAS_TMP1),y
-002A3Cr 2  25 3C                and     BAS_TMP2
-002A3Er 2  F0 F5                beq     @poll
-002A40r 2  60                   rts
-002A41r 2               
-002A41r 2               ; PAUSE n (centiseconds)
-002A41r 2               BasCmdPause:
-002A41r 2  20 rr rr             jsr     EvalU16
-002A44r 2  A5 12                lda     FAC+4
-002A46r 2  A6 11                ldx     FAC+3
-002A48r 2  4C rr rr             jmp     SysDelay
-002A4Br 2               
-002A4Br 2               ; BANK n
-002A4Br 2               BasCmdBank:
-002A4Br 2  A9 01                lda     #HW_RAM_L
-002A4Dr 2  20 rr rr             jsr     ReqHw
-002A50r 2  20 rr rr             jsr     GetByt                  ; X = bank
-002A53r 2  8E FF 83             stx     RAM_BANK_L
-002A56r 2  60                   rts
-002A57r 2               
-002A57r 2               ; POKE addr, val
-002A57r 2               ; The value expression is evaluated BEFORE the address is parked in INDEX:
-002A57r 2               ; FrmEvl clobbers every zero-page scratch pair (INDEX via LoadFacFromYa,
-002A57r 2               ; BAS_TMP1 via FacToU16 / the string functions), so the address has to ride
-002A57r 2               ; the hardware stack across the evaluation.
-002A57r 2               BasCmdPoke:
-002A57r 2  20 rr rr             jsr     EvalAddrU16
-002A5Ar 2  A5 11                lda     FAC+3                   ; hi
-002A5Cr 2  48                   pha
-002A5Dr 2  A5 12                lda     FAC+4                   ; lo
-002A5Fr 2  48                   pha
-002A60r 2  20 rr rr             jsr     ChkCom
-002A63r 2  20 rr rr             jsr     GetByt                  ; X = val
-002A66r 2  68                   pla
-002A67r 2  85 20                sta     INDEX
-002A69r 2  68                   pla
-002A6Ar 2  85 21                sta     INDEX+1
-002A6Cr 2  8A                   txa
-002A6Dr 2  A0 00                ldy     #0
-002A6Fr 2  91 20                sta     (INDEX),y
-002A71r 2  60                   rts
-002A72r 2               
-002A72r 2               ; LOAD ["name"] / LOAD (bare) / LOAD "name"
-002A72r 2               BasCmdLoad:
-002A72r 2  20 rr rr             jsr     ChrGot
-002A75r 2  F0 02                beq     @bare
-002A77r 2  80 19                bra     @cf                     ; any argument is a filename expression
-002A79r 2               @bare:
-002A79r 2  A9 10                lda     #HW_SC
-002A7Br 2  20 rr rr             jsr     ReqHw
-002A7Er 2  A9 00                lda     #<PROGRAM_START
-002A80r 2  85 2A                sta     XFER_PTR
-002A82r 2  A9 08                lda     #>PROGRAM_START
-002A84r 2  85 2B                sta     XFER_PTR+1
-002A86r 2  20 rr rr             jsr     XModemLoad
-002A89r 2                       ; XMODEM rounds up to a 128-byte block, so this can overshoot the true
-002A89r 2                       ; end by up to 127 bytes: it wastes a little variable space, never
-002A89r 2                       ; truncates.
-002A89r 2  AD 17 03             lda     XFER_REMAIN
-002A8Cr 2  AC 18 03             ldy     XFER_REMAIN+1
-002A8Fr 2  4C rr rr             jmp     BasFixChain
-002A92r 2               @cf:
-002A92r 2  A9 08                lda     #HW_CF
-002A94r 2  20 rr rr             jsr     ReqHw
-002A97r 2  20 rr rr             jsr     EvalString
-002A9Ar 2  20 rr rr             jsr     FsLoadFile
-002A9Dr 2  B0 09                bcs     @err
-002A9Fr 2  AD 4A 03             lda     FS_FILE_SIZE
-002AA2r 2  AC 4B 03             ldy     FS_FILE_SIZE+1
-002AA5r 2  4C rr rr             jmp     BasFixChain
-002AA8r 2               @err:
-002AA8r 2  A9 rr                lda     #<MsgLoadErr
-002AAAr 2  A0 rr                ldy     #>MsgLoadErr
-002AACr 2  4C rr rr             jmp     BasPrintStr
-002AAFr 2               
-002AAFr 2               ; SAVE / SAVE "name"
-002AAFr 2               BasCmdSave:
-002AAFr 2  20 rr rr             jsr     ChrGot
-002AB2r 2  F0 02                beq     @bare
-002AB4r 2  80 21                bra     @cf                     ; any argument is a filename expression
-002AB6r 2               @bare:
-002AB6r 2  A9 10                lda     #HW_SC
-002AB8r 2  20 rr rr             jsr     ReqHw
-002ABBr 2  A9 00                lda     #<PROGRAM_START
-002ABDr 2  85 2A                sta     XFER_PTR
-002ABFr 2  A9 08                lda     #>PROGRAM_START
-002AC1r 2  85 2B                sta     XFER_PTR+1
-002AC3r 2  38                   sec
-002AC4r 2  AD 5F 03             lda     BAS_VARTAB
-002AC7r 2  E9 00                sbc     #<PROGRAM_START
-002AC9r 2  8D 17 03             sta     XFER_REMAIN
-002ACCr 2  AD 60 03             lda     BAS_VARTAB+1
-002ACFr 2  E9 08                sbc     #>PROGRAM_START
-002AD1r 2  8D 18 03             sta     XFER_REMAIN+1
-002AD4r 2  4C rr rr             jmp     XModemSave
-002AD7r 2               @cf:
-002AD7r 2  A9 08                lda     #HW_CF
-002AD9r 2  20 rr rr             jsr     ReqHw
-002ADCr 2  20 rr rr             jsr     EvalString
-002ADFr 2  38                   sec
-002AE0r 2  AD 5F 03             lda     BAS_VARTAB
-002AE3r 2  E9 00                sbc     #<PROGRAM_START
-002AE5r 2  8D 4A 03             sta     FS_FILE_SIZE
-002AE8r 2  AD 60 03             lda     BAS_VARTAB+1
-002AEBr 2  E9 08                sbc     #>PROGRAM_START
-002AEDr 2  8D 4B 03             sta     FS_FILE_SIZE+1
-002AF0r 2  20 rr rr             jsr     FsSaveFile
-002AF3r 2  B0 01                bcs     @err
-002AF5r 2  60                   rts
-002AF6r 2               @err:
-002AF6r 2  A9 rr                lda     #<MsgSaveErr
-002AF8r 2  A0 rr                ldy     #>MsgSaveErr
-002AFAr 2  4C rr rr             jmp     BasPrintStr
-002AFDr 2               
-002AFDr 2               ; DIR
-002AFDr 2               BasCmdDir:
-002AFDr 2  A9 08                lda     #HW_CF
-002AFFr 2  20 rr rr             jsr     ReqHw
-002B02r 2  4C rr rr             jmp     FsDirectory
-002B05r 2               
-002B05r 2               ; DEL "name"
-002B05r 2               BasCmdDel:
-002B05r 2  A9 08                lda     #HW_CF
-002B07r 2  20 rr rr             jsr     ReqHw
-002B0Ar 2  20 rr rr             jsr     EvalString
-002B0Dr 2  20 rr rr             jsr     FsDeleteFile
-002B10r 2  B0 01                bcs     @err
-002B12r 2  60                   rts
-002B13r 2               @err:
-002B13r 2  A9 rr                lda     #<MsgDelErr
-002B15r 2  A0 rr                ldy     #>MsgDelErr
-002B17r 2  4C rr rr             jmp     BasPrintStr
-002B1Ar 2               
-002B1Ar 2               ; MEM -- print "nnnnn BYTES FREE  HW=$xx"
-002B1Ar 2               BasCmdMem:
-002B1Ar 2                       ; Free bytes = MEMSIZ - VARTAB
-002B1Ar 2  38                   sec
-002B1Br 2  AD 67 03             lda     BAS_MEMSIZ
-002B1Er 2  ED 5F 03             sbc     BAS_VARTAB
-002B21r 2  A8                   tay
-002B22r 2  AD 68 03             lda     BAS_MEMSIZ+1
-002B25r 2  ED 60 03             sbc     BAS_VARTAB+1
-002B28r 2  20 rr rr             jsr     GivAyf                  ; FAC = unsigned int from (Y,A)
-002B2Br 2                       ; Wait: GivAyf is signed.  For this simple display, OK if < 32768.
-002B2Br 2  20 rr rr             jsr     PrintNum
-002B2Er 2  A9 rr                lda     #<MsgFree
-002B30r 2  A0 rr                ldy     #>MsgFree
-002B32r 2  20 rr rr             jsr     BasPrintStr
-002B35r 2  A9 24                lda     #'$'
-002B37r 2  20 rr rr             jsr     Chrout
-002B3Ar 2  AD 0D 03             lda     HW_PRESENT
-002B3Dr 2  20 rr rr             jsr     PrintHexByte
-002B40r 2  20 rr rr             jsr     BasPrintCRLF
-002B43r 2  4C rr rr             jmp     FsPrintDisk             ; print "DISK n" line
-002B46r 2               
-002B46r 2               ; DISK n -- select the current CF disk bank (0-255)
-002B46r 2               BasCmdDisk:
-002B46r 2  20 rr rr             jsr     GetByt                  ; X = value 0-255
-002B49r 2  8E 0F 03             stx     CF_DISK
-002B4Cr 2  60                   rts
-002B4Dr 2               
-002B4Dr 2               ; BLOAD addr, "name" -- load a file's raw bytes to addr
-002B4Dr 2               BasCmdBload:
-002B4Dr 2  A9 08                lda     #HW_CF
-002B4Fr 2  20 rr rr             jsr     ReqHw
-002B52r 2  20 rr rr             jsr     EvalAddrU16             ; FAC+3 = hi, FAC+4 = lo
-002B55r 2  A5 12                lda     z:FAC+4
-002B57r 2  8D 7F 03             sta     FS_IO_ADDR
-002B5Ar 2  A5 11                lda     z:FAC+3
-002B5Cr 2  8D 80 03             sta     FS_IO_ADDR+1
-002B5Fr 2  20 rr rr             jsr     ChkCom
-002B62r 2  20 rr rr             jsr     EvalString              ; filename -> BAS_FNAME, STR_PTR
-002B65r 2  20 rr rr             jsr     FsLoadFileAddr
-002B68r 2  B0 01                bcs     @err
-002B6Ar 2  60                   rts
-002B6Br 2               @err:
-002B6Br 2  A9 rr                lda     #<MsgLoadErr
-002B6Dr 2  A0 rr                ldy     #>MsgLoadErr
-002B6Fr 2  4C rr rr             jmp     BasPrintStr
-002B72r 2               
-002B72r 2               ; BSAVE addr, len, "name" -- save len bytes from addr to a file
-002B72r 2               BasCmdBsave:
-002B72r 2  A9 08                lda     #HW_CF
-002B74r 2  20 rr rr             jsr     ReqHw
-002B77r 2  20 rr rr             jsr     EvalAddrU16             ; addr
-002B7Ar 2  A5 12                lda     z:FAC+4
-002B7Cr 2  8D 7F 03             sta     FS_IO_ADDR
-002B7Fr 2  A5 11                lda     z:FAC+3
-002B81r 2  8D 80 03             sta     FS_IO_ADDR+1
-002B84r 2  20 rr rr             jsr     ChkCom
-002B87r 2  20 rr rr             jsr     EvalAddrU16             ; length in bytes
-002B8Ar 2  A5 12                lda     z:FAC+4
-002B8Cr 2  8D 4A 03             sta     FS_FILE_SIZE
-002B8Fr 2  A5 11                lda     z:FAC+3
-002B91r 2  8D 4B 03             sta     FS_FILE_SIZE+1
-002B94r 2  20 rr rr             jsr     ChkCom
-002B97r 2  20 rr rr             jsr     EvalString              ; filename
-002B9Ar 2  20 rr rr             jsr     FsSaveFileAddr
-002B9Dr 2  B0 01                bcs     @err
-002B9Fr 2  60                   rts
-002BA0r 2               @err:
-002BA0r 2  A9 rr                lda     #<MsgSaveErr
-002BA2r 2  A0 rr                ldy     #>MsgSaveErr
-002BA4r 2  4C rr rr             jmp     BasPrintStr
-002BA7r 2               
-002BA7r 2               ; FORMAT -- erase (zero) the current disk's directory, with confirmation
-002BA7r 2               BasCmdFormat:
-002BA7r 2  A9 08                lda     #HW_CF
-002BA9r 2  20 rr rr             jsr     ReqHw
-002BACr 2  A9 rr                lda     #<MsgEraseDisk
-002BAEr 2  A0 rr                ldy     #>MsgEraseDisk
-002BB0r 2  20 rr rr             jsr     BasPrintStr
-002BB3r 2  AD 0F 03             lda     CF_DISK
-002BB6r 2  8D 4A 03             sta     FS_FILE_SIZE
-002BB9r 2  9C 4B 03             stz     FS_FILE_SIZE+1
-002BBCr 2  20 rr rr             jsr     FsPrintSize             ; print disk number (decimal)
-002BBFr 2  A9 rr                lda     #<MsgConfirm
-002BC1r 2  A0 rr                ldy     #>MsgConfirm
-002BC3r 2  20 rr rr             jsr     BasPrintStr
-002BC6r 2               @wait:
-002BC6r 2  20 rr rr             jsr     Chrin                   ; wait for a key (echoes)
-002BC9r 2  90 FB                bcc     @wait
-002BCBr 2  29 DF                and     #$DF                    ; fold to uppercase
-002BCDr 2  48                   pha
-002BCEr 2  20 rr rr             jsr     BasPrintCRLF
-002BD1r 2  68                   pla
-002BD2r 2  C9 59                cmp     #'Y'
-002BD4r 2  D0 03                bne     @abort
-002BD6r 2  4C rr rr             jmp     FsFormatDisk            ; zero the directory (returns carry status)
-002BD9r 2               @abort:
-002BD9r 2  60                   rts
-002BDAr 2               
-002BDAr 2  20 42 59 54  MsgFree:        .byte   " BYTES FREE  HW=",0
-002BDEr 2  45 53 20 46  
-002BE2r 2  52 45 45 20  
-002BEBr 2  3F 4C 4F 41  MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
-002BEFr 2  44 20 45 52  
-002BF3r 2  52 4F 52 0D  
-002BF9r 2  3F 53 41 56  MsgSaveErr:     .byte   "?SAVE ERROR",$0D,$0A,0
-002BFDr 2  45 20 45 52  
-002C01r 2  52 4F 52 0D  
-002C07r 2  3F 44 45 4C  MsgDelErr:      .byte   "?DEL ERROR",$0D,$0A,0
-002C0Br 2  20 45 52 52  
-002C0Fr 2  4F 52 0D 0A  
-002C14r 2  45 52 41 53  MsgEraseDisk:   .byte   "ERASE DISK ",0
-002C18r 2  45 20 44 49  
-002C1Cr 2  53 4B 20 00  
-002C20r 2  3F 20 28 59  MsgConfirm:     .byte   "? (Y/N) ",0
-002C24r 2  2F 4E 29 20  
-002C28r 2  00           
-002C29r 2               
-002C29r 2               ; Wrappers so the dispatch table can call existing routines that expect
-002C29r 2               ; TXTPTR positioned already.
-002C29r 2               BasCmdPrintW:
-002C29r 2                       ; We were entered via the dispatch trampoline, so TXTPTR is already
-002C29r 2                       ; past the PRINT token (ChrGet was tail-called).  But BasCmdPrint
-002C29r 2                       ; expects to consume the token itself with its first ChrGet; rewind.
-002C29r 2                       ; Easier: BasCmdPrint reads via ChrGet; here ChrGet was called before
-002C29r 2                       ; routine entry, so TXTPTR currently points at first arg.  Just call
-002C29r 2                       ; an internal entry that skips the leading ChrGet.
-002C29r 2  4C rr rr             jmp     BasPrLoop
-002C2Cr 2               
-002C2Cr 2               ; ---------------------------------------------------------------------------
-002C2Cr 2               ; Token-address dispatch table.  Indexed by (token - $80).  Each entry is
-002C2Cr 2               ; (routine_address - 1) since the dispatcher PHA-pushes it and uses the
-002C2Cr 2               ; "JMP ChrGet -> RTS" trick to enter.
-002C2Cr 2               ; ---------------------------------------------------------------------------
-002C2Cr 2               BasTokenAddrTbl:
-002C2Cr 2  rr rr                .word   BasCmdEnd-1             ; $80 END
-002C2Er 2  rr rr                .word   BasCmdFor-1             ; $81 FOR
-002C30r 2  rr rr                .word   BasCmdNext-1            ; $82 NEXT
-002C32r 2  rr rr                .word   BasCmdData-1            ; $83 DATA
-002C34r 2  rr rr                .word   BasCmdInput-1           ; $84 INPUT
-002C36r 2  rr rr                .word   BasCmdDim-1             ; $85 DIM
-002C38r 2  rr rr                .word   BasCmdRead-1            ; $86 READ
-002C3Ar 2  rr rr                .word   BasCmdLet-1             ; $87 LET
-002C3Cr 2  rr rr                .word   BasCmdGoto-1            ; $88 GOTO
-002C3Er 2  rr rr                .word   BasCmdRun-1             ; $89 RUN
-002C40r 2  rr rr                .word   BasCmdIf-1              ; $8A IF
-002C42r 2  rr rr                .word   BasCmdRestore-1         ; $8B RESTORE
-002C44r 2  rr rr                .word   BasCmdGosub-1           ; $8C GOSUB
-002C46r 2  rr rr                .word   BasCmdReturn-1          ; $8D RETURN
-002C48r 2  rr rr                .word   BasCmdRem-1             ; $8E REM
-002C4Ar 2  rr rr                .word   BasCmdStop-1            ; $8F STOP
-002C4Cr 2  rr rr                .word   BasCmdOn-1              ; $90 ON
-002C4Er 2  rr rr                .word   BasCmdWait-1            ; $91 WAIT
-002C50r 2  rr rr                .word   BasCmdLoad-1            ; $92 LOAD
-002C52r 2  rr rr                .word   BasCmdSave-1            ; $93 SAVE
-002C54r 2  rr rr                .word   BasCmdDef-1             ; $94 DEF
-002C56r 2  rr rr                .word   BasCmdPoke-1            ; $95 POKE
-002C58r 2  rr rr                .word   BasCmdPrintW-1          ; $96 PRINT
-002C5Ar 2  rr rr                .word   BasCmdCont-1            ; $97 CONT
-002C5Cr 2  rr rr                .word   BasCmdList-1            ; $98 LIST
-002C5Er 2  rr rr                .word   BasCmdClr-1             ; $99 CLR
-002C60r 2  rr rr                .word   BasCmdNew-1             ; $9A NEW
-002C62r 2  rr rr                .word   SynErr-1                ; $9B TAB  (function only)
-002C64r 2  rr rr                .word   SynErr-1                ; $9C TO
-002C66r 2  rr rr                .word   SynErr-1                ; $9D FN
-002C68r 2  rr rr                .word   SynErr-1                ; $9E SPC
-002C6Ar 2  rr rr                .word   SynErr-1                ; $9F THEN
-002C6Cr 2  rr rr                .word   SynErr-1                ; $A0 NOT
-002C6Er 2  rr rr                .word   SynErr-1                ; $A1 STEP
-002C70r 2  rr rr                .word   SynErr-1                ; $A2 AND
-002C72r 2  rr rr                .word   SynErr-1                ; $A3 OR
-002C74r 2  rr rr                .word   BasCmdRem-1             ; $A4 ELSE (skip rest of line; THEN-branch ran)
-002C76r 2  rr rr                .word   BasCmdSys-1             ; $A5 SYS
-002C78r 2  rr rr                .word   BasCmdDir-1             ; $A6 DIR
-002C7Ar 2  rr rr                .word   BasCmdDel-1             ; $A7 DEL
-002C7Cr 2  rr rr                .word   BasCmdCls-1             ; $A8 CLS
-002C7Er 2  rr rr                .word   BasCmdLocate-1          ; $A9 LOCATE
-002C80r 2  rr rr                .word   BasCmdColor-1           ; $AA COLOR
-002C82r 2  rr rr                .word   BasCmdSound-1           ; $AB SOUND
-002C84r 2  rr rr                .word   BasCmdVol-1             ; $AC VOL
-002C86r 2  rr rr                .word   BasCmdTime-1            ; $AD TIME
-002C88r 2  rr rr                .word   BasCmdDate-1            ; $AE DATE
-002C8Ar 2  rr rr                .word   BasCmdSettime-1         ; $AF SETTIME
-002C8Cr 2  rr rr                .word   BasCmdSetdate-1         ; $B0 SETDATE
-002C8Er 2  rr rr                .word   BasCmdNvram-1           ; $B1 NVRAM
-002C90r 2  rr rr                .word   BasCmdPause-1           ; $B2 PAUSE
-002C92r 2  rr rr                .word   BasCmdBank-1            ; $B3 BANK
-002C94r 2  rr rr                .word   SynErr-1                ; $B4 BRK  (retired in 2.0)
-002C96r 2  rr rr                .word   BasCmdMem-1             ; $B5 MEM
-002C98r 2               
-002C98r 2               ; Extended statement tokens, from TOK_DISK ($D1).  Entries are (handler-1), as
-002C98r 2               ; above; BasExecuteStatement's @ext bounds the index.
-002C98r 2               BasExtAddrTbl:
-002C98r 2  rr rr                .word   BasCmdDisk-1            ; $D1 DISK
-002C9Ar 2  rr rr                .word   BasCmdBload-1           ; $D2 BLOAD
-002C9Cr 2  rr rr                .word   BasCmdBsave-1           ; $D3 BSAVE
-002C9Er 2  rr rr                .word   BasCmdFormat-1          ; $D4 FORMAT
-002CA0r 2               
-002CA0r 2               ; =============================================================================
-002CA0r 2               ;   K E Y W O R D   T A B L E
-002CA0r 2               ;
-002CA0r 2               ;   Each keyword is its ASCII characters; the LAST byte has bit 7 set.
-002CA0r 2               ;   Order MUST match TOK_xxx equates above (token = TOK_BASE + index).
-002CA0r 2               ;   A trailing $00 terminates the table.
-002CA0r 2               ; =============================================================================
-002CA0r 2               
-002CA0r 2               KeywordTbl:
-002CA0r 2                       ; Statements
-002CA0r 2  45 4E C4             .byte   "EN",'D'|$80            ; $80 END
-002CA3r 2  46 4F D2             .byte   "FO",'R'|$80            ; $81 FOR
-002CA6r 2  4E 45 58 D4          .byte   "NEX",'T'|$80           ; $82 NEXT
-002CAAr 2  44 41 54 C1          .byte   "DAT",'A'|$80           ; $83 DATA
-002CAEr 2  49 4E 50 55          .byte   "INPU",'T'|$80          ; $84 INPUT
-002CB2r 2  D4           
-002CB3r 2  44 49 CD             .byte   "DI",'M'|$80            ; $85 DIM
-002CB6r 2  52 45 41 C4          .byte   "REA",'D'|$80           ; $86 READ
-002CBAr 2  4C 45 D4             .byte   "LE",'T'|$80            ; $87 LET
-002CBDr 2  47 4F 54 CF          .byte   "GOT",'O'|$80           ; $88 GOTO
-002CC1r 2  52 55 CE             .byte   "RU",'N'|$80            ; $89 RUN
-002CC4r 2  49 C6                .byte   "I",'F'|$80             ; $8A IF
-002CC6r 2  52 45 53 54          .byte   "RESTOR",'E'|$80        ; $8B RESTORE
-002CCAr 2  4F 52 C5     
-002CCDr 2  47 4F 53 55          .byte   "GOSU",'B'|$80          ; $8C GOSUB
-002CD1r 2  C2           
-002CD2r 2  52 45 54 55          .byte   "RETUR",'N'|$80         ; $8D RETURN
-002CD6r 2  52 CE        
-002CD8r 2  52 45 CD             .byte   "RE",'M'|$80            ; $8E REM
-002CDBr 2  53 54 4F D0          .byte   "STO",'P'|$80           ; $8F STOP
-002CDFr 2  4F CE                .byte   "O",'N'|$80             ; $90 ON
-002CE1r 2  57 41 49 D4          .byte   "WAI",'T'|$80           ; $91 WAIT
-002CE5r 2  4C 4F 41 C4          .byte   "LOA",'D'|$80           ; $92 LOAD
-002CE9r 2  53 41 56 C5          .byte   "SAV",'E'|$80           ; $93 SAVE
-002CEDr 2  44 45 C6             .byte   "DE",'F'|$80            ; $94 DEF
-002CF0r 2  50 4F 4B C5          .byte   "POK",'E'|$80           ; $95 POKE
-002CF4r 2  50 52 49 4E          .byte   "PRIN",'T'|$80          ; $96 PRINT
-002CF8r 2  D4           
-002CF9r 2  43 4F 4E D4          .byte   "CON",'T'|$80           ; $97 CONT
-002CFDr 2  4C 49 53 D4          .byte   "LIS",'T'|$80           ; $98 LIST
-002D01r 2  43 4C D2             .byte   "CL",'R'|$80            ; $99 CLR
-002D04r 2  4E 45 D7             .byte   "NE",'W'|$80            ; $9A NEW
-002D07r 2  54 41 C2             .byte   "TA",'B'|$80            ; $9B TAB
-002D0Ar 2  54 CF                .byte   "T",'O'|$80             ; $9C TO
-002D0Cr 2  46 CE                .byte   "F",'N'|$80             ; $9D FN
-002D0Er 2  53 50 C3             .byte   "SP",'C'|$80            ; $9E SPC
-002D11r 2  54 48 45 CE          .byte   "THE",'N'|$80           ; $9F THEN
-002D15r 2  4E 4F D4             .byte   "NO",'T'|$80            ; $A0 NOT
-002D18r 2  53 54 45 D0          .byte   "STE",'P'|$80           ; $A1 STEP
-002D1Cr 2  41 4E C4             .byte   "AN",'D'|$80            ; $A2 AND
-002D1Fr 2  4F D2                .byte   "O",'R'|$80             ; $A3 OR
-002D21r 2  45 4C 53 C5          .byte   "ELS",'E'|$80           ; $A4 ELSE
-002D25r 2  53 59 D3             .byte   "SY",'S'|$80            ; $A5 SYS
-002D28r 2  44 49 D2             .byte   "DI",'R'|$80            ; $A6 DIR
-002D2Br 2  44 45 CC             .byte   "DE",'L'|$80            ; $A7 DEL
-002D2Er 2  43 4C D3             .byte   "CL",'S'|$80            ; $A8 CLS
-002D31r 2  4C 4F 43 41          .byte   "LOCAT",'E'|$80         ; $A9 LOCATE
-002D35r 2  54 C5        
-002D37r 2  43 4F 4C 4F          .byte   "COLO",'R'|$80          ; $AA COLOR
-002D3Br 2  D2           
-002D3Cr 2  53 4F 55 4E          .byte   "SOUN",'D'|$80          ; $AB SOUND
-002D40r 2  C4           
-002D41r 2  56 4F CC             .byte   "VO",'L'|$80            ; $AC VOL
-002D44r 2  54 49 4D C5          .byte   "TIM",'E'|$80           ; $AD TIME
-002D48r 2  44 41 54 C5          .byte   "DAT",'E'|$80           ; $AE DATE
-002D4Cr 2  53 45 54 54          .byte   "SETTIM",'E'|$80        ; $AF SETTIME
-002D50r 2  49 4D C5     
-002D53r 2  53 45 54 44          .byte   "SETDAT",'E'|$80        ; $B0 SETDATE
-002D57r 2  41 54 C5     
-002D5Ar 2  4E 56 52 41          .byte   "NVRA",'M'|$80          ; $B1 NVRAM
-002D5Er 2  CD           
-002D5Fr 2  50 41 55 53          .byte   "PAUS",'E'|$80          ; $B2 PAUSE
-002D63r 2  C5           
-002D64r 2  42 41 4E CB          .byte   "BAN",'K'|$80           ; $B3 BANK
-002D68r 2  42 52 CB             .byte   "BR",'K'|$80            ; $B4 BRK
-002D6Br 2  4D 45 CD             .byte   "ME",'M'|$80            ; $B5 MEM
-002D6Er 2                       ; Functions
-002D6Er 2  53 47 CE             .byte   "SG",'N'|$80            ; $B6 Sgn
-002D71r 2  49 4E D4             .byte   "IN",'T'|$80            ; $B7 Int
-002D74r 2  41 42 D3             .byte   "AB",'S'|$80            ; $B8 Abs
-002D77r 2  46 52 C5             .byte   "FR",'E'|$80            ; $B9 FRE
-002D7Ar 2  50 4F D3             .byte   "PO",'S'|$80            ; $BA POS
-002D7Dr 2  53 51 D2             .byte   "SQ",'R'|$80            ; $BB Sqr
-002D80r 2  52 4E C4             .byte   "RN",'D'|$80            ; $BC Rnd
-002D83r 2  4C 4F C7             .byte   "LO",'G'|$80            ; $BD Log
-002D86r 2  45 58 D0             .byte   "EX",'P'|$80            ; $BE Exp
-002D89r 2  43 4F D3             .byte   "CO",'S'|$80            ; $BF Cos
-002D8Cr 2  53 49 CE             .byte   "SI",'N'|$80            ; $C0 Sin
-002D8Fr 2  54 41 CE             .byte   "TA",'N'|$80            ; $C1 Tan
-002D92r 2  41 54 CE             .byte   "AT",'N'|$80            ; $C2 Atn
-002D95r 2  50 45 45 CB          .byte   "PEE",'K'|$80           ; $C3 PEEK
-002D99r 2  4C 45 CE             .byte   "LE",'N'|$80            ; $C4 LEN
-002D9Cr 2  53 54 52 A4          .byte   "STR",'$'|$80           ; $C5 STR$
-002DA0r 2  56 41 CC             .byte   "VA",'L'|$80            ; $C6 VAL
-002DA3r 2  41 53 C3             .byte   "AS",'C'|$80            ; $C7 ASC
-002DA6r 2  43 48 52 A4          .byte   "CHR",'$'|$80           ; $C8 CHR$
-002DAAr 2  4C 45 46 54          .byte   "LEFT",'$'|$80          ; $C9 LEFT$
-002DAEr 2  A4           
-002DAFr 2  52 49 47 48          .byte   "RIGHT",'$'|$80         ; $CA RIGHT$
-002DB3r 2  54 A4        
-002DB5r 2  4D 49 44 A4          .byte   "MID",'$'|$80           ; $CB MID$
-002DB9r 2  4A 4F D9             .byte   "JO",'Y'|$80            ; $CC JOY
-002DBCr 2  49 4E 4B 45          .byte   "INKE",'Y'|$80          ; $CD INKEY
-002DC0r 2  D9           
-002DC1r 2  48 45 D8             .byte   "HE",'X'|$80            ; $CE HEX
-002DC4r 2  4D 49 CE             .byte   "MI",'N'|$80            ; $CF MIN
-002DC7r 2  4D 41 D8             .byte   "MA",'X'|$80            ; $D0 MAX
-002DCAr 2  44 49 53 CB          .byte   "DIS",'K'|$80           ; $D1 DISK
-002DCEr 2  42 4C 4F 41          .byte   "BLOA",'D'|$80          ; $D2 BLOAD
-002DD2r 2  C4           
-002DD3r 2  42 53 41 56          .byte   "BSAV",'E'|$80          ; $D3 BSAVE
-002DD7r 2  C5           
-002DD8r 2  46 4F 52 4D          .byte   "FORMA",'T'|$80         ; $D4 FORMAT
-002DDCr 2  41 D4        
-002DDEr 2  00                   .byte   0
-002DDFr 2               
-002DDFr 2               ; =============================================================================
-002DDFr 2               ;   E R R O R   M E S S A G E   T A B L E   (NUL-terminated strings)
-002DDFr 2               ; =============================================================================
-002DDFr 2               
-002DDFr 2               ErrorMessages:
-002DDFr 2  53 59 4E 54          .byte   "SYNTAX",0              ; ERR_SYNTAX
-002DE3r 2  41 58 00     
-002DE6r 2  4F 56 45 52          .byte   "OVERFLOW",0            ; ERR_OVERFLOW
-002DEAr 2  46 4C 4F 57  
-002DEEr 2  00           
-002DEFr 2  4F 55 54 20          .byte   "OUT OF MEMORY",0       ; ERR_OUTOFMEM
-002DF3r 2  4F 46 20 4D  
-002DF7r 2  45 4D 4F 52  
-002DFDr 2  55 4E 44 45          .byte   "UNDEF'D STATEMENT",0   ; ERR_UNDEFSTMT
-002E01r 2  46 27 44 20  
-002E05r 2  53 54 41 54  
-002E0Fr 2  42 41 44 20          .byte   "BAD SUBSCRIPT",0       ; ERR_BADSUBSCR
-002E13r 2  53 55 42 53  
-002E17r 2  43 52 49 50  
-002E1Dr 2  52 45 44 49          .byte   "REDIM'D ARRAY",0       ; ERR_REDIM
-002E21r 2  4D 27 44 20  
-002E25r 2  41 52 52 41  
-002E2Br 2  44 49 56 49          .byte   "DIVISION BY ZERO",0    ; ERR_DIVZERO
-002E2Fr 2  53 49 4F 4E  
-002E33r 2  20 42 59 20  
-002E3Cr 2  49 4C 4C 45          .byte   "ILLEGAL DIRECT",0      ; ERR_ILLDIRECT
-002E40r 2  47 41 4C 20  
-002E44r 2  44 49 52 45  
-002E4Br 2  54 59 50 45          .byte   "TYPE MISMATCH",0       ; ERR_TYPEMISM
-002E4Fr 2  20 4D 49 53  
-002E53r 2  4D 41 54 43  
-002E59r 2  53 54 52 49          .byte   "STRING TOO LONG",0     ; ERR_LONGSTR
-002E5Dr 2  4E 47 20 54  
-002E61r 2  4F 4F 20 4C  
-002E69r 2  46 4F 52 4D          .byte   "FORMULA TOO COMPLEX",0 ; ERR_FORMULA
-002E6Dr 2  55 4C 41 20  
-002E71r 2  54 4F 4F 20  
-002E7Dr 2  49 4C 4C 45          .byte   "ILLEGAL QUANTITY",0    ; ERR_ILLQUAN
-002E81r 2  47 41 4C 20  
-002E85r 2  51 55 41 4E  
-002E8Er 2  52 45 54 55          .byte   "RETURN WITHOUT GOSUB",0; ERR_RG
-002E92r 2  52 4E 20 57  
-002E96r 2  49 54 48 4F  
-002EA3r 2  4E 45 58 54          .byte   "NEXT WITHOUT FOR",0    ; ERR_NF
-002EA7r 2  20 57 49 54  
-002EABr 2  48 4F 55 54  
-002EB4r 2  4F 55 54 20          .byte   "OUT OF DATA",0         ; ERR_OD
-002EB8r 2  4F 46 20 44  
-002EBCr 2  41 54 41 00  
-002EC0r 2  4E 4F 20 44          .byte   "NO DEVICE",0           ; ERR_NODEV
-002EC4r 2  45 56 49 43  
-002EC8r 2  45 00        
-002ECAr 2  43 41 4E 27          .byte   "CAN'T CONTINUE",0      ; ERR_CANTCONT
-002ECEr 2  54 20 43 4F  
-002ED2r 2  4E 54 49 4E  
-002ED9r 2               
-002ED9r 2               ; =============================================================================
-002ED9r 2               ;   S T R I N G   C O N S T A N T S
-002ED9r 2               ; =============================================================================
-002ED9r 2               
-002ED9r 2               ; Built from the version equates rather than typed, so the header and
-002ED9r 2               ; KernalVersion ($A07B) cannot disagree about which ROM this is.
-002ED9r 2               MsgHeader:
-002ED9r 2  36 35 30 32          .byte   .sprintf("6502 BIOS v%d.%d", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR),0
-002EDDr 2  20 42 49 4F  
-002EE1r 2  53 20 76 32  
-002EE8r 2               
-002EE8r 2               MsgBytesFreeNL:
-002EE8r 2  20 42 59 54          .byte   " BYTES FREE",$0D,$0A,0
-002EECr 2  45 53 20 46  
-002EF0r 2  52 45 45 0D  
-002EF6r 2               
-002EF6r 2               MsgOK:
-002EF6r 2  4F 4B 0D 0A          .byte   "OK",$0D,$0A,0
-002EFAr 2  00           
-002EFBr 2               
-002EFBr 2               MsgErrorWord:
-002EFBr 2  20 45 52 52          .byte   " ERROR",0
-002EFFr 2  4F 52 00     
-002F02r 2               
-002F02r 2               MsgInWord:
-002F02r 2  20 49 4E 20          .byte   " IN ",0
-002F06r 2  00           
-002F07r 2               
-002F07r 1               .segment "WOZMON"
+00289Cr 2  A5 12                lda     FAC+4                   ; lo, and hi, across the evaluations
+00289Er 2  48                   pha
+00289Fr 2  A5 11                lda     FAC+3
+0028A1r 2  48                   pha
+0028A2r 2  9C 13 03             stz     BRK_A
+0028A5r 2  9C 14 03             stz     BRK_X
+0028A8r 2  9C 15 03             stz     BRK_Y
+0028ABr 2  A2 00                ldx     #0
+0028ADr 2               @arg:
+0028ADr 2  20 rr rr             jsr     ChrGot
+0028B0r 2  C9 2C                cmp     #','
+0028B2r 2  D0 0E                bne     @call
+0028B4r 2  DA                   phx
+0028B5r 2  20 rr rr             jsr     GetComByt               ; X = value
+0028B8r 2  8A                   txa
+0028B9r 2  FA                   plx
+0028BAr 2  9D 13 03             sta     BRK_A,x
+0028BDr 2  E8                   inx
+0028BEr 2  E0 03                cpx     #3
+0028C0r 2  D0 EB                bne     @arg
+0028C2r 2               @call:
+0028C2r 2  68                   pla
+0028C3r 2  85 21                sta     INDEX+1
+0028C5r 2  68                   pla
+0028C6r 2  85 20                sta     INDEX
+0028C8r 2  20 rr rr             jsr     @go
+0028CBr 2  08                   php
+0028CCr 2  8D 13 03             sta     BRK_A
+0028CFr 2  8E 14 03             stx     BRK_X
+0028D2r 2  8C 15 03             sty     BRK_Y
+0028D5r 2  68                   pla
+0028D6r 2  8D 10 03             sta     BRK_P
+0028D9r 2  D8                   cld
+0028DAr 2  60                   rts
+0028DBr 2               @go:
+0028DBr 2  AD 13 03             lda     BRK_A
+0028DEr 2  AE 14 03             ldx     BRK_X
+0028E1r 2  AC 15 03             ldy     BRK_Y
+0028E4r 2  D8                   cld
+0028E5r 2  58                   cli
+0028E6r 2  6C 20 00             jmp     (INDEX)
+0028E9r 2               
+0028E9r 2               ; ---------------------------------------------------------------------------
+0028E9r 2               ; Byte arguments, with the ranges the README documents.
+0028E9r 2               ;
+0028E9r 2               ; GetByt itself only rejects a value that will not fit in a byte.  Every
+0028E9r 2               ; statement below has a narrower range than that -- a volume of 0-15, a screen
+0028E9r 2               ; row of 0-23, an hour of 0-23 -- and each of them used to take whatever byte
+0028E9r 2               ; it was handed and fold it into something legal.  VOL 16 masked to 4 bits and
+0028E9r 2               ; set the volume to *zero*; LOCATE 24,0 pointed the cursor past the end of the
+0028E9r 2               ; name table; SETTIME 24,61,61 wrote BCD the DS1511Y has no values for.  None
+0028E9r 2               ; of them said anything.
+0028E9r 2               ;
+0028E9r 2               ; So the range travels with the fetch.  A = one past the highest legal value;
+0028E9r 2               ; anything from there up raises ILLEGAL QUANTITY, as NVRAM's address already
+0028E9r 2               ; did.  GetComByteLim is the same thing preceded by the comma between two
+0028E9r 2               ; arguments, and it costs a byte *less* per site than the `jsr ChkCom /
+0028E9r 2               ; jsr GetByt` pair it replaces -- which is how thirteen range checks fit into
+0028E9r 2               ; a segment that had one byte spare.
+0028E9r 2               ;
+0028E9r 2               ; The limit is parked on the stack across the fetch rather than in scratch:
+0028E9r 2               ; GetByt runs the whole expression evaluator, which reaches BAS_TMP3 itself.
+0028E9r 2               ; Between the `pla` and the `cpx` nothing runs at all, so the byte is safe
+0028E9r 2               ; there and nowhere earlier.
+0028E9r 2               ; ---------------------------------------------------------------------------
+0028E9r 2               
+0028E9r 2               ; GetComByt - a comma, then an unchecked byte argument.
+0028E9r 2               GetComByt:
+0028E9r 2  20 rr rr             jsr     ChkCom
+0028ECr 2  4C rr rr             jmp     GetByt
+0028EFr 2               
+0028EFr 2               ; GetComByteLim / GetByteLim - the same, with a range.  X = value.
+0028EFr 2               GetComByteLim:
+0028EFr 2  48                   pha                             ; the limit, across the comma
+0028F0r 2  20 rr rr             jsr     ChkCom
+0028F3r 2  68                   pla
+0028F4r 2               GetByteLim:
+0028F4r 2  48                   pha                             ; and across the evaluator
+0028F5r 2  20 rr rr             jsr     GetByt                  ; X = value
+0028F8r 2  68                   pla
+0028F9r 2  85 3E                sta     BAS_TMP3
+0028FBr 2  E4 3E                cpx     BAS_TMP3
+0028FDr 2  B0 01                bcs     BasRangeErr             ; value >= limit
+0028FFr 2  60                   rts
+002900r 2               BasRangeErr:
+002900r 2  4C rr rr             jmp     IqErr
+002903r 2               
+002903r 2               ; The five statements below reach hardware that a machine may not have fitted,
+002903r 2               ; and none of them raises ?NO DEVICE for it: a screen or a speaker has no answer
+002903r 2               ; to return, so there is nothing an error could tell the program that silence
+002903r 2               ; does not.  A game that beeps on a hit keeps playing on a machine with no sound
+002903r 2               ; card.  The skip lives in the Kernal routine each one ends in, which is what
+002903r 2               ; makes the same promise to a cartridge calling the slot directly; the arguments
+002903r 2               ; are parsed and range-checked here either way, so a program is wrong or right
+002903r 2               ; on every machine rather than on the one it was written on.
+002903r 2               ;
+002903r 2               ; The statements that read or write *data* — the CF and RTC ones below — do
+002903r 2               ; raise ?NO DEVICE, and for the same reason: they have an answer to return and
+002903r 2               ; cannot.
+002903r 2               
+002903r 2               ; CLS
+002903r 2               BasCmdCls:
+002903r 2  4C rr rr             jmp     VideoClear
+002906r 2               
+002906r 2               ; LOCATE row, col
+002906r 2               BasCmdLocate:
+002906r 2  A9 18                lda     #24                     ; rows 0-23
+002908r 2  20 rr rr             jsr     GetByteLim              ; X = row
+00290Br 2  DA                   phx
+00290Cr 2  A9 28                lda     #40                     ; columns 0-39
+00290Er 2  20 rr rr             jsr     GetComByteLim           ; X = col
+002911r 2  7A                   ply                             ; Y = row
+002912r 2  4C rr rr             jmp     VideoSetCursor
+002915r 2               
+002915r 2               ; COLOR fg[, bg[, border]]
+002915r 2               ;   The pen for later output, through VideoSetColor, which also sets the border
+002915r 2               ;   to bg.  bg defaults to the current pen's.  A border then writes register 7
+002915r 2               ;   again as fg<<4 | border.
+002915r 2               BasCmdColor:
+002915r 2  A9 10                lda     #16                     ; colours 0-15
+002917r 2  20 rr rr             jsr     GetByteLim              ; X = fg
+00291Ar 2  8A                   txa
+00291Br 2  0A                   asl     a
+00291Cr 2  0A                   asl     a
+00291Dr 2  0A                   asl     a
+00291Er 2  0A                   asl     a
+00291Fr 2  48                   pha                             ; fg must survive FrmEvl -> stack, not ZP
+002920r 2  AD 91 03             lda     VID_PEN
+002923r 2  29 0F                and     #$0F
+002925r 2  AA                   tax                             ; X = bg if none is given
+002926r 2  20 rr rr             jsr     ChrGot
+002929r 2  C9 2C                cmp     #','
+00292Br 2  D0 05                bne     @bg
+00292Dr 2  A9 10                lda     #16
+00292Fr 2  20 rr rr             jsr     GetComByteLim           ; X = bg, already known to fit a nibble
+002932r 2               @bg:
+002932r 2  86 3A                stx     BAS_TMP1
+002934r 2  68                   pla
+002935r 2  48                   pha
+002936r 2  05 3A                ora     BAS_TMP1
+002938r 2  20 rr rr             jsr     VideoSetColor
+00293Br 2  20 rr rr             jsr     ChrGot
+00293Er 2  C9 2C                cmp     #','
+002940r 2  D0 0F                bne     @done
+002942r 2  A9 10                lda     #16
+002944r 2  20 rr rr             jsr     GetComByteLim           ; X = border
+002947r 2  86 3A                stx     BAS_TMP1
+002949r 2  68                   pla
+00294Ar 2  05 3A                ora     BAS_TMP1
+00294Cr 2  A2 07                ldx     #VDP_COLOR
+00294Er 2  4C rr rr             jmp     VdpWriteRegImpl         ; Skips without a card
+002951r 2               @done:
+002951r 2  68                   pla
+002952r 2  60                   rts
+002953r 2               
+002953r 2               ; VOL n
+002953r 2               BasCmdVol:
+002953r 2  A9 10                lda     #16                     ; volume 0-15
+002955r 2  20 rr rr             jsr     GetByteLim              ; X = vol
+002958r 2  8A                   txa
+002959r 2  4C rr rr             jmp     SidSetVolume
+00295Cr 2               
+00295Cr 2               ; SOUND voice, freq, dur (freq=Hz, dur=centisec)
+00295Cr 2               ;   Hz -> SID register: reg = Hz * 16.75 ≈ Hz<<4 + Hz - Hz/4
+00295Cr 2               BasCmdSound:
+00295Cr 2  A9 04                lda     #4                      ; voices 1-3, after Commodore BASIC V3.5
+00295Er 2  20 rr rr             jsr     GetByteLim              ; X = voice
+002961r 2  CA                   dex                             ; 0-indexed for SidPlayNote
+002962r 2  30 9C                bmi     BasRangeErr             ; voice 0 underflowed to $FF
+002964r 2  DA                   phx                             ; voice (0-indexed) on stack
+002965r 2  20 rr rr             jsr     ChkCom
+002968r 2  20 rr rr             jsr     EvalU16                 ; freq Hz: hi=FAC+3, lo=FAC+4
+00296Br 2                       ; Compute reg = Hz<<4 + Hz - Hz/4
+00296Br 2  A5 12                lda     FAC+4
+00296Dr 2  85 3A                sta     BAS_TMP1
+00296Fr 2  A5 11                lda     FAC+3
+002971r 2  85 3B                sta     BAS_TMP1+1
+002973r 2  A5 3A                lda     BAS_TMP1
+002975r 2  85 3C                sta     BAS_TMP2
+002977r 2  A5 3B                lda     BAS_TMP1+1
+002979r 2  85 3D                sta     BAS_TMP2+1
+00297Br 2  A2 04                ldx     #4
+00297Dr 2               @shl:
+00297Dr 2  06 3A                asl     BAS_TMP1
+00297Fr 2  26 3B                rol     BAS_TMP1+1
+002981r 2  CA                   dex
+002982r 2  D0 F9                bne     @shl
+002984r 2  18                   clc
+002985r 2  A5 3A                lda     BAS_TMP1
+002987r 2  65 3C                adc     BAS_TMP2
+002989r 2  85 3A                sta     BAS_TMP1
+00298Br 2  A5 3B                lda     BAS_TMP1+1
+00298Dr 2  65 3D                adc     BAS_TMP2+1
+00298Fr 2  85 3B                sta     BAS_TMP1+1
+002991r 2  46 3D                lsr     BAS_TMP2+1
+002993r 2  66 3C                ror     BAS_TMP2
+002995r 2  46 3D                lsr     BAS_TMP2+1
+002997r 2  66 3C                ror     BAS_TMP2
+002999r 2  38                   sec
+00299Ar 2  A5 3A                lda     BAS_TMP1
+00299Cr 2  E5 3C                sbc     BAS_TMP2
+00299Er 2  48                   pha                             ; freqLo
+00299Fr 2  A5 3B                lda     BAS_TMP1+1
+0029A1r 2  E5 3D                sbc     BAS_TMP2+1
+0029A3r 2  48                   pha                             ; freqHi
+0029A4r 2  20 rr rr             jsr     ChkCom
+0029A7r 2  20 rr rr             jsr     EvalU16                 ; dur in FAC+3/+4
+0029AAr 2                       ; Stack (top-down): freqHi, freqLo, voice
+0029AAr 2  7A                   ply                             ; Y = freqHi
+0029ABr 2  FA                   plx                             ; X = freqLo
+0029ACr 2  68                   pla                             ; A = voice
+0029ADr 2  20 rr rr             jsr     SidPlayNote
+0029B0r 2  A5 12                lda     FAC+4
+0029B2r 2  A6 11                ldx     FAC+3
+0029B4r 2  20 rr rr             jsr     SysDelay
+0029B7r 2  4C rr rr             jmp     SidSilence
+0029BAr 2               
+0029BAr 2               ; TIME
+0029BAr 2               BasCmdTime:
+0029BAr 2  A9 04                lda     #HW_RTC
+0029BCr 2  20 rr rr             jsr     ReqHw
+0029BFr 2  20 rr rr             jsr     RtcReadTime             ; A=hours, X=min, Y=sec
+0029C2r 2  5A                   phy
+0029C3r 2  DA                   phx
+0029C4r 2  20 rr rr             jsr     BasPr2D                 ; print hours
+0029C7r 2  A9 3A                lda     #':'
+0029C9r 2  20 rr rr             jsr     Chrout
+0029CCr 2  68                   pla
+0029CDr 2  20 rr rr             jsr     BasPr2D
+0029D0r 2  A9 3A                lda     #':'
+0029D2r 2  20 rr rr             jsr     Chrout
+0029D5r 2  68                   pla
+0029D6r 2  20 rr rr             jsr     BasPr2D
+0029D9r 2  4C rr rr             jmp     BasPrintCRLF
+0029DCr 2               
+0029DCr 2               ; DATE
+0029DCr 2               BasCmdDate:
+0029DCr 2  A9 04                lda     #HW_RTC
+0029DEr 2  20 rr rr             jsr     ReqHw
+0029E1r 2  20 rr rr             jsr     RtcReadDate             ; A=day, X=month, Y=year
+0029E4r 2  48                   pha
+0029E5r 2  DA                   phx
+0029E6r 2  5A                   phy
+0029E7r 2  AD 0B 03             lda     RTC_BUF_CENT
+0029EAr 2  20 rr rr             jsr     BasPr2D
+0029EDr 2  68                   pla
+0029EEr 2  20 rr rr             jsr     BasPr2D
+0029F1r 2  A9 2D                lda     #'-'
+0029F3r 2  20 rr rr             jsr     Chrout
+0029F6r 2  68                   pla
+0029F7r 2  20 rr rr             jsr     BasPr2D
+0029FAr 2  A9 2D                lda     #'-'
+0029FCr 2  20 rr rr             jsr     Chrout
+0029FFr 2  68                   pla
+002A00r 2  20 rr rr             jsr     BasPr2D
+002A03r 2  4C rr rr             jmp     BasPrintCRLF
+002A06r 2               
+002A06r 2               ; SETTIME h, m, s
+002A06r 2               BasCmdSettime:
+002A06r 2  A9 04                lda     #HW_RTC
+002A08r 2  20 rr rr             jsr     ReqHw
+002A0Br 2  A9 18                lda     #24                     ; hours 0-23
+002A0Dr 2  20 rr rr             jsr     GetByteLim              ; X = h
+002A10r 2  DA                   phx
+002A11r 2  A9 3C                lda     #60                     ; minutes 0-59
+002A13r 2  20 rr rr             jsr     GetComByteLim           ; X = m
+002A16r 2  DA                   phx
+002A17r 2  A9 3C                lda     #60                     ; seconds 0-59
+002A19r 2  20 rr rr             jsr     GetComByteLim           ; X = s
+002A1Cr 2  8A                   txa
+002A1Dr 2  A8                   tay                             ; Y = s
+002A1Er 2  FA                   plx                             ; X = m
+002A1Fr 2  68                   pla                             ; A = h
+002A20r 2  4C rr rr             jmp     RtcWriteTime
+002A23r 2               
+002A23r 2               ; SETDATE c, y, m, d
+002A23r 2               BasCmdSetdate:
+002A23r 2  A9 04                lda     #HW_RTC
+002A25r 2  20 rr rr             jsr     ReqHw
+002A28r 2  A9 64                lda     #100                    ; century 0-99, as two BCD digits
+002A2Ar 2  20 rr rr             jsr     GetByteLim
+002A2Dr 2  8E 0B 03             stx     RTC_BUF_CENT
+002A30r 2  A9 64                lda     #100                    ; year 0-99
+002A32r 2  20 rr rr             jsr     GetComByteLim
+002A35r 2  DA                   phx                             ; year
+002A36r 2  A9 0D                lda     #13                     ; months 1-12, so reject 0 as well
+002A38r 2  20 rr rr             jsr     GetComByteLim
+002A3Br 2  E0 01                cpx     #1
+002A3Dr 2  90 10                bcc     @bad
+002A3Fr 2  DA                   phx                             ; month
+002A40r 2  A9 20                lda     #32                     ; days 1-31.  Which months are short is
+002A42r 2  20 rr rr             jsr     GetComByteLim           ;   left alone: it needs a table and a
+002A45r 2  E0 01                cpx     #1                      ;   leap rule for one wrong day a year,
+002A47r 2  90 06                bcc     @bad                    ;   and the DS1511Y does not check it
+002A49r 2                                                       ;   either
+002A49r 2  8A                   txa
+002A4Ar 2  FA                   plx                             ; X=month
+002A4Br 2  7A                   ply                             ; Y=year
+002A4Cr 2  4C rr rr             jmp     RtcWriteDate
+002A4Fr 2               @bad:                                   ; BasRangeErr is out of branch reach
+002A4Fr 2  4C rr rr             jmp     IqErr
+002A52r 2               
+002A52r 2               ; NVRAM addr, val
+002A52r 2               BasCmdNvram:
+002A52r 2  A9 04                lda     #HW_RTC
+002A54r 2  20 rr rr             jsr     ReqHw
+002A57r 2  20 rr rr             jsr     GetByt                  ; addr; GetByt's own 0-255 is the range
+002A5Ar 2  DA                   phx
+002A5Br 2  20 rr rr             jsr     GetComByt               ; X=val
+002A5Er 2  8A                   txa                             ; A=val
+002A5Fr 2  FA                   plx                             ; X=addr
+002A60r 2  4C rr rr             jmp     RtcWriteNVRAM
+002A63r 2               
+002A63r 2               ; WAIT addr, mask
+002A63r 2               ; As with POKE, the address must survive evaluation of the second argument,
+002A63r 2               ; which is free to trample BAS_TMP1 (FacToU16, MID$/LEFT$/RIGHT$, ...).
+002A63r 2               BasCmdWait:
+002A63r 2  20 rr rr             jsr     EvalAddrU16
+002A66r 2  A5 11                lda     FAC+3                   ; hi
+002A68r 2  48                   pha
+002A69r 2  A5 12                lda     FAC+4                   ; lo
+002A6Br 2  48                   pha
+002A6Cr 2  20 rr rr             jsr     GetComByt               ; X = mask
+002A6Fr 2  86 3C                stx     BAS_TMP2
+002A71r 2  68                   pla
+002A72r 2  85 3A                sta     BAS_TMP1
+002A74r 2  68                   pla
+002A75r 2  85 3B                sta     BAS_TMP1+1
+002A77r 2               @poll:
+002A77r 2  20 rr rr             jsr     BasCheckBreak
+002A7Ar 2  A0 00                ldy     #0
+002A7Cr 2  B1 3A                lda     (BAS_TMP1),y
+002A7Er 2  25 3C                and     BAS_TMP2
+002A80r 2  F0 F5                beq     @poll
+002A82r 2  60                   rts
+002A83r 2               
+002A83r 2               ; PAUSE n (centiseconds)
+002A83r 2               BasCmdPause:
+002A83r 2  20 rr rr             jsr     EvalU16
+002A86r 2  A5 12                lda     FAC+4
+002A88r 2  A6 11                ldx     FAC+3
+002A8Ar 2  4C rr rr             jmp     SysDelay
+002A8Dr 2               
+002A8Dr 2               ; BANK n
+002A8Dr 2               BasCmdBank:
+002A8Dr 2  A9 01                lda     #HW_RAM_L
+002A8Fr 2  20 rr rr             jsr     ReqHw
+002A92r 2  20 rr rr             jsr     GetByt                  ; X = bank
+002A95r 2  8E FF 83             stx     RAM_BANK_L
+002A98r 2  60                   rts
+002A99r 2               
+002A99r 2               ; POKE addr, val
+002A99r 2               ; The value expression is evaluated BEFORE the address is parked in INDEX:
+002A99r 2               ; FrmEvl clobbers every zero-page scratch pair (INDEX via LoadFacFromYa,
+002A99r 2               ; BAS_TMP1 via FacToU16 / the string functions), so the address has to ride
+002A99r 2               ; the hardware stack across the evaluation.
+002A99r 2               BasCmdPoke:
+002A99r 2  20 rr rr             jsr     EvalAddrU16
+002A9Cr 2  A5 11                lda     FAC+3                   ; hi
+002A9Er 2  48                   pha
+002A9Fr 2  A5 12                lda     FAC+4                   ; lo
+002AA1r 2  48                   pha
+002AA2r 2  20 rr rr             jsr     ChkCom
+002AA5r 2  20 rr rr             jsr     GetByt                  ; X = val
+002AA8r 2  68                   pla
+002AA9r 2  85 20                sta     INDEX
+002AABr 2  68                   pla
+002AACr 2  85 21                sta     INDEX+1
+002AAEr 2  8A                   txa
+002AAFr 2  A0 00                ldy     #0
+002AB1r 2  91 20                sta     (INDEX),y
+002AB3r 2  60                   rts
+002AB4r 2               
+002AB4r 2               ; LOAD ["name"] / LOAD (bare) / LOAD "name"
+002AB4r 2               BasCmdLoad:
+002AB4r 2  20 rr rr             jsr     ChrGot
+002AB7r 2  F0 02                beq     @bare
+002AB9r 2  80 19                bra     @cf                     ; any argument is a filename expression
+002ABBr 2               @bare:
+002ABBr 2  A9 10                lda     #HW_SC
+002ABDr 2  20 rr rr             jsr     ReqHw
+002AC0r 2  A9 00                lda     #<PROGRAM_START
+002AC2r 2  85 2A                sta     XFER_PTR
+002AC4r 2  A9 08                lda     #>PROGRAM_START
+002AC6r 2  85 2B                sta     XFER_PTR+1
+002AC8r 2  20 rr rr             jsr     XModemLoad
+002ACBr 2                       ; XMODEM rounds up to a 128-byte block, so this can overshoot the true
+002ACBr 2                       ; end by up to 127 bytes: it wastes a little variable space, never
+002ACBr 2                       ; truncates.
+002ACBr 2  AD 17 03             lda     XFER_REMAIN
+002ACEr 2  AC 18 03             ldy     XFER_REMAIN+1
+002AD1r 2  4C rr rr             jmp     BasFixChain
+002AD4r 2               @cf:
+002AD4r 2  A9 08                lda     #HW_CF
+002AD6r 2  20 rr rr             jsr     ReqHw
+002AD9r 2  20 rr rr             jsr     EvalString
+002ADCr 2  20 rr rr             jsr     FsLoadFile
+002ADFr 2  B0 09                bcs     @err
+002AE1r 2  AD 4A 03             lda     FS_FILE_SIZE
+002AE4r 2  AC 4B 03             ldy     FS_FILE_SIZE+1
+002AE7r 2  4C rr rr             jmp     BasFixChain
+002AEAr 2               @err:
+002AEAr 2  A9 rr                lda     #<MsgLoadErr
+002AECr 2  A0 rr                ldy     #>MsgLoadErr
+002AEEr 2  4C rr rr             jmp     BasPrintStr
+002AF1r 2               
+002AF1r 2               ; SAVE / SAVE "name"
+002AF1r 2               BasCmdSave:
+002AF1r 2  20 rr rr             jsr     ChrGot
+002AF4r 2  F0 02                beq     @bare
+002AF6r 2  80 21                bra     @cf                     ; any argument is a filename expression
+002AF8r 2               @bare:
+002AF8r 2  A9 10                lda     #HW_SC
+002AFAr 2  20 rr rr             jsr     ReqHw
+002AFDr 2  A9 00                lda     #<PROGRAM_START
+002AFFr 2  85 2A                sta     XFER_PTR
+002B01r 2  A9 08                lda     #>PROGRAM_START
+002B03r 2  85 2B                sta     XFER_PTR+1
+002B05r 2  38                   sec
+002B06r 2  AD 5F 03             lda     BAS_VARTAB
+002B09r 2  E9 00                sbc     #<PROGRAM_START
+002B0Br 2  8D 17 03             sta     XFER_REMAIN
+002B0Er 2  AD 60 03             lda     BAS_VARTAB+1
+002B11r 2  E9 08                sbc     #>PROGRAM_START
+002B13r 2  8D 18 03             sta     XFER_REMAIN+1
+002B16r 2  4C rr rr             jmp     XModemSave
+002B19r 2               @cf:
+002B19r 2  A9 08                lda     #HW_CF
+002B1Br 2  20 rr rr             jsr     ReqHw
+002B1Er 2  20 rr rr             jsr     EvalString
+002B21r 2  38                   sec
+002B22r 2  AD 5F 03             lda     BAS_VARTAB
+002B25r 2  E9 00                sbc     #<PROGRAM_START
+002B27r 2  8D 4A 03             sta     FS_FILE_SIZE
+002B2Ar 2  AD 60 03             lda     BAS_VARTAB+1
+002B2Dr 2  E9 08                sbc     #>PROGRAM_START
+002B2Fr 2  8D 4B 03             sta     FS_FILE_SIZE+1
+002B32r 2  20 rr rr             jsr     FsSaveFile
+002B35r 2  B0 01                bcs     @err
+002B37r 2  60                   rts
+002B38r 2               @err:
+002B38r 2  A9 rr                lda     #<MsgSaveErr
+002B3Ar 2  A0 rr                ldy     #>MsgSaveErr
+002B3Cr 2  4C rr rr             jmp     BasPrintStr
+002B3Fr 2               
+002B3Fr 2               ; DIR
+002B3Fr 2               BasCmdDir:
+002B3Fr 2  A9 08                lda     #HW_CF
+002B41r 2  20 rr rr             jsr     ReqHw
+002B44r 2  4C rr rr             jmp     FsDirectory
+002B47r 2               
+002B47r 2               ; DEL "name"
+002B47r 2               BasCmdDel:
+002B47r 2  A9 08                lda     #HW_CF
+002B49r 2  20 rr rr             jsr     ReqHw
+002B4Cr 2  20 rr rr             jsr     EvalString
+002B4Fr 2  20 rr rr             jsr     FsDeleteFile
+002B52r 2  B0 01                bcs     @err
+002B54r 2  60                   rts
+002B55r 2               @err:
+002B55r 2  A9 rr                lda     #<MsgDelErr
+002B57r 2  A0 rr                ldy     #>MsgDelErr
+002B59r 2  4C rr rr             jmp     BasPrintStr
+002B5Cr 2               
+002B5Cr 2               ; MEM -- print "nnnnn BYTES FREE  HW=$xx"
+002B5Cr 2               BasCmdMem:
+002B5Cr 2                       ; Free bytes = MEMSIZ - VARTAB
+002B5Cr 2  38                   sec
+002B5Dr 2  AD 67 03             lda     BAS_MEMSIZ
+002B60r 2  ED 5F 03             sbc     BAS_VARTAB
+002B63r 2  A8                   tay
+002B64r 2  AD 68 03             lda     BAS_MEMSIZ+1
+002B67r 2  ED 60 03             sbc     BAS_VARTAB+1
+002B6Ar 2  20 rr rr             jsr     GivAyf                  ; FAC = unsigned int from (Y,A)
+002B6Dr 2                       ; Wait: GivAyf is signed.  For this simple display, OK if < 32768.
+002B6Dr 2  20 rr rr             jsr     PrintNum
+002B70r 2  A9 rr                lda     #<MsgFree
+002B72r 2  A0 rr                ldy     #>MsgFree
+002B74r 2  20 rr rr             jsr     BasPrintStr
+002B77r 2  A9 24                lda     #'$'
+002B79r 2  20 rr rr             jsr     Chrout
+002B7Cr 2  AD 0D 03             lda     HW_PRESENT
+002B7Fr 2  20 rr rr             jsr     PrintHexByte
+002B82r 2  20 rr rr             jsr     BasPrintCRLF
+002B85r 2  4C rr rr             jmp     FsPrintDisk             ; print "DISK n" line
+002B88r 2               
+002B88r 2               ; DISK n -- select the current CF disk bank (0-255)
+002B88r 2               BasCmdDisk:
+002B88r 2  20 rr rr             jsr     GetByt                  ; X = value 0-255
+002B8Br 2  8E 0F 03             stx     CF_DISK
+002B8Er 2  60                   rts
+002B8Fr 2               
+002B8Fr 2               ; BLOAD addr, "name" -- load a file's raw bytes to addr
+002B8Fr 2               BasCmdBload:
+002B8Fr 2  A9 08                lda     #HW_CF
+002B91r 2  20 rr rr             jsr     ReqHw
+002B94r 2  20 rr rr             jsr     EvalAddrU16             ; FAC+3 = hi, FAC+4 = lo
+002B97r 2  A5 12                lda     z:FAC+4
+002B99r 2  8D 7F 03             sta     FS_IO_ADDR
+002B9Cr 2  A5 11                lda     z:FAC+3
+002B9Er 2  8D 80 03             sta     FS_IO_ADDR+1
+002BA1r 2  20 rr rr             jsr     ChkCom
+002BA4r 2  20 rr rr             jsr     EvalString              ; filename -> BAS_FNAME, STR_PTR
+002BA7r 2  20 rr rr             jsr     FsLoadFileAddr
+002BAAr 2  B0 01                bcs     @err
+002BACr 2  60                   rts
+002BADr 2               @err:
+002BADr 2  A9 rr                lda     #<MsgLoadErr
+002BAFr 2  A0 rr                ldy     #>MsgLoadErr
+002BB1r 2  4C rr rr             jmp     BasPrintStr
+002BB4r 2               
+002BB4r 2               ; BSAVE addr, len, "name" -- save len bytes from addr to a file
+002BB4r 2               BasCmdBsave:
+002BB4r 2  A9 08                lda     #HW_CF
+002BB6r 2  20 rr rr             jsr     ReqHw
+002BB9r 2  20 rr rr             jsr     EvalAddrU16             ; addr
+002BBCr 2  A5 12                lda     z:FAC+4
+002BBEr 2  8D 7F 03             sta     FS_IO_ADDR
+002BC1r 2  A5 11                lda     z:FAC+3
+002BC3r 2  8D 80 03             sta     FS_IO_ADDR+1
+002BC6r 2  20 rr rr             jsr     ChkCom
+002BC9r 2  20 rr rr             jsr     EvalAddrU16             ; length in bytes
+002BCCr 2  A5 12                lda     z:FAC+4
+002BCEr 2  8D 4A 03             sta     FS_FILE_SIZE
+002BD1r 2  A5 11                lda     z:FAC+3
+002BD3r 2  8D 4B 03             sta     FS_FILE_SIZE+1
+002BD6r 2  20 rr rr             jsr     ChkCom
+002BD9r 2  20 rr rr             jsr     EvalString              ; filename
+002BDCr 2  20 rr rr             jsr     FsSaveFileAddr
+002BDFr 2  B0 01                bcs     @err
+002BE1r 2  60                   rts
+002BE2r 2               @err:
+002BE2r 2  A9 rr                lda     #<MsgSaveErr
+002BE4r 2  A0 rr                ldy     #>MsgSaveErr
+002BE6r 2  4C rr rr             jmp     BasPrintStr
+002BE9r 2               
+002BE9r 2               ; FORMAT -- erase (zero) the current disk's directory, with confirmation
+002BE9r 2               BasCmdFormat:
+002BE9r 2  A9 08                lda     #HW_CF
+002BEBr 2  20 rr rr             jsr     ReqHw
+002BEEr 2  A9 rr                lda     #<MsgEraseDisk
+002BF0r 2  A0 rr                ldy     #>MsgEraseDisk
+002BF2r 2  20 rr rr             jsr     BasPrintStr
+002BF5r 2  AD 0F 03             lda     CF_DISK
+002BF8r 2  8D 4A 03             sta     FS_FILE_SIZE
+002BFBr 2  9C 4B 03             stz     FS_FILE_SIZE+1
+002BFEr 2  20 rr rr             jsr     FsPrintSize             ; print disk number (decimal)
+002C01r 2  A9 rr                lda     #<MsgConfirm
+002C03r 2  A0 rr                ldy     #>MsgConfirm
+002C05r 2  20 rr rr             jsr     BasPrintStr
+002C08r 2               @wait:
+002C08r 2  20 rr rr             jsr     Chrin                   ; wait for a key (echoes)
+002C0Br 2  90 FB                bcc     @wait
+002C0Dr 2  29 DF                and     #$DF                    ; fold to uppercase
+002C0Fr 2  48                   pha
+002C10r 2  20 rr rr             jsr     BasPrintCRLF
+002C13r 2  68                   pla
+002C14r 2  C9 59                cmp     #'Y'
+002C16r 2  D0 03                bne     @abort
+002C18r 2  4C rr rr             jmp     FsFormatDisk            ; zero the directory (returns carry status)
+002C1Br 2               @abort:
+002C1Br 2  60                   rts
+002C1Cr 2               
+002C1Cr 2  20 42 59 54  MsgFree:        .byte   " BYTES FREE  HW=",0
+002C20r 2  45 53 20 46  
+002C24r 2  52 45 45 20  
+002C2Dr 2  3F 4C 4F 41  MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
+002C31r 2  44 20 45 52  
+002C35r 2  52 4F 52 0D  
+002C3Br 2  3F 53 41 56  MsgSaveErr:     .byte   "?SAVE ERROR",$0D,$0A,0
+002C3Fr 2  45 20 45 52  
+002C43r 2  52 4F 52 0D  
+002C49r 2  3F 44 45 4C  MsgDelErr:      .byte   "?DEL ERROR",$0D,$0A,0
+002C4Dr 2  20 45 52 52  
+002C51r 2  4F 52 0D 0A  
+002C56r 2  45 52 41 53  MsgEraseDisk:   .byte   "ERASE DISK ",0
+002C5Ar 2  45 20 44 49  
+002C5Er 2  53 4B 20 00  
+002C62r 2  3F 20 28 59  MsgConfirm:     .byte   "? (Y/N) ",0
+002C66r 2  2F 4E 29 20  
+002C6Ar 2  00           
+002C6Br 2               
+002C6Br 2               ; Wrappers so the dispatch table can call existing routines that expect
+002C6Br 2               ; TXTPTR positioned already.
+002C6Br 2               BasCmdPrintW:
+002C6Br 2                       ; We were entered via the dispatch trampoline, so TXTPTR is already
+002C6Br 2                       ; past the PRINT token (ChrGet was tail-called).  But BasCmdPrint
+002C6Br 2                       ; expects to consume the token itself with its first ChrGet; rewind.
+002C6Br 2                       ; Easier: BasCmdPrint reads via ChrGet; here ChrGet was called before
+002C6Br 2                       ; routine entry, so TXTPTR currently points at first arg.  Just call
+002C6Br 2                       ; an internal entry that skips the leading ChrGet.
+002C6Br 2  4C rr rr             jmp     BasPrLoop
+002C6Er 2               
+002C6Er 2               ; ---------------------------------------------------------------------------
+002C6Er 2               ; Token-address dispatch table.  Indexed by (token - $80).  Each entry is
+002C6Er 2               ; (routine_address - 1) since the dispatcher PHA-pushes it and uses the
+002C6Er 2               ; "JMP ChrGet -> RTS" trick to enter.
+002C6Er 2               ; ---------------------------------------------------------------------------
+002C6Er 2               BasTokenAddrTbl:
+002C6Er 2  rr rr                .word   BasCmdEnd-1             ; $80 END
+002C70r 2  rr rr                .word   BasCmdFor-1             ; $81 FOR
+002C72r 2  rr rr                .word   BasCmdNext-1            ; $82 NEXT
+002C74r 2  rr rr                .word   BasCmdData-1            ; $83 DATA
+002C76r 2  rr rr                .word   BasCmdInput-1           ; $84 INPUT
+002C78r 2  rr rr                .word   BasCmdDim-1             ; $85 DIM
+002C7Ar 2  rr rr                .word   BasCmdRead-1            ; $86 READ
+002C7Cr 2  rr rr                .word   BasCmdLet-1             ; $87 LET
+002C7Er 2  rr rr                .word   BasCmdGoto-1            ; $88 GOTO
+002C80r 2  rr rr                .word   BasCmdRun-1             ; $89 RUN
+002C82r 2  rr rr                .word   BasCmdIf-1              ; $8A IF
+002C84r 2  rr rr                .word   BasCmdRestore-1         ; $8B RESTORE
+002C86r 2  rr rr                .word   BasCmdGosub-1           ; $8C GOSUB
+002C88r 2  rr rr                .word   BasCmdReturn-1          ; $8D RETURN
+002C8Ar 2  rr rr                .word   BasCmdRem-1             ; $8E REM
+002C8Cr 2  rr rr                .word   BasCmdStop-1            ; $8F STOP
+002C8Er 2  rr rr                .word   BasCmdOn-1              ; $90 ON
+002C90r 2  rr rr                .word   BasCmdWait-1            ; $91 WAIT
+002C92r 2  rr rr                .word   BasCmdLoad-1            ; $92 LOAD
+002C94r 2  rr rr                .word   BasCmdSave-1            ; $93 SAVE
+002C96r 2  rr rr                .word   BasCmdDef-1             ; $94 DEF
+002C98r 2  rr rr                .word   BasCmdPoke-1            ; $95 POKE
+002C9Ar 2  rr rr                .word   BasCmdPrintW-1          ; $96 PRINT
+002C9Cr 2  rr rr                .word   BasCmdCont-1            ; $97 CONT
+002C9Er 2  rr rr                .word   BasCmdList-1            ; $98 LIST
+002CA0r 2  rr rr                .word   BasCmdClr-1             ; $99 CLR
+002CA2r 2  rr rr                .word   BasCmdNew-1             ; $9A NEW
+002CA4r 2  rr rr                .word   SynErr-1                ; $9B TAB  (function only)
+002CA6r 2  rr rr                .word   SynErr-1                ; $9C TO
+002CA8r 2  rr rr                .word   SynErr-1                ; $9D FN
+002CAAr 2  rr rr                .word   SynErr-1                ; $9E SPC
+002CACr 2  rr rr                .word   SynErr-1                ; $9F THEN
+002CAEr 2  rr rr                .word   SynErr-1                ; $A0 NOT
+002CB0r 2  rr rr                .word   SynErr-1                ; $A1 STEP
+002CB2r 2  rr rr                .word   SynErr-1                ; $A2 AND
+002CB4r 2  rr rr                .word   SynErr-1                ; $A3 OR
+002CB6r 2  rr rr                .word   BasCmdRem-1             ; $A4 ELSE (skip rest of line; THEN-branch ran)
+002CB8r 2  rr rr                .word   BasCmdSys-1             ; $A5 SYS
+002CBAr 2  rr rr                .word   BasCmdDir-1             ; $A6 DIR
+002CBCr 2  rr rr                .word   BasCmdDel-1             ; $A7 DEL
+002CBEr 2  rr rr                .word   BasCmdCls-1             ; $A8 CLS
+002CC0r 2  rr rr                .word   BasCmdLocate-1          ; $A9 LOCATE
+002CC2r 2  rr rr                .word   BasCmdColor-1           ; $AA COLOR
+002CC4r 2  rr rr                .word   BasCmdSound-1           ; $AB SOUND
+002CC6r 2  rr rr                .word   BasCmdVol-1             ; $AC VOL
+002CC8r 2  rr rr                .word   BasCmdTime-1            ; $AD TIME
+002CCAr 2  rr rr                .word   BasCmdDate-1            ; $AE DATE
+002CCCr 2  rr rr                .word   BasCmdSettime-1         ; $AF SETTIME
+002CCEr 2  rr rr                .word   BasCmdSetdate-1         ; $B0 SETDATE
+002CD0r 2  rr rr                .word   BasCmdNvram-1           ; $B1 NVRAM
+002CD2r 2  rr rr                .word   BasCmdPause-1           ; $B2 PAUSE
+002CD4r 2  rr rr                .word   BasCmdBank-1            ; $B3 BANK
+002CD6r 2  rr rr                .word   SynErr-1                ; $B4 BRK  (retired in 2.0)
+002CD8r 2  rr rr                .word   BasCmdMem-1             ; $B5 MEM
+002CDAr 2               
+002CDAr 2               ; Extended statement tokens, from TOK_DISK ($D1).  Entries are (handler-1), as
+002CDAr 2               ; above; BasExecuteStatement's @ext bounds the index.
+002CDAr 2               BasExtAddrTbl:
+002CDAr 2  rr rr                .word   BasCmdDisk-1            ; $D1 DISK
+002CDCr 2  rr rr                .word   BasCmdBload-1           ; $D2 BLOAD
+002CDEr 2  rr rr                .word   BasCmdBsave-1           ; $D3 BSAVE
+002CE0r 2  rr rr                .word   BasCmdFormat-1          ; $D4 FORMAT
+002CE2r 2               
+002CE2r 2               ; =============================================================================
+002CE2r 2               ;   K E Y W O R D   T A B L E
+002CE2r 2               ;
+002CE2r 2               ;   Each keyword is its ASCII characters; the LAST byte has bit 7 set.
+002CE2r 2               ;   Order MUST match TOK_xxx equates above (token = TOK_BASE + index).
+002CE2r 2               ;   A trailing $00 terminates the table.
+002CE2r 2               ; =============================================================================
+002CE2r 2               
+002CE2r 2               KeywordTbl:
+002CE2r 2                       ; Statements
+002CE2r 2  45 4E C4             .byte   "EN",'D'|$80            ; $80 END
+002CE5r 2  46 4F D2             .byte   "FO",'R'|$80            ; $81 FOR
+002CE8r 2  4E 45 58 D4          .byte   "NEX",'T'|$80           ; $82 NEXT
+002CECr 2  44 41 54 C1          .byte   "DAT",'A'|$80           ; $83 DATA
+002CF0r 2  49 4E 50 55          .byte   "INPU",'T'|$80          ; $84 INPUT
+002CF4r 2  D4           
+002CF5r 2  44 49 CD             .byte   "DI",'M'|$80            ; $85 DIM
+002CF8r 2  52 45 41 C4          .byte   "REA",'D'|$80           ; $86 READ
+002CFCr 2  4C 45 D4             .byte   "LE",'T'|$80            ; $87 LET
+002CFFr 2  47 4F 54 CF          .byte   "GOT",'O'|$80           ; $88 GOTO
+002D03r 2  52 55 CE             .byte   "RU",'N'|$80            ; $89 RUN
+002D06r 2  49 C6                .byte   "I",'F'|$80             ; $8A IF
+002D08r 2  52 45 53 54          .byte   "RESTOR",'E'|$80        ; $8B RESTORE
+002D0Cr 2  4F 52 C5     
+002D0Fr 2  47 4F 53 55          .byte   "GOSU",'B'|$80          ; $8C GOSUB
+002D13r 2  C2           
+002D14r 2  52 45 54 55          .byte   "RETUR",'N'|$80         ; $8D RETURN
+002D18r 2  52 CE        
+002D1Ar 2  52 45 CD             .byte   "RE",'M'|$80            ; $8E REM
+002D1Dr 2  53 54 4F D0          .byte   "STO",'P'|$80           ; $8F STOP
+002D21r 2  4F CE                .byte   "O",'N'|$80             ; $90 ON
+002D23r 2  57 41 49 D4          .byte   "WAI",'T'|$80           ; $91 WAIT
+002D27r 2  4C 4F 41 C4          .byte   "LOA",'D'|$80           ; $92 LOAD
+002D2Br 2  53 41 56 C5          .byte   "SAV",'E'|$80           ; $93 SAVE
+002D2Fr 2  44 45 C6             .byte   "DE",'F'|$80            ; $94 DEF
+002D32r 2  50 4F 4B C5          .byte   "POK",'E'|$80           ; $95 POKE
+002D36r 2  50 52 49 4E          .byte   "PRIN",'T'|$80          ; $96 PRINT
+002D3Ar 2  D4           
+002D3Br 2  43 4F 4E D4          .byte   "CON",'T'|$80           ; $97 CONT
+002D3Fr 2  4C 49 53 D4          .byte   "LIS",'T'|$80           ; $98 LIST
+002D43r 2  43 4C D2             .byte   "CL",'R'|$80            ; $99 CLR
+002D46r 2  4E 45 D7             .byte   "NE",'W'|$80            ; $9A NEW
+002D49r 2  54 41 C2             .byte   "TA",'B'|$80            ; $9B TAB
+002D4Cr 2  54 CF                .byte   "T",'O'|$80             ; $9C TO
+002D4Er 2  46 CE                .byte   "F",'N'|$80             ; $9D FN
+002D50r 2  53 50 C3             .byte   "SP",'C'|$80            ; $9E SPC
+002D53r 2  54 48 45 CE          .byte   "THE",'N'|$80           ; $9F THEN
+002D57r 2  4E 4F D4             .byte   "NO",'T'|$80            ; $A0 NOT
+002D5Ar 2  53 54 45 D0          .byte   "STE",'P'|$80           ; $A1 STEP
+002D5Er 2  41 4E C4             .byte   "AN",'D'|$80            ; $A2 AND
+002D61r 2  4F D2                .byte   "O",'R'|$80             ; $A3 OR
+002D63r 2  45 4C 53 C5          .byte   "ELS",'E'|$80           ; $A4 ELSE
+002D67r 2  53 59 D3             .byte   "SY",'S'|$80            ; $A5 SYS
+002D6Ar 2  44 49 D2             .byte   "DI",'R'|$80            ; $A6 DIR
+002D6Dr 2  44 45 CC             .byte   "DE",'L'|$80            ; $A7 DEL
+002D70r 2  43 4C D3             .byte   "CL",'S'|$80            ; $A8 CLS
+002D73r 2  4C 4F 43 41          .byte   "LOCAT",'E'|$80         ; $A9 LOCATE
+002D77r 2  54 C5        
+002D79r 2  43 4F 4C 4F          .byte   "COLO",'R'|$80          ; $AA COLOR
+002D7Dr 2  D2           
+002D7Er 2  53 4F 55 4E          .byte   "SOUN",'D'|$80          ; $AB SOUND
+002D82r 2  C4           
+002D83r 2  56 4F CC             .byte   "VO",'L'|$80            ; $AC VOL
+002D86r 2  54 49 4D C5          .byte   "TIM",'E'|$80           ; $AD TIME
+002D8Ar 2  44 41 54 C5          .byte   "DAT",'E'|$80           ; $AE DATE
+002D8Er 2  53 45 54 54          .byte   "SETTIM",'E'|$80        ; $AF SETTIME
+002D92r 2  49 4D C5     
+002D95r 2  53 45 54 44          .byte   "SETDAT",'E'|$80        ; $B0 SETDATE
+002D99r 2  41 54 C5     
+002D9Cr 2  4E 56 52 41          .byte   "NVRA",'M'|$80          ; $B1 NVRAM
+002DA0r 2  CD           
+002DA1r 2  50 41 55 53          .byte   "PAUS",'E'|$80          ; $B2 PAUSE
+002DA5r 2  C5           
+002DA6r 2  42 41 4E CB          .byte   "BAN",'K'|$80           ; $B3 BANK
+002DAAr 2  42 52 CB             .byte   "BR",'K'|$80            ; $B4 BRK
+002DADr 2  4D 45 CD             .byte   "ME",'M'|$80            ; $B5 MEM
+002DB0r 2                       ; Functions
+002DB0r 2  53 47 CE             .byte   "SG",'N'|$80            ; $B6 Sgn
+002DB3r 2  49 4E D4             .byte   "IN",'T'|$80            ; $B7 Int
+002DB6r 2  41 42 D3             .byte   "AB",'S'|$80            ; $B8 Abs
+002DB9r 2  46 52 C5             .byte   "FR",'E'|$80            ; $B9 FRE
+002DBCr 2  50 4F D3             .byte   "PO",'S'|$80            ; $BA POS
+002DBFr 2  53 51 D2             .byte   "SQ",'R'|$80            ; $BB Sqr
+002DC2r 2  52 4E C4             .byte   "RN",'D'|$80            ; $BC Rnd
+002DC5r 2  4C 4F C7             .byte   "LO",'G'|$80            ; $BD Log
+002DC8r 2  45 58 D0             .byte   "EX",'P'|$80            ; $BE Exp
+002DCBr 2  43 4F D3             .byte   "CO",'S'|$80            ; $BF Cos
+002DCEr 2  53 49 CE             .byte   "SI",'N'|$80            ; $C0 Sin
+002DD1r 2  54 41 CE             .byte   "TA",'N'|$80            ; $C1 Tan
+002DD4r 2  41 54 CE             .byte   "AT",'N'|$80            ; $C2 Atn
+002DD7r 2  50 45 45 CB          .byte   "PEE",'K'|$80           ; $C3 PEEK
+002DDBr 2  4C 45 CE             .byte   "LE",'N'|$80            ; $C4 LEN
+002DDEr 2  53 54 52 A4          .byte   "STR",'$'|$80           ; $C5 STR$
+002DE2r 2  56 41 CC             .byte   "VA",'L'|$80            ; $C6 VAL
+002DE5r 2  41 53 C3             .byte   "AS",'C'|$80            ; $C7 ASC
+002DE8r 2  43 48 52 A4          .byte   "CHR",'$'|$80           ; $C8 CHR$
+002DECr 2  4C 45 46 54          .byte   "LEFT",'$'|$80          ; $C9 LEFT$
+002DF0r 2  A4           
+002DF1r 2  52 49 47 48          .byte   "RIGHT",'$'|$80         ; $CA RIGHT$
+002DF5r 2  54 A4        
+002DF7r 2  4D 49 44 A4          .byte   "MID",'$'|$80           ; $CB MID$
+002DFBr 2  4A 4F D9             .byte   "JO",'Y'|$80            ; $CC JOY
+002DFEr 2  49 4E 4B 45          .byte   "INKE",'Y'|$80          ; $CD INKEY
+002E02r 2  D9           
+002E03r 2  48 45 D8             .byte   "HE",'X'|$80            ; $CE HEX
+002E06r 2  4D 49 CE             .byte   "MI",'N'|$80            ; $CF MIN
+002E09r 2  4D 41 D8             .byte   "MA",'X'|$80            ; $D0 MAX
+002E0Cr 2  44 49 53 CB          .byte   "DIS",'K'|$80           ; $D1 DISK
+002E10r 2  42 4C 4F 41          .byte   "BLOA",'D'|$80          ; $D2 BLOAD
+002E14r 2  C4           
+002E15r 2  42 53 41 56          .byte   "BSAV",'E'|$80          ; $D3 BSAVE
+002E19r 2  C5           
+002E1Ar 2  46 4F 52 4D          .byte   "FORMA",'T'|$80         ; $D4 FORMAT
+002E1Er 2  41 D4        
+002E20r 2  00                   .byte   0
+002E21r 2               
+002E21r 2               ; =============================================================================
+002E21r 2               ;   E R R O R   M E S S A G E   T A B L E   (NUL-terminated strings)
+002E21r 2               ; =============================================================================
+002E21r 2               
+002E21r 2               ErrorMessages:
+002E21r 2  53 59 4E 54          .byte   "SYNTAX",0              ; ERR_SYNTAX
+002E25r 2  41 58 00     
+002E28r 2  4F 56 45 52          .byte   "OVERFLOW",0            ; ERR_OVERFLOW
+002E2Cr 2  46 4C 4F 57  
+002E30r 2  00           
+002E31r 2  4F 55 54 20          .byte   "OUT OF MEMORY",0       ; ERR_OUTOFMEM
+002E35r 2  4F 46 20 4D  
+002E39r 2  45 4D 4F 52  
+002E3Fr 2  55 4E 44 45          .byte   "UNDEF'D STATEMENT",0   ; ERR_UNDEFSTMT
+002E43r 2  46 27 44 20  
+002E47r 2  53 54 41 54  
+002E51r 2  42 41 44 20          .byte   "BAD SUBSCRIPT",0       ; ERR_BADSUBSCR
+002E55r 2  53 55 42 53  
+002E59r 2  43 52 49 50  
+002E5Fr 2  52 45 44 49          .byte   "REDIM'D ARRAY",0       ; ERR_REDIM
+002E63r 2  4D 27 44 20  
+002E67r 2  41 52 52 41  
+002E6Dr 2  44 49 56 49          .byte   "DIVISION BY ZERO",0    ; ERR_DIVZERO
+002E71r 2  53 49 4F 4E  
+002E75r 2  20 42 59 20  
+002E7Er 2  49 4C 4C 45          .byte   "ILLEGAL DIRECT",0      ; ERR_ILLDIRECT
+002E82r 2  47 41 4C 20  
+002E86r 2  44 49 52 45  
+002E8Dr 2  54 59 50 45          .byte   "TYPE MISMATCH",0       ; ERR_TYPEMISM
+002E91r 2  20 4D 49 53  
+002E95r 2  4D 41 54 43  
+002E9Br 2  53 54 52 49          .byte   "STRING TOO LONG",0     ; ERR_LONGSTR
+002E9Fr 2  4E 47 20 54  
+002EA3r 2  4F 4F 20 4C  
+002EABr 2  46 4F 52 4D          .byte   "FORMULA TOO COMPLEX",0 ; ERR_FORMULA
+002EAFr 2  55 4C 41 20  
+002EB3r 2  54 4F 4F 20  
+002EBFr 2  49 4C 4C 45          .byte   "ILLEGAL QUANTITY",0    ; ERR_ILLQUAN
+002EC3r 2  47 41 4C 20  
+002EC7r 2  51 55 41 4E  
+002ED0r 2  52 45 54 55          .byte   "RETURN WITHOUT GOSUB",0; ERR_RG
+002ED4r 2  52 4E 20 57  
+002ED8r 2  49 54 48 4F  
+002EE5r 2  4E 45 58 54          .byte   "NEXT WITHOUT FOR",0    ; ERR_NF
+002EE9r 2  20 57 49 54  
+002EEDr 2  48 4F 55 54  
+002EF6r 2  4F 55 54 20          .byte   "OUT OF DATA",0         ; ERR_OD
+002EFAr 2  4F 46 20 44  
+002EFEr 2  41 54 41 00  
+002F02r 2  4E 4F 20 44          .byte   "NO DEVICE",0           ; ERR_NODEV
+002F06r 2  45 56 49 43  
+002F0Ar 2  45 00        
+002F0Cr 2  43 41 4E 27          .byte   "CAN'T CONTINUE",0      ; ERR_CANTCONT
+002F10r 2  54 20 43 4F  
+002F14r 2  4E 54 49 4E  
+002F1Br 2               
+002F1Br 2               ; =============================================================================
+002F1Br 2               ;   S T R I N G   C O N S T A N T S
+002F1Br 2               ; =============================================================================
+002F1Br 2               
+002F1Br 2               ; Built from the version equates rather than typed, so the header and
+002F1Br 2               ; KernalVersion ($A07B) cannot disagree about which ROM this is.
+002F1Br 2               MsgHeader:
+002F1Br 2  36 35 30 32          .byte   .sprintf("6502 BIOS v%d.%d", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR),0
+002F1Fr 2  20 42 49 4F  
+002F23r 2  53 20 76 32  
+002F2Ar 2               
+002F2Ar 2               MsgBytesFreeNL:
+002F2Ar 2  20 42 59 54          .byte   " BYTES FREE",$0D,$0A,0
+002F2Er 2  45 53 20 46  
+002F32r 2  52 45 45 0D  
+002F38r 2               
+002F38r 2               MsgOK:
+002F38r 2  4F 4B 0D 0A          .byte   "OK",$0D,$0A,0
+002F3Cr 2  00           
+002F3Dr 2               
+002F3Dr 2               MsgErrorWord:
+002F3Dr 2  20 45 52 52          .byte   " ERROR",0
+002F41r 2  4F 52 00     
+002F44r 2               
+002F44r 2               MsgInWord:
+002F44r 2  20 49 4E 20          .byte   " IN ",0
+002F48r 2  00           
+002F49r 2               
+002F49r 1               .segment "WOZMON"
 000000r 1               .include "Wozmon.asm"
 000000r 2               ; =============================================================================
 000000r 2               ; WOZMON  —  Woz Monitor (Steve Wozniak's original Apple 1 monitor, ported)

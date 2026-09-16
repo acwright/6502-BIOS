@@ -1,7 +1,7 @@
 name: with no video card, the VDP statements consume their arguments and do nothing
-# README: "Video absent — ... SCREEN, VPOKE, VREG, PALETTE, VLOAD silently
-#          skip (arguments are still consumed); VPEEK() returns 0; VSYNC waits
-#          2 cs"
+# README: "Video absent — ... SCREEN, VPOKE, VREG, PALETTE, VLOAD, SPRITE,
+#          SCROLL and LAYER silently skip (arguments are still consumed);
+#          VPEEK() and VSTAT() return 0; VSYNC waits 2 cs"
 #
 # The same promise CLS, LOCATE and COLOR make (no-video-card-the-screen-
 # statements-do-nothing): a program written for a screen runs on a serial-only
@@ -28,8 +28,17 @@ hw: -video
 ! LOAD ERROR
 > PRINT VPEEK(0); VPEEK(65535)
 ~ ^ 0 0$
+> SPRITE 3, 300, 100, 7, 5 : PRINT "AFTER SPRITE"
+~ ^AFTER SPRITE$
+> SCROLL 1, 300, 10 : PRINT "AFTER SCROLL"
+~ ^AFTER SCROLL$
+> LAYER 1, 1 : PRINT "AFTER LAYER"
+~ ^AFTER LAYER$
+> PRINT VSTAT(4)
+~ ^ 0$
 
 > 10 SCREEN 1 : VPOKE 0, 1 : VREG 7, 1 : PALETTE 0, 1, 2, 3 : VSYNC
+> 15 SPRITE 0, 1, 2, 3 : SCROLL 0, 1, 2 : LAYER 0, 1
 > 20 PRINT "RAN"
 > RUN
 ~ ^RAN$

@@ -1,7 +1,9 @@
-name: SCREEN, VPOKE, VREG, PALETTE, VLOAD and VPEEK reject arguments outside their range
+name: the VDP statements and functions reject arguments outside their range
 # README: "SCREEN <n> — 0 Text ... 3 Full", "VPOKE <addr>, <value> — addr
 #          0–65535", "VREG <reg>, <value> — reg 0–127", "PALETTE <index>, <r>,
-#          <g>, <b> — index 0–255, r/g/b 0–15"
+#          <g>, <b> — index 0–255, r/g/b 0–15", "SPRITE <n>, <x>, <y>, <pattern>
+#          [, <attr>] — n 0–63, x 0–511, attr 0–127", "SCROLL <layer>, <x>, <y> —
+#          layer 0–1, x 0–319", "VSTAT(n) — 0–15"
 #
 # Ranges are checked before anything looks for the card, so a program is wrong
 # or right on this machine — which has no video card — just as it would be on
@@ -46,4 +48,41 @@ mode: basic
 > VLOAD "VRAM.BIN",65536
 ~ \?ILLEGAL QUANTITY ERROR
 > PRINT VPEEK(65536)
+~ \?ILLEGAL QUANTITY ERROR
+
+# SPRITE n, x, y, pattern[, attr]
+> SPRITE 0,0,0,0
+> SPRITE 63,511,255,255,127
+> SPRITE 64,0,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> SPRITE 0,512,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> SPRITE 0,0,256,0
+~ \?ILLEGAL QUANTITY ERROR
+> SPRITE 0,0,0,256
+~ \?ILLEGAL QUANTITY ERROR
+> SPRITE 0,0,0,0,128
+~ \?ILLEGAL QUANTITY ERROR
+
+# SCROLL layer, x, y
+> SCROLL 0,0,0
+> SCROLL 1,319,255
+> SCROLL 2,0,0
+~ \?ILLEGAL QUANTITY ERROR
+> SCROLL 0,320,0
+~ \?ILLEGAL QUANTITY ERROR
+> SCROLL 0,512,0
+~ \?ILLEGAL QUANTITY ERROR
+> SCROLL 0,0,256
+~ \?ILLEGAL QUANTITY ERROR
+
+# LAYER layer, on
+> LAYER 1,0
+> LAYER 2,1
+~ \?ILLEGAL QUANTITY ERROR
+
+# VSTAT(n)
+> PRINT VSTAT(15)
+~ ^ 0$
+> PRINT VSTAT(16)
 ~ \?ILLEGAL QUANTITY ERROR

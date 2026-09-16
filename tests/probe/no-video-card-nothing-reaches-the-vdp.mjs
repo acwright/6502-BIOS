@@ -101,6 +101,10 @@ export async function run(m) {
   await statement(m, 'VSYNC')
   await statement(m, 'VLOAD "NOPE.BIN",0')
   await statement(m, 'PRINT VPEEK(0)')
+  await statement(m, 'SPRITE 3,300,100,7,5')
+  await statement(m, 'SCROLL 1,300,10')
+  await statement(m, 'LAYER 1,1')
+  await statement(m, 'PRINT VSTAT(4)')
 
   // VideoSetCursor is the odd one out: it touches no register at all, only the
   // three RAM bytes that say where the next character goes. So its half of the

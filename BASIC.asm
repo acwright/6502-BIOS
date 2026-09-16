@@ -5940,6 +5940,8 @@ FnTable:
         .word   FnMax-1
         .byte   TOK_VPEEK
         .word   FnVpeek-1
+        .byte   TOK_VSTAT
+        .word   FnVstat-1
         .byte   0
 
 ; ---------------------------------------------------------------------------
@@ -9048,6 +9050,93 @@ FnVpeek:
         tay
         jmp     SngFlt
 
+; SPRITE n, x, y, pattern[, attr] -- sprite n (0-63) at x (0-511, 384-511 being
+; -128 to -1), y (0-255), with pattern (0-255) and attributes (0-127, default
+; 0; b6 priority, b5:4 flips, b3:0 sub-palette).  VdpSprite writes the four
+; bytes at $2000 + 4n, where SCREEN 1-3 put the table, with x's bit 8 as the
+; attribute's b7.
+BasCmdSprite:
+        lda     #64
+        jsr     GetByteLim              ; X = n
+        phx
+        jsr     ChkCom
+        jsr     EvalAddrU16             ; x
+        lda     FAC+3
+        cmp     #2
+        bcs     BasVdpRangeErr          ; 512 and up
+        sta     VDP_P3                  ; Bit 8, until the attributes are in
+        lda     FAC+4
+        sta     VDP_P1
+        jsr     GetComByt               ; X = y
+        stx     VDP_P0
+        jsr     GetComByt               ; X = pattern
+        stx     VDP_P2
+        ldx     #0                      ; attr if none is given
+        jsr     ChrGot
+        cmp     #','
+        bne     @attr
+        lda     #128
+        jsr     GetComByteLim           ; X = attr
+@attr:
+        txa
+        lsr     VDP_P3                  ; Bit 8 into carry
+        bcc     @low
+        ora     #$80
+@low:
+        sta     VDP_P3
+        plx                             ; n
+        jmp     VdpSprite
+
+BasVdpRangeErr:
+        jmp     IqErr
+
+; SCROLL layer, x, y -- scroll layer 0-1 to x (0-319), y (0-255)
+BasCmdScroll:
+        lda     #2
+        jsr     GetByteLim              ; X = layer
+        phx
+        jsr     ChkCom
+        jsr     EvalAddrU16             ; x
+        lda     FAC+3
+        sta     VDP_P0                  ; Bit 8
+        beq     @x
+        cmp     #1
+        bne     BasVdpRangeErr
+        lda     FAC+4
+        cmp     #64                     ; 256 + 64 = 320
+        bcs     BasVdpRangeErr
+@x:
+        lda     FAC+4
+        pha
+        jsr     GetComByt               ; X = y
+        txa
+        tay
+        pla                             ; x bits 7:0
+        plx                             ; layer
+        jmp     VdpSetScroll
+
+; LAYER layer, on -- hide layer 0-1 (on = 0) or show it
+BasCmdLayer:
+        lda     #2
+        jsr     GetByteLim              ; X = layer
+        phx
+        jsr     GetComByt               ; X = on
+        txa
+        plx
+        jmp     VdpLayer
+
+; VSTAT(n) -- status register n, 0-15; 0 without a card.  VSTAT(0) clears
+; STAT0's flags, as reading it does.
+FnVstat:
+        jsr     ParenU8                 ; A = n
+        cmp     #16
+        bcs     BasVdpRangeErr
+        tax
+        lda     #0                      ; What VdpStatus leaves in A without a card
+        jsr     VdpStatus
+        tay
+        jmp     SngFlt
+
 MsgFree:        .byte   " BYTES FREE  HW=",0
 MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
 MsgSaveErr:     .byte   "?SAVE ERROR",$0D,$0A,0
@@ -9139,9 +9228,9 @@ BasExtAddrTbl:
         .word   BasCmdPalette-1         ; $D7 PALETTE
         .word   BasCmdVsync-1           ; $D8 VSYNC
         .word   BasCmdVload-1           ; $D9 VLOAD
-        .word   SynErr-1                ; $DA SPRITE
-        .word   SynErr-1                ; $DB SCROLL
-        .word   SynErr-1                ; $DC LAYER
+        .word   BasCmdSprite-1          ; $DA SPRITE
+        .word   BasCmdScroll-1          ; $DB SCROLL
+        .word   BasCmdLayer-1           ; $DC LAYER
         .word   SynErr-1                ; $DD NVSAVE
         .word   SynErr-1                ; $DE NVLOAD
         .word   SynErr-1                ; $DF NVERASE

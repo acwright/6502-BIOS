@@ -1,5 +1,11 @@
 # BIOS v1.6 — NVRAM Save Slots
 
+**1.6 is the last 1.x release.** It adds the save slots and nothing else. After it is tagged,
+`v1.x` is cut from `v1.6` for bug fixes only, and `main` becomes BIOS 2.x. The rollout it
+belongs to is in [VDP-ASSESSMENT.md](VDP-ASSESSMENT.md), Part 1. Everything this file
+defines is **ABI that 2.x inherits unchanged**: the six entries, the slot format, `NV_ID` at
+`$0390`, and `NV_PTR` = `STR_PTR`.
+
 Plan only — **no code has been written for this.** Every measurement below comes from the
 committed build (`BIOS.bin`, `BIOS.dbg`) and the current sources, not from estimation, except
 where a figure is explicitly labelled an estimate.
@@ -26,7 +32,10 @@ Per-segment free space, measured from the trailing `$00` fill in `BIOS.bin`:
 
 KERNAL is the only segment with room for this. The jump table has **32 reserved stubs** at
 `$A09F-$A0FE` ([Kernal.asm:96-99](Kernal.asm#L96-L99)), so appending is free and shifts nothing.
-`$0390-$03FF` in the Kernal variable page is unallocated.
+`$0390-$03FF` in the Kernal variable page has no equate yet. It sits inside the range
+`BIOS.inc` heads "BASIC runtime variables (`$035D-$03FF`)", whose last assignment is
+`PRG_IMAGE_END` at `$038E-$038F`. Taking `$0390` for `NV_ID` is safe; when adding it, amend
+that heading so the range no longer reads as BASIC's alone.
 
 ### A correction to the original premise
 
@@ -70,7 +79,7 @@ for b in [id, p0 … p13]:
 
 On the 6502 the inner step is `asl a` / `adc #$00` / `eor <byte>`. `asl` shifts bit 7 into carry
 and `adc #$00` adds it back into bit 0, giving a true 8-bit rotate in three bytes. Requires
-`D = 0`, which always holds here.
+`D = 0`, which the routines guarantee themselves (§3, "Decimal mode").
 
 The rotate is what catches transposed bytes, which a plain running sum does not. The nonzero seed
 stops an all-`$FF` slot — the shape an erased or unpowered part takes — from checksumming to `$FF`
@@ -117,17 +126,43 @@ same time, so it costs no new zero page. Callers must treat `STR_PTR` as clobber
 ## 3. Jump table additions
 
 Six entries append at `$A09F`. The reserved `.repeat 32` drops to `.repeat 26`, which still fills
-the page exactly: `$A0B1 + 26*3 = $A0FF`, where the existing pad byte sits. Table grows 85 → 91
-slots.
+the page exactly: `$A0B1 + 26*3 = $A0FF`, where the existing pad byte sits. **The page stays at
+85 slots.** Published entries grow 53 → 59, and reserved entries shrink 32 → 26.
 
 | Slot | Name | In | Out |
 |---|---|---|---|
 | `$A09F` | `NvStat` | `X`=slot | `A`=status, `Y`=owner ID, `X` preserved |
-| `$A0A2` | `NvRead` | `X`=slot, `A`/`Y`=dest lo/hi | 14 bytes copied, `Y`=owner ID |
-| `$A0A5` | `NvWrite` | `X`=slot, `A`/`Y`=src lo/hi, `NV_ID`=owner ID | — |
-| `$A0A8` | `NvErase` | `X`=slot | — (zeroes all 16 bytes) |
+| `$A0A2` | `NvRead` | `X`=slot, `A`/`Y`=dest lo/hi | 14 bytes copied; `A`=status, `Y`=owner ID, `X` preserved |
+| `$A0A5` | `NvWrite` | `X`=slot, `A`/`Y`=src lo/hi, `NV_ID`=owner ID | `X` preserved |
+| `$A0A8` | `NvErase` | `X`=slot | `X` preserved (zeroes all 16 bytes) |
 | `$A0AB` | `NvFind` | `A`=owner ID (`$00` = first free) | `X`=slot |
 | `$A0AE` | `NvFormat` | — | — (erases all 16 slots) |
+
+### Register contract (decided)
+
+- **`X` is preserved** by `NvStat`, `NvRead`, `NvWrite` and `NvErase`, so a loop over slots
+  needs no reload. `NvFind` returns the slot in `X`.
+- **`NvStat` and `NvRead` always return `A` = status and `Y` = owner ID, on failure too**, so
+  one call says why a read failed. On a slot number ≥ 16 or no RTC, `A` and `Y` are undefined
+  and only carry is meaningful.
+- **Everything else is clobbered:** `A`/`Y` where not listed as outputs, the other flags, and
+  `STR_PTR` (`NV_PTR`) for `NvRead` and `NvWrite`.
+- **The caller's decimal and interrupt flags come back unchanged** (see the two rules below).
+
+### `NvFind` semantics (decided)
+
+- `A` ≠ `$00`: match the owner ID in **any non-free slot, valid or damaged**, and return the
+  **lowest-numbered** match. A game that finds its ID then calls `NvRead`; a damaged save
+  returns carry set with `A` = `NV_BAD`, so the game can tell the player, rather than silently
+  starting over.
+- `A` = `$00`: return the lowest free slot.
+- A game with several saves walks the slots with `NvStat`.
+
+### Decimal mode (decided)
+
+Every routine that computes a checksum (`NvStat`, `NvRead`, `NvWrite`, and `NvFind` if it
+validates) brackets the work with `php` / `cld` … `plp`. Callers never need to clear `D`, and
+their flag comes back untouched. A game that keeps its score in decimal mode stays safe.
 
 ### Error convention
 
@@ -163,7 +198,8 @@ shot rather than sixteen `NvStat`s.
 and a management utility can write it. It is included because a format command is the natural
 partner to a save area, and reserved slots are not scarce.
 
-**Estimated KERNAL cost: ~230 bytes**, against 1552 free.
+**Estimated KERNAL cost: ~250 bytes** (about 230 for the routines, plus the flag brackets and
+`X` saves), against 1552 free.
 
 ---
 
@@ -207,6 +243,11 @@ Three implementation constraints follow from "on the rising edge of OE, WE, or C
   increments the pointer.
 - **Leave BME clear on exit from every routine**, so the raw `RtcReadNVRAM` / `RtcWriteNVRAM` pair
   and anything a cartridge does keep their current single-byte behaviour.
+- **Mask interrupts for the burst (decided).** `php` / `sei` before setting BME, `plp` after
+  clearing it. A user IRQ handler that touched `RTC_RAM_DATA` mid-copy would move the pointer and
+  corrupt the save. The Kernal's own handler never touches the RTC. The copy is 16 accesses, a
+  few hundred microseconds, so interrupts are delayed, not lost. NMI can't be masked, and the
+  Kernal's NMI path does not touch NVRAM; document that a user NMI handler must not either.
 
 The emulator models this faithfully — `controlB & 0x20` gates the increment on both read and write
 of `0x13`, and `0x11`/`0x12` read as 0 with writes ignored — so the burst path is exercised by the
@@ -278,9 +319,9 @@ the same read-modify-write as everything else touching Control B.
 
 | File | Change |
 |---|---|
-| [BIOS.inc](BIOS.inc) | `BIOS_VERSION_MINOR` 5 → 6; the `NV_*` block and `RTC_CTRL_B_BME` from §2 |
-| [Kernal.asm](Kernal.asm) | header comment 85 → 91 slots; six table entries; `.repeat 32` → `.repeat 26`; six implementations after `RtcWriteNVRAMImpl`; **the §4.3 BME fix in `ProbeRTC`** |
-| [README.md](README.md) | six jump-table rows; splash sample v1.5 → v1.6; an "NVRAM Save Slots" subsection under Real-Time Clock documenting the format so third-party code can read it |
+| [BIOS.inc](BIOS.inc) | `BIOS_VERSION_MINOR` 5 → 6; the `NV_*` block and `RTC_CTRL_B_BME` from §2. Put `NV_ID` with the other `$03xx` RAM equates, above the `; RAM Card \| IO 1` banner, where 6502-DOCS's extractor collects the memory map |
+| [Kernal.asm](Kernal.asm) | six table entries; `.repeat 32` → `.repeat 26`, and its comment `; Reserved entries ($A09F-$A0FE)` → `($A0B1-$A0FE)` (6502-DOCS's extractor reads the reserved range from that comment, so a stale one is published); the header's "85 slots" stays correct; six implementations after `RtcWriteNVRAMImpl`; **the §4.3 BME fix in `ProbeRTC`** |
+| [README.md](README.md) | six jump-table rows; the jump-table count (it says 51 published and 34 reserved from `$A099`, where the source has 53 and 32 from `$A09F` today, and 59 and 26 from `$A0B1` after this); splash sample v1.5 → v1.6; an "NVRAM Save Slots" subsection under Real-Time Clock documenting the format so third-party code can read it |
 | `tests/fixtures/jumptable.json` | six pins — hand-edited, which is the entire point of that file |
 
 `tests/probe/version-agrees-with-splash.mjs` reads `BIOS_VERSION_*` from `BIOS.inc` and needs no
@@ -314,9 +355,8 @@ anything routed that way needs a short `POKE`d stub to set up `X`/`A`/`Y` first.
 **Ship a documented `SAVEMGR.BAS` example** in the README's BASIC section instead of spending ROM.
 It costs zero bytes and is a better teaching artifact than a command would be.
 
-If this should later live in ROM properly, the honest path is the one `OPTIMIZE.md` already lays
-out — move duplicated Monitor code into KERNAL and spend the reclaimed bytes deliberately. That is
-a separate change from this one.
+BASIC commands for save slots are BIOS 2.x work, where dropping the Monitor frees the room (see
+[VDP-ASSESSMENT.md](VDP-ASSESSMENT.md)). Nothing in 1.6 anticipates their syntax.
 
 ---
 
@@ -343,6 +383,17 @@ Tier 3 probes, since none of this is reachable from a BASIC prompt.
   which is what makes it worth writing first
 - a burst-mode copy leaves BME clear afterwards, so `RtcReadNVRAM` still reads one byte without
   moving the pointer
+- **the register contract:** `X` survives `NvStat`/`NvRead`/`NvWrite`/`NvErase`; `NvStat` and a
+  failing `NvRead` on a damaged slot both return `A` = `NV_BAD` and the owner ID in `Y`
+- **decimal mode:** called with `D` set, `NvWrite` then `NvRead` round-trips, and `D` is still
+  set on return
+- **interrupts:** called with `I` clear, `I` is clear again on return, and set with `I` set
+- **`NvFind` on a damaged slot:** finds it, and returns the lowest of two slots holding the same
+  owner ID
+- **the documented format matches the ROM:** a slot written by the README's `SAVEMGR.BAS` logic
+  (plain `NVRAM` statements and the BASIC checksum loop) reads `NV_VALID` through `NvStat`, and a
+  slot written by `NvWrite` validates in the BASIC routine. This keeps the published format and the
+  implementation from drifting apart.
 
 The emulator's `controlB` starts at `0x80` — TE set, BME clear — so the BME case must set the bit
 deliberately rather than relying on a fresh instance.
@@ -366,6 +417,14 @@ slot, and a corrupt one, and the assertions read rather than write.
 5. `tests/fixtures/jumptable.json` and the README table, together. `make test` green.
 6. The new Tier 3 probes.
 7. README prose: the format subsection, the splash sample, `SAVEMGR.BAS`.
+8. **Release.** Tag `v1.6`, then cut `v1.x` from the tag. Then hand off, in this order of need:
+   - **6502-EMULATOR `main`** bundles the `v1.6` `BIOS.bin` and releases 2.7.0.
+   - **6502-ASM** adds the `NV_*` equates, `RTC_CTRL_B_BME` and the six entries to the legacy
+     `6502.inc`, verified against the `v1.6` build, and copies it to every repo that ships one
+     (6502-C also gets `6502.h` declarations).
+   - **6502-DOCS** documents 1.6 before cutting its frozen `v1`.
+   - **6502-PICOCALC** embeds the `v1.6` ROM and releases a new UF2, since it is a legacy
+     machine shipping the final legacy BIOS.
 
 Commit at each green point rather than at the end.
 
@@ -400,4 +459,5 @@ unlike the optimization audit, it is the record of an API being designed, and th
 and §9 is worth having in history next to the commits that act on it.
 
 Separately: [tests/README.md](tests/README.md) still says "PLAN.md is the map" for the test suite,
-but `tests/PLAN.md` was removed in `621a9b2`. That reference is stale and unrelated to this file.
+but `tests/PLAN.md` was removed in `621a9b2`. With a root `PLAN.md` now tracked, that sentence
+points a reader at the wrong document. Fix the wording as part of 1.6.

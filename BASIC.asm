@@ -5942,6 +5942,10 @@ FnTable:
         .word   FnVpeek-1
         .byte   TOK_VSTAT
         .word   FnVstat-1
+        .byte   TOK_NVSTAT
+        .word   FnNvstat-1
+        .byte   TOK_NVFIND
+        .word   FnNvfind-1
         .byte   0
 
 ; ---------------------------------------------------------------------------
@@ -9137,6 +9141,89 @@ FnVstat:
         tay
         jmp     SngFlt
 
+; ===========================================================================
+;   S A V E   S L O T   S T A T E M E N T S
+;
+; The Kernal's NvWrite, NvRead, NvErase, NvStat and NvFind, slot for slot
+; (decision 3).  Like NVRAM, the statements raise ?NO DEVICE without an RTC
+; card, and the functions answer quietly instead: NVSTAT is 0 (free), NVFIND
+; -1 (nothing found).  The owner ID of a slot stays readable as NVRAM(slot*16).
+; ===========================================================================
+
+; NVSAVE slot, id, addr -- the 14 bytes at addr into slot 0-15, owner id 1-255
+BasCmdNvsave:
+        lda     #HW_RTC
+        jsr     ReqHw
+        lda     #NV_SLOTS
+        jsr     GetByteLim              ; X = slot
+        phx
+        jsr     GetComByt               ; X = id
+        stx     NV_ID                   ; Kernal RAM: safe across FrmEvl
+        txa
+        beq     BasNvRangeErr           ; ID 0 marks a free slot
+        jsr     ChkCom
+        jsr     EvalAddrU16             ; addr
+        lda     FAC+4
+        ldy     FAC+3
+        plx                             ; slot
+        jmp     NvWrite                 ; Nothing left for it to refuse
+
+BasNvRangeErr:
+        jmp     IqErr
+
+; NVLOAD slot, addr -- a valid slot's 14 bytes to addr; ?LOAD ERROR, and
+; nothing copied, for a free or damaged one
+BasCmdNvload:
+        lda     #HW_RTC
+        jsr     ReqHw
+        lda     #NV_SLOTS
+        jsr     GetByteLim              ; X = slot
+        phx
+        jsr     ChkCom
+        jsr     EvalAddrU16             ; addr
+        lda     FAC+4
+        ldy     FAC+3
+        plx                             ; slot
+        jsr     NvRead
+        bcc     @done
+        jmp     BasLoadErr
+@done:
+        rts
+
+; NVERASE slot -- zero all 16 bytes of slot 0-15
+BasCmdNverase:
+        lda     #HW_RTC
+        jsr     ReqHw
+        lda     #NV_SLOTS
+        jsr     GetByteLim              ; X = slot
+        jmp     NvErase
+
+; NVSTAT(slot) -- 0 free, 1 valid, 2 damaged
+FnNvstat:
+        jsr     ParenU8                 ; A = slot
+        cmp     #NV_SLOTS
+        bcs     BasNvRangeErr
+        tax
+        jsr     NvStat                  ; Carry: no RTC card
+        bcc     @status
+        lda     #NV_EMPTY
+@status:
+        tay
+        jmp     SngFlt
+
+; NVFIND(id) -- the lowest slot owned by id (0: the lowest free slot), or -1
+FnNvfind:
+        jsr     ParenU8                 ; A = id
+        jsr     NvFind                  ; X = slot; carry: none, or no RTC card
+        bcs     @none
+        txa
+        tay
+        jmp     SngFlt
+@none:
+        lda     #$FF                    ; -1
+        tay
+        jmp     GivAyf
+
 MsgFree:        .byte   " BYTES FREE  HW=",0
 MsgLoadErr:     .byte   "?LOAD ERROR",$0D,$0A,0
 MsgSaveErr:     .byte   "?SAVE ERROR",$0D,$0A,0
@@ -9231,9 +9318,9 @@ BasExtAddrTbl:
         .word   BasCmdSprite-1          ; $DA SPRITE
         .word   BasCmdScroll-1          ; $DB SCROLL
         .word   BasCmdLayer-1           ; $DC LAYER
-        .word   SynErr-1                ; $DD NVSAVE
-        .word   SynErr-1                ; $DE NVLOAD
-        .word   SynErr-1                ; $DF NVERASE
+        .word   BasCmdNvsave-1          ; $DD NVSAVE
+        .word   BasCmdNvload-1          ; $DE NVLOAD
+        .word   BasCmdNverase-1         ; $DF NVERASE
 
 ; =============================================================================
 ;   K E Y W O R D   T A B L E

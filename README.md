@@ -67,7 +67,7 @@ All hardware-dependent operations are guarded at every level — Kernal, BASIC, 
 - **Video absent** — `CLS`, `LOCATE`, `COLOR`, `SCREEN`, `VPOKE`, `VREG`, `PALETTE`, `VLOAD`, `SPRITE`, `SCROLL` and `LAYER` silently skip (arguments are still consumed); `VPEEK()` and `VSTAT()` return 0; `VSYNC` waits 2 cs; `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
 
 The two silent rows are silent because a screen and a speaker have nothing to report back — the statement had no answer to return, so there is nothing an error could say. The rows that move *data* (CompactFlash, RTC) raise `NO DEVICE` instead, because there the program asked for something it did not get. Either way the arguments are parsed and range-checked first: `LOCATE 24,0` and `VOL 16` are `ILLEGAL QUANTITY` on a machine with no screen and no sound card, so a program is wrong or right everywhere rather than only where it was written.
-- **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, and `NVRAM` (write) in BASIC print `NO DEVICE`; `NVRAM()` (read) returns 0; the save-slot routines `NvStat` through `NvFormat` set carry without touching the card
+- **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, `NVRAM` (write), `NVSAVE`, `NVLOAD` and `NVERASE` in BASIC print `NO DEVICE`; `NVRAM()` (read) and `NVSTAT()` return 0, `NVFIND()` returns -1; the save-slot routines `NvStat` through `NvFormat` set carry without touching the card
 
 ### BASIC
 
@@ -196,10 +196,13 @@ When a program stops — `END`, `STOP`, an error, Ctrl+C, or running off its las
 | `SETTIME <hh>, <mm>, <ss>` | Set the RTC time |
 | `SETDATE <cc>, <yy>, <mm>, <dd>` | Set the RTC date |
 | `NVRAM <addr>, <value>` | Write a byte to RTC NVRAM at address 0–255 |
+| `NVSAVE <slot>, <id>, <addr>` | Save the 14 bytes at `addr` in save slot 0–15 as owner `id` 1–255 (see [NVRAM Save Slots](#nvram-save-slots)) |
+| `NVLOAD <slot>, <addr>` | Copy a valid slot's 14 bytes to `addr`; `?LOAD ERROR`, copying nothing, if the slot is free or damaged |
+| `NVERASE <slot>` | Zero all 16 bytes of a save slot |
 
 #### `SAVEMGR.BAS` — save slots from BASIC
 
-BASIC has no save-slot statements, but `NVRAM` reaches every byte, and the slot format (see [NVRAM Save Slots](#nvram-save-slots)) is simple enough to implement directly. This program lists the 16 slots. Its subroutines read, write and erase a slot the same way the Kernal does, so a save written from BASIC loads in a machine-code game, and the other way round.
+`NVSAVE`, `NVLOAD`, `NVERASE`, `NVSTAT()` and `NVFIND()` are the save slots from BASIC. The format (see [NVRAM Save Slots](#nvram-save-slots)) is also simple enough to implement with `NVRAM` alone, which is what this program does: it lists the 16 slots. Its subroutines read, write and erase a slot the same way the Kernal does, so a save written from BASIC loads in a machine-code game, and the other way round.
 
 ```basic
 10 REM SAVEMGR - LIST THE NVRAM SAVE SLOTS
@@ -268,6 +271,8 @@ To save, set `S`, `I` and `D(0)`–`D(13)` and `GOSUB 2000`. To load, set `S` an
 | `INKEY` | Non-blocking key read: ASCII code or `0`. No parentheses |
 | `JOY(1)` / `JOY(2)` | Joystick port 1 or 2 bitmask (R-L-D-U-Y-X-B-A). The port is **active low** — each line is pulled up and grounded by its switch — and the value is the port read raw, so a held button is a `0` bit and an untouched stick reads `$FF`. Test a direction with `IF (JOY(1) AND 16) = 0` |
 | `NVRAM(addr)` | Read byte from RTC NVRAM (returns 0 if RTC absent) |
+| `NVSTAT(slot)` | Save slot 0–15's state: `0` free, `1` valid, `2` damaged (0 if RTC absent). Its owner ID is `NVRAM(slot*16)` |
+| `NVFIND(id)` | The lowest save slot owned by `id` (`0` finds the lowest free slot), or `-1` if there is none (or no RTC) |
 | `VPEEK(addr)` | Byte at VRAM address `addr`, 0–65535 (0 if no video card) |
 | `VSTAT(n)` | Status register `n`, 0–15 (0 if no video card). `VSTAT(4)` is 172 on a PICOVDP. Reading `VSTAT(0)` clears its flags, as reading `STAT0` does |
 | `HEX(n)` | In `PRINT`, output `n` as `$xxxx` hex; in expressions, returns `n` unchanged |

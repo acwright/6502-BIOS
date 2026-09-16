@@ -1,6 +1,7 @@
-name: with no RTC card, the clock statements report NO DEVICE and NVRAM() reads 0
-# README: "RTC absent — TIME, DATE, SETTIME, SETDATE, and NVRAM (write) in
-#          BASIC print NO DEVICE; NVRAM() (read) returns 0"
+name: with no RTC card, the clock and slot statements report NO DEVICE, and NVRAM(), NVSTAT() and NVFIND() answer
+# README: "RTC absent — TIME, DATE, SETTIME, SETDATE, NVRAM (write), NVSAVE,
+#          NVLOAD and NVERASE in BASIC print NO DEVICE; NVRAM() (read) and
+#          NVSTAT() return 0, NVFIND() returns -1"
 #         "NVRAM(addr) — Read byte from RTC NVRAM (returns 0 if RTC absent)"
 #
 # The row is two promises, not one, and they point opposite ways: the five
@@ -33,3 +34,16 @@ hw: -rtc
 # It composes like any other function: no error, no wedge, just zero.
 > PRINT NVRAM(7) + 1
 ~ ^ 1$
+
+# The save slots split the same way: the three statements raise NO DEVICE, and
+# the two functions answer — NVSTAT free, NVFIND nothing found.
+> NVSAVE 0, 1, 4096
+~ \?NO DEVICE ERROR
+> NVLOAD 0, 4096
+~ \?NO DEVICE ERROR
+> NVERASE 0
+~ \?NO DEVICE ERROR
+> PRINT NVSTAT(0)
+~ ^ 0$
+> PRINT NVFIND(0)
+~ ^-1$

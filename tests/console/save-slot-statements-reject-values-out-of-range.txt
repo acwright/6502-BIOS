@@ -1,0 +1,28 @@
+name: NVSAVE, NVLOAD, NVERASE, NVSTAT and NVFIND reject a slot or an ID outside their range
+# README: "NVSAVE <slot>, <id>, <addr> — slot 0–15, owner id 1–255",
+#         "NVLOAD <slot>, <addr>", "NVERASE <slot>", "NVSTAT(slot)",
+#         "NVFIND(id)"
+#
+# ID 0 is how a free slot is marked, so saving under it would be an erase that
+# left a checksum behind; the Kernal refuses it, and BASIC says so instead of
+# doing nothing.
+mode: basic
+
+> NVSAVE 16, 1, 4096
+~ \?ILLEGAL QUANTITY ERROR
+> NVSAVE 0, 0, 4096
+~ \?ILLEGAL QUANTITY ERROR
+> NVSAVE 0, 256, 4096
+~ \?ILLEGAL QUANTITY ERROR
+> NVSAVE 0, 1, 65536
+~ \?ILLEGAL QUANTITY ERROR
+> NVLOAD 16, 4096
+~ \?ILLEGAL QUANTITY ERROR
+> NVLOAD 0, -1
+~ \?ILLEGAL QUANTITY ERROR
+> NVERASE 16
+~ \?ILLEGAL QUANTITY ERROR
+> PRINT NVSTAT(16)
+~ \?ILLEGAL QUANTITY ERROR
+> PRINT NVFIND(256)
+~ \?ILLEGAL QUANTITY ERROR

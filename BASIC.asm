@@ -8483,9 +8483,11 @@ BasCmdLocate:
         jmp     VideoSetCursor
 
 ; COLOR fg[, bg[, border]]
-;   The pen for later output, through VideoSetColor, which also sets the border
-;   to bg.  bg defaults to the current pen's.  A border then writes register 7
-;   again as fg<<4 | border.
+;   The pen for later output.  bg defaults to the current pen's.  Every argument
+;   is read before anything is set, so an error leaves pen and border alone.
+;   Without a border, VideoSetColor: the border follows bg.  With one, the pen
+;   through VideoSetPen and register 7 = fg<<4 | border in one write — setting
+;   bg there first would show it for part of every frame the loop runs in.
 BasCmdColor:
         lda     #16                     ; colours 0-15
         jsr     GetByteLim              ; X = fg
@@ -8506,22 +8508,23 @@ BasCmdColor:
 @bg:
         stx     BAS_TMP1
         pla
-        pha
         ora     BAS_TMP1
-        jsr     VideoSetColor
+        pha                             ; the pen, across the border's FrmEvl
         jsr     ChrGot
         cmp     #','
-        bne     @done
+        bne     @pen
         lda     #16
         jsr     GetComByteLim           ; X = border
-        stx     BAS_TMP1
         pla
+        jsr     VideoSetPen             ; keeps A, X and Y
+        stx     BAS_TMP1
+        and     #$F0
         ora     BAS_TMP1
         ldx     #VDP_COLOR
         jmp     VdpWriteRegImpl         ; Skips without a card
-@done:
+@pen:
         pla
-        rts
+        jmp     VideoSetColor
 
 ; VOL n
 BasCmdVol:

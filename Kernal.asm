@@ -1554,6 +1554,24 @@ SidSetVolumeImpl:
 @SidSetVolumeNone:
   rts
 
+; VideoSetPen — Set the pen for later output, and nothing else (internal)
+; Input: A = fg<<4 | bg.  VID_PEN = A, after bringing the console up.  Register
+; 7 is not written, so a caller with a border of its own (COLOR fg,bg,border)
+; writes it once instead of after VideoSetColor has shown the background there
+; for part of a frame.  The one exception is the console's first use: the
+; bring-up (InitVideo + clear) sets the border from the old pen before A is
+; stored.
+; Skips silently if no video card is fitted
+; Preserves: A, X, Y
+; Modifies: Flags
+VideoSetPen:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VideoSetPenNone
+  jsr VideoConsoleReady
+  sta VID_PEN
+@VideoSetPenNone:
+  rts
+
 ; VideoSetColor — Set the pen for later output, and the border
 ; Input: A = fg<<4 | bg.  VID_PEN = A, and register 7 = A, so the border follows
 ; the background.  Characters already on screen keep their colours.
@@ -1562,8 +1580,7 @@ SidSetVolumeImpl:
 VideoSetColorImpl:
   bit HW_PRESENT                ; Video is bit 7 — see VideoClear
   bpl @VideoSetColorNone
-  jsr VideoConsoleReady
-  sta VID_PEN
+  jsr VideoSetPen
   sta VC_REG                    ; Data byte
   lda #($80 | VDP_COLOR)
   sta VC_REG

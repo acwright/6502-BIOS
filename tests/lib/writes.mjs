@@ -41,7 +41,7 @@ const hex = (n, width = 4) => `$${n.toString(16).toUpperCase().padStart(width, '
 // Work out what value landed at `address`, from the instruction that put it
 // there. Throws rather than guessing: an unrecognised store means the
 // attribution is wrong, and a wrong value is worse than no value.
-async function valueWritten(m, registers, address) {
+export async function valueWritten(m, registers, address) {
   const start = (registers.PC - STORE_WIDTH) & 0xffff
   const [opcode, lo, hi] = await m.read(start, STORE_WIDTH)
   const store = STORES.get(opcode)

@@ -546,6 +546,7 @@ BasColdInit:
 BasBanner:
         jsr     VideoClear              ; a fresh screen (does nothing without video)
         jsr     BasPrintCRLF
+        jsr     BasLogo                 ; on a video console only
         lda     #<MsgHeader
         ldy     #>MsgHeader
         jsr     BasPrintStr
@@ -617,6 +618,77 @@ BasBanner:
 
 HwNames:
         .byte   "RAM",0,"RTC",0,"CF",0,"SER",0,"VIA",0,"SID",0,"VDP",0
+
+; =============================================================================
+;   B a s L o g o
+; =============================================================================
+; The colour "6502" above the header, on a video console only: four rows of
+; half-block digits, each row in its own colour from palette row 0 on the
+; pen's background, then a blank line.  The pen is put back afterwards.
+;
+; LogoRle, a row at a time: a foreground colour (1-15), then runs of
+; (character index << 6) | count (count 1-63), then $00 to end the row.  A
+; colour of $00 ends the table.  The indices are LogoChars'.
+BasLogo:
+        lda     IO_MODE
+        lsr     a                       ; bit 0: 1 = serial
+        bcs     @done
+        bit     HW_PRESENT              ; HW_VID is bit 7
+        bpl     @done
+        lda     VID_PEN
+        pha
+        ldx     #0
+@row:
+        lda     LogoRle,x
+        beq     @end
+        inx
+        asl     a                       ; the band's colour as foreground
+        asl     a
+        asl     a
+        asl     a
+        sta     INDEX
+        pla
+        pha
+        and     #$0F                    ; on the pen's background
+        ora     INDEX
+        jsr     VideoSetColor           ; keeps X and Y
+@run:
+        lda     LogoRle,x
+        inx
+        tay
+        beq     @eol
+        and     #$3F
+        sta     INDEX                   ; the count
+        tya
+        rol     a                       ; b7:6 round into b1:0
+        rol     a
+        rol     a
+        and     #$03
+        tay
+        lda     LogoChars,y
+@char:
+        jsr     VideoChroutRaw          ; keeps A, X and Y
+        dec     INDEX
+        bne     @char
+        bra     @run
+@eol:
+        jsr     BasPrintCRLF            ; Chrout keeps X
+        bra     @row
+@end:
+        pla
+        jsr     VideoSetColor
+        jmp     BasPrintCRLF
+@done:
+        rts
+
+LogoChars:
+        .byte   ' ', $DB, $DC, $DF      ; space, full block, lower half, upper half
+LogoRle:
+        .byte   $06,$0C,$41,$C2,$01,$41,$C2,$01,$41,$C1,$41,$01,$C2,$41,$00 ; █▀▀ █▀▀ █▀█ ▀▀█  dark red
+        .byte   $08,$0C,$41,$82,$01,$41,$82,$01,$41,$01,$41,$01,$82,$41,$00 ; █▄▄ █▄▄ █ █ ▄▄█  medium red
+        .byte   $0A,$0C,$41,$01,$41,$03,$41,$01,$41,$01,$41,$01,$41,$00     ; █ █   █ █ █ █    dark yellow
+        .byte   $02,$0C,$41,$81,$41,$01,$82,$41,$01,$41,$81,$41,$01,$41,$82,$00 ; █▄█ ▄▄█ █▄█ █▄▄  medium green
+        .byte   $00
 
 ; =============================================================================
 ;   B a s P r i n t O K

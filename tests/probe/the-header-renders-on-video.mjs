@@ -1,7 +1,7 @@
 // The header BASIC prints at boot, as a user with a video card sees it.
 //
 // The same three lines as on a serial console — title, free memory, fitted
-// cards — on a screen BASIC cleared first, left aligned, with the prompt after
+// cards — on a screen BASIC cleared first, under the colour logo, left aligned, with the prompt after
 // them. The hardware line names the video card here, which the serial profile's
 // machine does not have.
 //
@@ -43,8 +43,11 @@ export async function run(m) {
   m.assertEqual(lines[title + 2], hardwareLine(present), 'the hardware line')
   m.assertMatch(lines[title + 2], /\bVDP$/, 'the hardware line names the video card')
 
-  // Cleared before the header, so nothing from before the boot is left above it.
-  for (let row = 0; row < title; row++) {
+  // Cleared before the header, so nothing from before the boot is left above
+  // it: a blank row, the logo's four (the-header-logo-draws-in-colour checks
+  // what is in them), and a blank row.
+  m.assertEqual(title, 6, 'the title\'s row, under the logo')
+  for (const row of [0, 5]) {
     m.assertEqual(lines[row], '', `row ${row} above the header`)
   }
   m.assert(

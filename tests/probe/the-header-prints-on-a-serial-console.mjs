@@ -40,6 +40,11 @@ export async function run(m) {
   const ok = lines.findIndex((line) => line === 'OK')
   m.assert(ok > title + 2, `the prompt came before the header had finished:\n${boot.output}`)
 
+  // The logo is drawn on a video console only: nothing but a blank line comes
+  // before the title here, and no block characters anywhere.
+  m.assert(lines.slice(0, title).every((line) => line === ''), `something came before the title:\n${boot.output}`)
+  m.assertNoMatch(boot.output, /[\xdb\xdc\xdf]/, 'the logo\'s block characters')
+
   // 1.x's BASIC banner is gone, and so is its splash and boot menu.
   m.assertNoMatch(boot.output, /6502 BASIC/, 'the 1.x BASIC banner')
   m.assertNoMatch(boot.output, /ESC=MONITOR/, 'the 1.x boot menu')

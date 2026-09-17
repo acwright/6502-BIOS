@@ -4,7 +4,7 @@
 // and reaches the outside world two ways:
 //
 //   KernalVersion ($A07B)   what a program reads
-//   BASIC's header string   "6502 BIOS v2.0", what a user reads
+//   BASIC's header string   "AC6502 BIOS v2.0", what a user reads
 //
 // The header is built from the equates with .sprintf, so today they cannot
 // drift. This case is what keeps it that way: a header string typed out by hand
@@ -14,7 +14,7 @@
 export const name = 'the header version and KernalVersion agree'
 
 const KERNAL_VERSION = 0xa07b
-const HEADER_PREFIX = '6502 BIOS v'
+const HEADER_PREFIX = 'AC6502 BIOS v'
 
 export async function run(m) {
   // Through the published jump slot, not the implementation behind it. The
@@ -35,7 +35,7 @@ export async function run(m) {
   m.assertEqual(text.indexOf(HEADER_PREFIX, at + 1), -1, 'a second copy of the header string in the ROM')
 
   const header = text.slice(at, text.indexOf('\0', at))
-  const match = /^6502 BIOS v(\d+)\.(\d+)$/.exec(header)
+  const match = /^AC6502 BIOS v(\d+)\.(\d+)$/.exec(header)
   m.assert(match, `the header string is malformed: ${JSON.stringify(header)}`)
 
   m.assertEqual(

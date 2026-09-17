@@ -11,7 +11,7 @@
 // print only `OK` and keep `A`; one that installed an empty program would list
 // nothing.
 
-import { coldBoot, BASIC_READY, HEADER } from '../lib/boot.mjs'
+import { coldBoot, BASIC_READY, HEADER, FREE_LINE } from '../lib/boot.mjs'
 
 export const name = 'a reset shows the header, keeps the program and clears the variables'
 
@@ -27,6 +27,7 @@ export async function run(m) {
   // The reset button: RAM is kept.
   const boot = await coldBoot(m, { cold: false, expect: BASIC_READY })
   m.assertMatch(boot.output, HEADER, 'the header after the reset')
+  m.assertMatch(boot.output, FREE_LINE, 'the header\'s second line after the reset')
 
   const { output: listed } = await m.send('LIST\r', '^OK')
   m.assertMatch(listed, /^10 PRINT "KEPT"$/m, 'the program after the reset')

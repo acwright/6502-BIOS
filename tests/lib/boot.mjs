@@ -11,7 +11,20 @@
 // The header's first line. Multiline, because it doubles as an assertion
 // against a whole boot's output; `expectFrom` takes the pattern's source and
 // applies its own line-anchor translation, so the flag is ignored on that path.
-export const HEADER = /^6502 BIOS v(\d+)\.(\d+)$/m
+export const HEADER = /^AC6502 BIOS v(\d+)\.(\d+)$/m
+
+// The header's second line. "BASIC v2.0" is a nod to the classic machines'
+// BASIC V2, not this ROM's version, so it is literal here and in the ROM.
+export const FREE_LINE = /^BASIC v2\.0 (\d+) BYTES FREE$/m
+
+// What the second line says on a machine whose program is what it is now:
+// MEMSIZ - VARTAB, as MEM counts it.
+const BAS_VARTAB = 0x035f
+const BAS_MEMSIZ = 0x0367
+export async function freeLine(m) {
+  const free = (await m.peekWord(BAS_MEMSIZ)) - (await m.peekWord(BAS_VARTAB))
+  return `BASIC v2.0 ${free} BYTES FREE`
+}
 
 // What to wait for, as opposed to what to assert afterwards. BASIC prints the
 // whole header before the prompt, so a wait that stopped at its first line

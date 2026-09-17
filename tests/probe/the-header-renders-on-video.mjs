@@ -10,7 +10,7 @@
 // the screen, which is a different failure — a correct string nobody ever draws
 // would pass that case and fail every user.
 
-import { hardwareLine } from '../lib/boot.mjs'
+import { hardwareLine, freeLine } from '../lib/boot.mjs'
 
 export const name = 'the header renders on a video console'
 export const profile = 'video'
@@ -33,13 +33,13 @@ export async function run(m) {
   }
   m.assert(lines, `the prompt never appeared within ${STEPS * STEP_CYCLES} cycles`)
 
-  const title = lines.findIndex((line) => line.startsWith('6502 BIOS v'))
+  const title = lines.findIndex((line) => line.startsWith('AC6502 BIOS v'))
   m.assert(title >= 0, `the header is not on screen. Screen:\n${lines.join('\n')}`)
 
   const regs = await m.call6502(0xa07b)
   const present = await m.peek(HW_PRESENT)
-  m.assertEqual(lines[title], `6502 BIOS v${regs.A}.${regs.X}`, 'the header title')
-  m.assertMatch(lines[title + 1], /^\d+ BYTES FREE$/, 'the line after the title')
+  m.assertEqual(lines[title], `AC6502 BIOS v${regs.A}.${regs.X}`, 'the header title')
+  m.assertEqual(lines[title + 1], await freeLine(m), 'the line after the title')
   m.assertEqual(lines[title + 2], hardwareLine(present), 'the hardware line')
   m.assertMatch(lines[title + 2], /\bVDP$/, 'the hardware line names the video card')
 

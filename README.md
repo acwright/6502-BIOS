@@ -28,11 +28,11 @@ The probe-and-boot sequence is:
 5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)
 6. **Boot vector check** — if `BOOT_VECTOR` (`$035B`) is non-zero, jump to the address stored there (cartridge or external program takes over). Otherwise continue to normal boot
 7. **Console check** — verify that at least video or serial is present. If neither is found and no boot vector was set, the CPU halts (interactive boot requires a console)
-8. **BASIC** — every reset is a cold BASIC start: the header prints, variables are cleared, and a program at `$0800` is kept. On video the screen is cleared and a colour "6502" logo is drawn above the header; a serial console gets the text alone, left aligned:
+8. **BASIC** — every reset is a cold BASIC start: the header prints, variables are cleared, and a program at `$0800` is kept. On video the screen is cleared and a colour "AC6502" logo is drawn above the header; a serial console gets the text alone, left aligned:
 
 ```
-6502 BIOS v2.0
-30718 BYTES FREE
+AC6502 BIOS v2.0
+BASIC v2.0 30718 BYTES FREE
 RAM RTC CF SER VIA SID VDP
 
 OK

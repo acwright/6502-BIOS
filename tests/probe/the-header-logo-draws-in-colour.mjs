@@ -1,4 +1,4 @@
-// VDP-PLAN decision 6: on a video console the header starts with a "6502"
+// VDP-PLAN decision 6: on a video console the header starts with an "AC6502"
 // wordmark in half-block characters, four rows, each row a band of its own
 // colour from palette row 0 — dark red, medium red, dark yellow, medium green —
 // on the pen's background, centred, with a blank line under it. The pen is
@@ -19,13 +19,13 @@ const COLOR = 0x07
 const PEN = 0x1f // KernalInit's pen: black on white
 
 const ROWS = [
-  // first row 1, starting at column 12
-  ['█▀▀ █▀▀ █▀█ ▀▀█', 6], //  dark red
-  ['█▄▄ █▄▄ █ █ ▄▄█', 8], //  medium red
-  ['█ █   █ █ █ █', 10], //   dark yellow
-  ['█▄█ ▄▄█ █▄█ █▄▄', 2], //  medium green
+  // first row 1, starting at column 8: 23 columns, centred in 40
+  ['█▀█ █▀▀ █▀▀ █▀▀ █▀█ ▀▀█', 6], //  dark red
+  ['█▄█ █   █▄▄ █▄▄ █ █ ▄▄█', 8], //  medium red
+  ['█ █ █   █ █   █ █ █ █', 10], //   dark yellow
+  ['█ █ █▄▄ █▄█ ▄▄█ █▄█ █▄▄', 2], //  medium green
 ]
-const LEFT = 12
+const LEFT = 8
 const CP437 = { ' ': 0x20, '█': 0xdb, '▄': 0xdc, '▀': 0xdf }
 
 export async function run(m) {
@@ -62,7 +62,7 @@ export async function run(m) {
 
   // A blank line, then the title in the default pen.
   m.assertBytes(row(names, 5), Array(40).fill(0x20), 'the line under the logo')
-  const title = lines.findIndex((line) => line.startsWith('6502 BIOS v'))
+  const title = lines.findIndex((line) => line.startsWith('AC6502 BIOS v'))
   m.assertEqual(title, 6, 'the title\'s row')
   m.assertEqual(lines[title + 2].trimEnd(), hardwareLine(await m.peek(HW_PRESENT)), 'the hardware line')
   m.assertBytes(row(attributes, title), Array(40).fill(PEN), 'the title\'s colours')

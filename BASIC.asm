@@ -550,8 +550,10 @@ BasBanner:
         lda     #<MsgHeader
         ldy     #>MsgHeader
         jsr     BasPrintStr
-        jsr     BasPrintCRLF
-        ; Print "<n> BYTES FREE" line.
+        lda     #<MsgBasicV2
+        ldy     #>MsgBasicV2
+        jsr     BasPrintStr
+        ; Print "BASIC v2.0 <n> BYTES FREE" line.
         sec
         lda     BAS_MEMSIZ
         sbc     BAS_VARTAB
@@ -559,10 +561,10 @@ BasBanner:
         lda     BAS_MEMSIZ+1
         sbc     BAS_VARTAB+1
         jsr     GivAyf
-        ; Print the byte count left-aligned: Fout always emits a leading
-        ; sign character (' ' for positive, '-' for negative).  For the
-        ; header we skip that leading space so the number lines up with
-        ; the left edge of the title above it.
+        ; Print the byte count: Fout always emits a leading sign character
+        ; (' ' for positive, '-' for negative).  For the header we skip that
+        ; leading space, so one space, MsgBasicV2's, separates the number
+        ; from "BASIC v2.0".
         jsr     Fout                    ; (Y,A) -> NUL-terminated buffer
         sta     INDEX
         sty     INDEX+1
@@ -622,9 +624,10 @@ HwNames:
 ; =============================================================================
 ;   B a s L o g o
 ; =============================================================================
-; The colour "6502" above the header, on a video console only: four rows of
-; half-block digits, each row in its own colour from palette row 0 on the
-; pen's background, then a blank line.  The pen is put back afterwards.
+; The colour "AC6502" above the header, on a video console only: four rows of
+; half-block letters and digits, 23 columns centred in 40, each row in its own
+; colour from palette row 0 on the pen's background, then a blank line.  The
+; pen is put back afterwards.
 ;
 ; LogoRle, a row at a time: a foreground colour (1-15), then runs of
 ; (character index << 6) | count (count 1-63), then $00 to end the row.  A
@@ -684,10 +687,10 @@ BasLogo:
 LogoChars:
         .byte   ' ', $DB, $DC, $DF      ; space, full block, lower half, upper half
 LogoRle:
-        .byte   $06,$0C,$41,$C2,$01,$41,$C2,$01,$41,$C1,$41,$01,$C2,$41,$00 ; █▀▀ █▀▀ █▀█ ▀▀█  dark red
-        .byte   $08,$0C,$41,$82,$01,$41,$82,$01,$41,$01,$41,$01,$82,$41,$00 ; █▄▄ █▄▄ █ █ ▄▄█  medium red
-        .byte   $0A,$0C,$41,$01,$41,$03,$41,$01,$41,$01,$41,$01,$41,$00     ; █ █   █ █ █ █    dark yellow
-        .byte   $02,$0C,$41,$81,$41,$01,$82,$41,$01,$41,$81,$41,$01,$41,$82,$00 ; █▄█ ▄▄█ █▄█ █▄▄  medium green
+        .byte   $06,$08,$41,$C1,$41,$01,$41,$C2,$01,$41,$C2,$01,$41,$C2,$01,$41,$C1,$41,$01,$C2,$41,$00 ; █▀█ █▀▀ █▀▀ █▀▀ █▀█ ▀▀█  dark red
+        .byte   $08,$08,$41,$81,$41,$01,$41,$03,$41,$82,$01,$41,$82,$01,$41,$01,$41,$01,$82,$41,$00     ; █▄█ █   █▄▄ █▄▄ █ █ ▄▄█  medium red
+        .byte   $0A,$08,$41,$01,$41,$01,$41,$03,$41,$01,$41,$03,$41,$01,$41,$01,$41,$01,$41,$00         ; █ █ █   █ █   █ █ █ █    dark yellow
+        .byte   $02,$08,$41,$01,$41,$01,$41,$82,$01,$41,$81,$41,$01,$82,$41,$01,$41,$81,$41,$01,$41,$82,$00 ; █ █ █▄▄ █▄█ ▄▄█ █▄█ █▄▄  medium green
         .byte   $00
 
 ; =============================================================================
@@ -9539,7 +9542,12 @@ ErrorMessages:
 ; Built from the version equates rather than typed, so the header and
 ; KernalVersion ($A07B) cannot disagree about which ROM this is.
 MsgHeader:
-        .byte   .sprintf("6502 BIOS v%d.%d", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR),0
+        .byte   .sprintf("AC6502 BIOS v%d.%d", BIOS_VERSION_MAJOR, BIOS_VERSION_MINOR),0
+
+; The second line's lead-in.  A nod to the BASIC V2 of the classic machines,
+; not this ROM's version, so it is typed rather than built from the equates.
+MsgBasicV2:
+        .byte   $0D,$0A,"BASIC v2.0 ",0
 
 MsgBytesFreeNL:
         .byte   " BYTES FREE",$0D,$0A,0

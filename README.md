@@ -747,7 +747,7 @@ make test                # build the ROM and run everything
 make test-one T=gosub    # just the cases matching /gosub/
 ```
 
-It needs Node 22 or newer and the 6502 Emulator 3.0.1 or later, whose `6502` CLI the suite runs with the PICOVDP card and serial flow control; `SIXTY502` points it at another build, such as the release CI pins, and `tests/README.md` says how to make one. `tests/README.md` covers writing a case, and every fix to this ROM is expected to arrive with one that fails without it.
+It needs Node 22 or newer and the AC6502 Emulator (6502-EMULATOR 3.0.1 or later), whose `6502` CLI the suite runs with the PICOVDP card and serial flow control; `SIXTY502` points it at another build, such as the release CI pins, and `tests/README.md` says how to make one. `tests/README.md` covers writing a case, and every fix to this ROM is expected to arrive with one that fails without it.
 
 ## Programming EEPROM
 

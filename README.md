@@ -159,7 +159,7 @@ Two rules for `.prg` files:
 |---------|--------|
 | `CLS` | Clear the screen and reset cursor to (0, 0) |
 | `LOCATE <row>, <col>` | Move cursor to row 0–23, column 0–39 |
-| `COLOR <fg>[, <bg>[, <border>]]` | Set the pen for text printed next (0–15 each); `bg` defaults to the current background. The border follows `bg` unless `border` is given |
+| `COLOR <fg>[, <bg>[, <border>]]` | Set the pen for text printed next (0–15 each); `bg` defaults to the current background. The border follows `bg` unless `border` is given, and is written once — the border asked for is the only one shown, even when the `COLOR` is what brings the console up |
 | `SCREEN <n>` | `0` the Text console (`InitVideo` + `CLS`); `1` Compact, `2` Graphics, `3` Full. `1`–`3` share one layout: layer 0 names `$0000`, attributes `$0800`, patterns `$4000` (4bpp, per-cell attributes, on); layer 1 names `$1000`, attributes `$1800`, patterns `$8000` (4bpp, off); sprite attributes `$2000`, patterns `$C000` (64 sprites, 4bpp, all at Y = 240). The tables at `$0000–$1FFF` are cleared |
 | `VPOKE <addr>, <value>` | Write a byte to VRAM, `addr` 0–65535 |
 | `VREG <reg>, <value>` | Write VDP register `reg` 0–127 (through `VdpWriteReg`) |
@@ -325,9 +325,11 @@ The console is a [6502-PICOVDP](https://github.com/acwright/6502-PICOVDP) in its
 
 **The console comes up on first use.** `KernalInit` leaves the card as its own reset leaves it — the legacy submode, where a program that writes `M1`/`M2`/`M3` and its tables itself gets what a TMS9918 gave it. The first `Chrout`, `VideoClear`, `VideoSetCursor`, `VideoGetCursor` or `VideoSetColor` calls `InitVideo` and clears the screen. BASIC's header is that first output.
 
-**`InitVideo`** writes the Text layout with the display off — name table `$0000`, attributes `$0400`, pattern table `$0800`, palette at `$FC00` (`PALBASE` = `$3F`), layer 1 and sprites off — then writes `FONT` (`$30`) for font `$00` and waits for the vertical blank at which the card copies it into `$0800` (§7), restores palette row 0 (the sixteen TMS9918 colours), sets the border from the pen and turns the display on. It does not clear the screen. It is also the way back to text for a program that changed modes, moved tables or overwrote the glyphs.
+**`InitVideo`** writes the Text layout with the display off — name table `$0000`, attributes `$0400`, pattern table `$0800`, palette at `$FC00` (`PALBASE` = `$3F`), layer 1 and sprites off — then writes `FONT` (`$30`) for font `$00` and waits for the vertical blank at which the card copies it into `$0800` (§7), restores palette row 0 (the sixteen TMS9918 colours), sets the border to `VID_BORDER` and turns the display on. All of that happens with the display off, and a blanked card shows the border colour over the whole screen, so the border written here is the one the console is about to want: a caller with a border of its own sets `VID_BORDER` before the console comes up. It does not clear the screen. It is also the way back to text for a program that changed modes, moved tables or overwrote the glyphs.
 
 **Per-cell colour.** Every character is written with an attribute byte, `fg<<4 | bg`, from the pen `VID_PEN`. `COLOR` and `VideoSetColor` set the pen, so text already on screen keeps its colours; `CLS` fills the whole screen with the pen. The pen survives `NEW`, `RUN`, `CLR` and errors; only `KernalInit` resets it, to `$1F` (black on white).
+
+**The border.** Register 7 is write-only, so the Kernal keeps the border it holds in `VID_BORDER` — the pen's background, unless `COLOR fg,bg,border` gave one of its own. `InitVideo` writes it, which is what puts the border back when a program returns to the Text console, and what the console's first use shows while it comes up. The pen and the border are both stored before that bring-up, so `COLOR 2,5,12` on a console that has not been used yet comes up in border 12 over a screen of pen `$25` — one colour, not the old one and then the new one.
 
 **Hardware scroll.** Scrolling moves layer 0's origin (`L0SCRY`) down a row and clears the row that becomes the bottom line; nothing is copied. `VID_TOP` is the name-table row shown at the top, so a cell's address is `((row + VID_TOP) mod 24) × 40 + column`. `VideoGetCursor` still returns screen coordinates.
 
@@ -350,6 +352,7 @@ The video variables, after `NV_ID`:
 | `$0395` | `VDP_CAPS` | `STAT6` at boot, `$00` if no PICOVDP |
 | `$0396–$0397` | `VDP_L0CTRL_SHADOW`, `VDP_L1CTRL_SHADOW` | What was last written to the write-only `L0CTRL`/`L1CTRL` |
 | `$0398–$039B` | `VDP_P0`–`VDP_P3` | Parameters for `VdpSprite` and `VdpSetScroll` |
+| `$039C` | `VID_BORDER` | The border the console shows, register 7's low nibble; `$0F` from `KernalInit` |
 
 ### Keyboard
 
@@ -472,7 +475,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack — and therefore BASIC's `GOSUB` and `FOR` frames, which are pushed onto it |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039B`; `$039C–$03FF` unassigned) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039C`; `$039D–$03FF` unassigned) |
 | `$0400–$04FF` | 256B | `BAS_LINBUF` — the raw input line, as typed |
 | `$0500–$05FF` | 256B | `BAS_TOKBUF` — tokenizing scratch |
 | `$0600–$07FF` | 512B | `FS_SECTOR_BUF` — CompactFlash sector buffer, overwritten by **any** filesystem call (`LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT`) |
@@ -497,7 +500,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 | `$A00C` | `BufferSize` | Return number of bytes waiting in buffer |
 | `$A00F` | `SetIOMode` | Set `IO_MODE`: `A`=0 (video) or 1 (serial) |
 | `$A012` | `GetIOMode` | Get `IO_MODE` → `A` |
-| `$A015` | `InitVideo` | Put the PICOVDP in the Text-mode console — writes the registers (40×24, per-cell colour, name table `$0000`, attributes `$0400`), has the card reload its built-in font into the pattern table at `$0800` (`VdpLoadFont`, which waits up to a frame) **and** restores palette row 0. Does not clear the screen |
+| `$A015` | `InitVideo` | Put the PICOVDP in the Text-mode console — writes the registers (40×24, per-cell colour, name table `$0000`, attributes `$0400`), has the card reload its built-in font into the pattern table at `$0800` (`VdpLoadFont`, which waits up to a frame) **and** restores palette row 0, and sets the border to `VID_BORDER`. Does not clear the screen |
 | `$A018` | `VideoClear` | Clear the screen to spaces in the current pen and home the cursor |
 | `$A01B` | `VideoPutChar` | Write character at current cursor position |
 | `$A01E` | `VideoSetCursor` | Set cursor: `X`=column (0–39), `Y`=row (0–23) |

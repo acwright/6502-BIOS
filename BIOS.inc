@@ -119,7 +119,7 @@ PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a progra
 ; Kernal NVRAM save-slot variables ($0390-$03FF)
 NV_ID               := $0390             ; Owner ID input for NvWrite ($00 is refused — that is NvErase)
 
-; Kernal video variables ($0391-$039B)
+; Kernal video variables ($0391-$039C)
 VID_PEN             := $0391             ; Attribute byte for new output, fg<<4 | bg ($1F from KernalInit)
 VID_TOP             := $0392             ; Name-table row shown at the top of the screen (0-23); L0SCRY = VID_TOP * 8
 VID_MODE            := $0393             ; $00 = console not set up since KernalInit (card in the legacy submode);
@@ -133,6 +133,10 @@ VDP_P0              := $0398             ; Parameter block for VDP entries that 
 VDP_P1              := $0399
 VDP_P2              := $039A
 VDP_P3              := $039B
+VID_BORDER          := $039C             ; The border the console shows, register 7's low nibble ($0F from
+                                         ;   KernalInit, matching VID_PEN's background).  Set before the console
+                                         ;   is brought up, so InitVideo's border write is the one that was asked
+                                         ;   for and COLOR fg,bg,border never shows another colour on the way
 
 FS_SECTOR_BUF       := $0600             ; $0600-$07FF - 512-byte sector buffer (overlaps BAS_TOKBUF/BAS_STRBUF)
 

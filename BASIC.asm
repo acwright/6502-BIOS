@@ -8486,8 +8486,10 @@ BasCmdLocate:
 ;   The pen for later output.  bg defaults to the current pen's.  Every argument
 ;   is read before anything is set, so an error leaves pen and border alone.
 ;   Without a border, VideoSetColor: the border follows bg.  With one, the pen
-;   through VideoSetPen and register 7 = fg<<4 | border in one write — setting
-;   bg there first would show it for part of every frame the loop runs in.
+;   through VideoSetPenBorder and register 7 = fg<<4 | border in one write —
+;   setting bg there first would show it for part of every frame the loop runs
+;   in, and so would the console's first use, which blanks the screen to
+;   VID_BORDER while it comes up.
 BasCmdColor:
         lda     #16                     ; colours 0-15
         jsr     GetByteLim              ; X = fg
@@ -8516,7 +8518,7 @@ BasCmdColor:
         lda     #16
         jsr     GetComByteLim           ; X = border
         pla
-        jsr     VideoSetPen             ; keeps A, X and Y
+        jsr     VideoSetPenBorder       ; X = border; keeps A, X and Y
         stx     BAS_TMP1
         and     #$F0
         ora     BAS_TMP1

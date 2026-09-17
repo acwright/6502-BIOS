@@ -934,6 +934,8 @@ KernalInitImpl:
   stz CF_DISK                   ; Reset current CF disk bank to 0
   lda #$1F                      ; Black on white.  Only KernalInit resets the
   sta VID_PEN                   ;   pen: NEW, RUN, CLR and errors keep it
+  and #$0F                      ; The border starts on the pen's background
+  sta VID_BORDER
 
   jsr InitBuffer                ; Initialize the input buffer (RAM-only, no hardware)
 
@@ -1230,9 +1232,11 @@ InitVideoImpl:
   inx
   cpx #32
   bne @InitVideoPalette
-  lda VID_PEN                   ; Border = the pen's background
-  ldx #VDP_COLOR
-  jsr VdpSetReg
+  lda VID_PEN                   ; Register 7: the pen's foreground, over the
+  and #$F0                      ;   border VID_BORDER asks for.  The display is
+  ora VID_BORDER                ;   off here, so the whole screen is that colour
+  ldx #VDP_COLOR                ;   until it comes back on — a caller that is
+  jsr VdpSetReg                 ;   about to set a border sets VID_BORDER first
   lda #$40                      ; Display on
   ldx #VDP_MODE1
   jsr VdpSetReg
@@ -1657,22 +1661,40 @@ SidSetVolumeImpl:
 @SidSetVolumeNone:
   rts
 
+; VideoSetPenBorder — Set the pen and the border it will show (internal)
+; Input: A = fg<<4 | bg, X = border (0-15).  VID_PEN and VID_BORDER are stored
+; before the console is brought up, so the console's first use blanks the screen
+; to the border that was asked for and clears it in the pen that was asked for,
+; rather than showing the old ones on the way.  Register 7 is not written here:
+; the caller writes it, once.
+; Skips silently if no video card is fitted
+; Preserves: A, X, Y
+; Modifies: Flags
+VideoSetPenBorder:
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl @VideoSetPenNone
+  sta VID_PEN
+  stx VID_BORDER
+  jmp VideoConsoleReady         ; Preserves A, X and Y
+@VideoSetPenNone:
+  rts
+
 ; VideoSetPen — Set the pen for later output, and nothing else (internal)
-; Input: A = fg<<4 | bg.  VID_PEN = A, after bringing the console up.  Register
-; 7 is not written, so a caller with a border of its own (COLOR fg,bg,border)
-; writes it once instead of after VideoSetColor has shown the background there
-; for part of a frame.  The one exception is the console's first use: the
-; bring-up (InitVideo + clear) sets the border from the old pen before A is
-; stored.
+; Input: A = fg<<4 | bg.  VID_PEN = A and the border follows the background.
+; Register 7 is not written, so a caller with a border of its own (COLOR
+; fg,bg,border) enters at VideoSetPenBorder and writes it once instead of after
+; VideoSetColor has shown the background there for part of a frame.
 ; Skips silently if no video card is fitted
 ; Preserves: A, X, Y
 ; Modifies: Flags
 VideoSetPen:
-  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
-  bpl @VideoSetPenNone
-  jsr VideoConsoleReady
-  sta VID_PEN
-@VideoSetPenNone:
+  phx                           ; The caller's X, which this owes it back
+  pha
+  and #$0F                      ; The border follows the pen's background
+  tax
+  pla
+  jsr VideoSetPenBorder
+  plx
   rts
 
 ; VideoSetColor — Set the pen for later output, and the border

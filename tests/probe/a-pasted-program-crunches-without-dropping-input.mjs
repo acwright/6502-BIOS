@@ -9,21 +9,15 @@
 //
 // A crunch costs 100-150 characters of line time, so the buffer fills and Irq
 // raises RTS at $F0. The BIOS lowers it again from ReadBuffer below $B0, which
-// BASIC's line input now goes through, and on an emulator that holds input
-// while RTS is high (6502-EMULATOR serial-rts, 6a8049e) this case passes in
-// 0.6 s. Before that fix it stalled there for good, the way a terminal doing
-// RTS/CTS would.
-//
-// Known failing only because CI's pinned emulator ignores RTS and drops what
-// overruns the buffer: see FINDINGS.md. Unmark it with the pin that honours RTS.
+// BASIC's line input goes through, and the suite's profiles turn on the
+// emulator's flow control, so input waits while RTS is high, as a terminal
+// doing RTS/CTS would. Without either, lines are lost: see FINDINGS.md.
 
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'a 20-line program pasted at 19,200 baud crunches with nothing dropped'
-export const xfail = 'the pinned emulator ignores RTS, so a paste that fills the input buffer loses what overruns it'
-export const issue = 'tests/FINDINGS.md#a-paste-at-19200-baud-overruns-the-input-buffer'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -59,6 +53,7 @@ async function paste(m, lines, what) {
 export async function run(m) {
   const config = await m.call('serial.config')
   m.assertEqual(config.baudRate, 19200, 'the serial line rate')
+  m.assertEqual(config.flowControl, true, 'serial flow control')
   await paste(m, savemgr(), 'SAVEMGR.BAS')
   await paste(m, GRAPHICS, 'twenty lines of graphics statements')
 }

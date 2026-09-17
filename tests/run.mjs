@@ -36,12 +36,23 @@ const RTC = '2026-01-01T00:00:00'
 // The default profile has a card too — the emulator always fits one — but a
 // blank one, which is the right machine for everything that writes what it
 // reads back. `cf` is for the cases that need a card somebody else wrote.
+//
+// Every profile names the PICOVDP, because emulator 3.x fits a TMS9918A unless
+// told otherwise and this ROM drives nothing else. A serial console leaves the
+// video slot empty whichever card is named, so on those the flag only keeps
+// every machine the same. Every profile also turns flow control on, so serial
+// input waits while the ROM raises RTS, as a terminal doing RTS/CTS would: a
+// paste at 19,200 baud outruns BASIC's crunch otherwise. The video profiles
+// send nothing over serial today, but a case that did should meet the same
+// terminal, and with nothing arriving the setting changes nothing.
+const MACHINE = ['--vdp', 'picovdp', '--flow-control']
+const VIDEO = ['--console', 'video', ...MACHINE]
 const PROFILES = {
-  serial: { console: 'serial', args: [] },
-  video: { console: 'video', args: ['--console', 'video'] },
-  'video-cf': { console: 'video', args: ['--console', 'video'], fixtures: true },
-  cf: { console: 'serial', args: [], fixtures: true },
-  nvram: { console: 'serial', args: [], nvram: true },
+  serial: { console: 'serial', args: MACHINE },
+  video: { console: 'video', args: VIDEO },
+  'video-cf': { console: 'video', args: VIDEO, fixtures: true },
+  cf: { console: 'serial', args: MACHINE, fixtures: true },
+  nvram: { console: 'serial', args: MACHINE, nvram: true },
 }
 
 const DIRECTIVES = new Set(['name', 'profile', 'mode', 'hw', 'xfail', 'issue', 'selftest', 'final', 'timeout'])
@@ -275,6 +286,17 @@ class Pool {
         nvram,
         args: spec.args,
       })
+      // An emulator that took the flags and built something else would run
+      // the whole suite on the wrong machine, so ask it what it built. A serial
+      // console reports no card, since its video slot is empty.
+      const info = await machine.info()
+      const vdp = spec.console === 'video' ? 'picovdp' : null
+      if (info.vdp !== vdp || info.flowControl !== true) {
+        await machine.close()
+        throw new Error(`profile ${JSON.stringify(name)} came up with vdp ${JSON.stringify(info.vdp)} ` +
+          `and flowControl ${JSON.stringify(info.flowControl)}, not ${JSON.stringify(vdp)} and true ` +
+          '(the suite needs emulator 3.0.1 or later)')
+      }
       const entry = { name, spec, machine, ready: null }
       entry.ready = await boot(machine, spec)
       this.#machines.set(name, entry)

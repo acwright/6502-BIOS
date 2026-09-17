@@ -89,18 +89,18 @@ case drop the breakpoint.
 
 ---
 
-## A paste at 19,200 baud overruns the input buffer
+## Resolved
 
-- **Bucket:** BIOS bug (fixed), and an emulator limitation (RTS is not honoured
-  by CI's pinned emulator)
+### A paste at 19,200 baud overran the input buffer
+
+- **Bucket:** BIOS bug, and an emulator limitation (serial input ignored RTS)
 - **Found by:** `a-pasted-program-crunches-without-dropping-input`, written
   for VDP-PLAN §5 Phase 6's crunch-speed check
-- **Phase:** 2.0, Phase 6
-- **Status:** **open on the CI pin only**; the case is `xfail`. The BIOS side
-  is fixed, and `reading-the-input-buffer-lowers-rts-once-it-drains` pins it.
+- **Phase:** 2.0, Phase 6 (found); the BIOS fixed in `8468694`, and the suite
+  moved to emulator **v3.0.1** with flow control on for release 2.0
 
 Twenty lines of the README's SAVEMGR.BAS, written to the serial port in one
-go, come back from `LIST` with lines missing. The emulator paces input at the
+go, came back from `LIST` with lines missing. The emulator paces input at the
 line rate, 520 cycles a character at 1 MHz, and `BasCrunch` runs between two
 lines while the next is arriving. Measured from `BasCrunch`'s entry to its
 return:
@@ -142,36 +142,20 @@ TMS9918A):
 
 Nothing else changes when RTS is honoured, the XModem cases included.
 
-**What is left:** only the CI pin. `527b53c` ignores RTS, so with the fix the
-paste still drops lines there and the case stays `xfail`. Pinning an emulator
-that honours RTS (3.0.1's flow-control setting, turned on for the suite's
-profiles) turns it into an `XPASS`; that commit removes the marker and moves
-this entry to Resolved. A keyword index in BASIC (a first-letter table) would
-still make a crunch roughly ten times cheaper, and help a terminal with no
-flow control.
+**Emulator:** 3.0.1 adds serial flow control, off by default (`--flow-control`,
+`flowControl` in `session.info`). Every profile in `run.mjs` now passes it with
+`--vdp picovdp`, the runner refuses a machine that reports otherwise, and the
+paste case checks `serial.config` says so. `ci.yml` pins `v3.0.1`.
 
----|--:|--:|
-| `1040 FOR K = 2 TO 15 : V = NVRAM(B + K) : GOSUB 1500 : NEXT K` | 66,970 | 79,110 |
-| `50 PRINT "SLOT";S;": ";` | 14,248 | 16,732 |
-| `100 FOR X = 0 TO 31 : VPOKE X + 32,X : NEXT X` | 60,690 | 67,751 |
+**Evidence, on v3.0.1 at the 2.0 ROM:** with the marker still on, the suite
+reported the case unexpectedly passing (190 passed, 0 failed, 1 unexpectedly
+passing, 3 self-check). With `--flow-control` taken out of the profiles, it
+failed again as it did on `527b53c`. Unmarked, it passes in about 0.6 s, and
+`make test` is 191 passed, 0 failed, 3 self-check, with nothing known-failing.
 
-So a line of ordinary code costs 100-150 characters of backlog, and the
-256-byte input buffer is full after two or three lines. 2.0's longer
-`KeywordTbl` adds about 15%. Every letter that does not start a keyword walks
-the whole table, which is where the time goes.
-
-`Chrin` raises RTS once the buffer holds `$B0` bytes, so on the real machine a
-terminal with RTS/CTS flow control waits and nothing is lost. The emulator's
-`SerialConsole` does not look at RTS, and a terminal without flow control would
-drop input the same way.
-
-**What would fix it:** the emulator holding input while RTS is high, or a
-keyword index in BASIC (a first-letter table) that makes a crunch roughly ten
-times cheaper. Either turns the case into an XPASS.
-
----
-
-## Resolved
+A keyword index in BASIC (a first-letter table) would still make a crunch
+roughly ten times cheaper, and help a terminal with no flow control, which
+still loses lines the same way.
 
 ### BRK pushed the return address one byte too high
 

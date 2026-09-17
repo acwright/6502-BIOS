@@ -6,22 +6,24 @@ make test-one T=gosub          # just the cases matching /gosub/
 tests/run.mjs --help
 ```
 
-Needs Node ≥ 22 and an AC6502 emulator whose video card is a
-PICOVDP with SPEC draft 0.5's built-in font. BIOS 2.x supports no other video
-card. Emulator 3.x fits one with `--vdp picovdp`, but its default card is a
-TMS9918A and the profiles in `run.mjs` do not pass that flag yet, so for now
-build the CLI from the emulator commit `EMULATOR_REF` in
-`.github/workflows/ci.yml` names, and point `SIXTY502` at it:
+Needs Node ≥ 22 and an AC6502 emulator whose video card is a PICOVDP with
+SPEC draft 0.5's built-in font, and whose serial input can honour RTS: the
+6502 Emulator **3.0.1 or later**. BIOS 2.x supports no other video card. The
+profiles in `run.mjs` pass `--vdp picovdp`, since 3.x fits a TMS9918A
+otherwise, and `--flow-control`, so a paste waits while the ROM raises RTS
+instead of overrunning the input buffer. The runner checks `session.info`
+agrees before it boots a profile. With the app installed, `make test` runs
+the `6502` on PATH.
+
+CI builds the CLI from the release `EMULATOR_REF` in
+`.github/workflows/ci.yml` names instead. To run exactly that locally, point
+`SIXTY502` at the same build:
 
 ```sh
 git -C …/6502-EMULATOR worktree add --detach /tmp/emu <EMULATOR_REF>
 (cd /tmp/emu && npm ci && npm run build:cli)
 SIXTY502="node /tmp/emu/out/cli/index.js" make test
 ```
-
-That is what CI does on every push. Without `SIXTY502` the suite runs `6502` on
-PATH, which is right once the suite moves to a 3.x release and its profiles
-select the card.
 
 The font the card loads is pinned apart from the card: `fixtures/cp437-font.hex`
 is v1.6's character set, checked against SPEC §7's SHA-256 by `lib/font.mjs`.

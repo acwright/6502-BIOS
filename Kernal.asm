@@ -24,14 +24,15 @@
 
 ; Padding that holds 1.6's frozen routine addresses: every Kernal routine keeps
 ; the address 1.6 gave it, so the frozen 6502.inc and everything written against
-; it stay valid. The four .assert lines further down check it at link time; when
-; the code between them changes size, adjust these four numbers and nothing else.
+; it stay valid. The five .assert lines further down check it at link time; when
+; the code between them changes size, adjust these five numbers and nothing else.
 ; New routines go at the very end of the Kernal, past the vectors, for the same
 ; reason: nothing above them may move.
+PAD_W  = 5                      ; Before ReadBufferImpl    ($A51E)
 PAD_A  = 25                     ; Before BufferSizeImpl    ($A546)
 PAD_A2 = 3                      ; Before SerialChroutImpl  ($A561)
-PAD_B  = 13                     ; Before SidPlayNoteImpl   ($A586)
-PAD_C  = 9                      ; Before NmiVec            ($B329)
+PAD_B  = 8                      ; Before SidPlayNoteImpl   ($A586)
+PAD_C  = 2                      ; Before NmiVec            ($B329)
 
 ; === Kernal Jump Table ($A000-$A0FF) ===
 ; 85 slots of 3-byte JMP instructions plus 1 padding byte
@@ -900,12 +901,17 @@ InitBuffer:
   rts
 
 ; Write a character from the A register to the INPUT_BUFFER
+; The full check does not fit in the eight bytes 1.6 gave this routine, and
+; ReadBuffer has to keep the address after them, so the body went to the end of
+; the Kernal with the rest of the new code.
 ; Modifies: Flags, X
 WriteBufferImpl:
-  ldx WRITE_PTR
-  sta INPUT_BUFFER,x
-  inc WRITE_PTR
-  rts
+  jmp WriteBufferRing
+
+; WriteBuffer's body moved out; this keeps ReadBuffer at its 1.6 address, and
+; with it the rest of the Kernal.
+  .res PAD_W, $EA
+  .assert ReadBufferImpl = $A51E, lderror, "ReadBuffer moved from its 1.6 address"
 
 ; Read a character from the INPUT_BUFFER and store it in A register
 ; Every reader comes through here — Chrin, BASIC's line input, INKEY, the break
@@ -979,6 +985,8 @@ SerialChroutImpl:
   phx                           ; WriteBuffer uses X
   php
   sei                           ; Irq must not raise RTS while the byte goes out
+  jsr ScFlooded                 ; Input buffer full? Then RTS has to stay up
+  bcs @ChroutDrop               ; Drop this byte rather than open the gate
   jsr ScRtsLow                  ; The transmitter only runs with RTS down
   sta SC_DATA
 @ChroutWait:
@@ -986,6 +994,7 @@ SerialChroutImpl:
   and #SC_STATUS_TDRE           ; Check if TX buffer not empty
   beq @ChroutWait               ; Loop if TX buffer not empty
   jsr ScRts                     ; Byte is gone — RTS may go back up
+@ChroutDrop:
   plp                           ; Interrupts back as the caller had them
   plx
   pla                           ; The character, and the flags it left, as before
@@ -3454,8 +3463,11 @@ Irq:
   lda HW_PRESENT
   and #HW_SC
   beq @IrqCheckKB               ; Serial not present — skip
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @IrqCheckKB               ; XModem owns the receiver — its bytes are its own
   lda SC_STATUS
-  and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+  and #SC_STATUS_RDRF           ; A byte really waiting, not just an interrupt?
   beq @IrqCheckKB               ; If not, check keyboard
   lda SC_DATA                   ; Read the data from serial register
   jsr WriteBuffer               ; Store to the input buffer
@@ -3594,4 +3606,53 @@ ScRxPoll:
 @ScRxPollKeep:
   pla                           ; Back to the status
 @ScRxPollDone:
+  rts
+
+; WriteBufferRing — WriteBuffer's body, out here because the full check does not
+; fit in the eight bytes 1.6 gave WriteBufferImpl.
+; The ring never checked for full, so 256 unread bytes made WRITE_PTR lap
+; READ_PTR. BufferSize is an 8-bit subtraction, so the buffer then looked empty,
+; ScRts dropped RTS, and the far end overwrote a whole ring: exactly six lines
+; vanished from the middle of every long paste. Dropping the byte instead keeps
+; the count honest and loses one character rather than 256.
+; Modifies: Flags, X
+WriteBufferRing:
+  ldx WRITE_PTR
+  inx
+  cpx READ_PTR                  ; Would this byte make the ring look empty again?
+  beq @WriteFull                ; Full — drop this byte, never lap the reader
+  dex
+  sta INPUT_BUFFER,x
+  inc WRITE_PTR
+@WriteFull:
+  rts
+
+; ScFlooded — Is the input buffer too full to open the gate for a byte out?
+; Sending means lowering RTS, because TIC 00 stops the transmitter as well as
+; raising the pin. Every one of those windows lets the far end push another byte
+; in, and a paste arrives at least as fast as BASIC can swallow it — so a
+; machine that echoes every character it reads never gets its buffer back and
+; starts dropping input. Above the high mark the console therefore goes quiet
+; instead: RTS stays up, the far end really stops, and the buffer drains. The
+; cost is echo the reader never sees; the alternative is input the program never
+; gets. XModem is the exception — it owns the line and its bytes always go.
+; Output: C set if the byte should be dropped
+; Modifies: Flags, A
+ScFlooded:
+  pha
+  lda HW_PRESENT
+  and #HW_SC
+  beq @ScNotFlooded             ; No serial card — nothing to hold back
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @ScNotFlooded             ; XModem owns the line — always send
+  lda WRITE_PTR
+  sec
+  sbc READ_PTR                  ; Unread bytes
+  cmp #SC_RTS_HIGH_WATER
+  bcs @ScFloodedDone            ; At or above the mark — carry set, drop it
+@ScNotFlooded:
+  clc
+@ScFloodedDone:
+  pla
   rts

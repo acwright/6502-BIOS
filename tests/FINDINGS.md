@@ -91,12 +91,13 @@ case drop the breakpoint.
 
 ## A paste at 19,200 baud overruns the input buffer
 
-- **Bucket:** BIOS limitation, and an emulator one (RTS is not honoured)
+- **Bucket:** BIOS bug (fixed), and an emulator limitation (RTS is not honoured
+  by CI's pinned emulator)
 - **Found by:** `a-pasted-program-crunches-without-dropping-input`, written
   for VDP-PLAN §5 Phase 6's crunch-speed check
 - **Phase:** 2.0, Phase 6
-- **Status:** **open**; the case is `xfail`. Not caused by 2.0's keywords:
-  the ROM before them drops the same paste.
+- **Status:** **open on the CI pin only**; the case is `xfail`. The BIOS side
+  is fixed, and `reading-the-input-buffer-lowers-rts-once-it-drains` pins it.
 
 Twenty lines of the README's SAVEMGR.BAS, written to the serial port in one
 go, come back from `LIST` with lines missing. The emulator paces input at the
@@ -106,6 +107,50 @@ return:
 
 | Line | Before the 2.0 tokens (`fdcf151`) | With them |
 |---|--:|--:|
+| `1040 FOR K = 2 TO 15 : V = NVRAM(B + K) : GOSUB 1500 : NEXT K` | 66,970 | 79,110 |
+| `50 PRINT "SLOT";S;": ";` | 14,248 | 16,732 |
+| `100 FOR X = 0 TO 31 : VPOKE X + 32,X : NEXT X` | 60,690 | 67,751 |
+
+So a line of ordinary code costs 100-150 characters of backlog, and the
+256-byte input buffer is full after two or three lines. 2.0's longer
+`KeywordTbl` adds about 15%. Every letter that does not start a keyword walks
+the whole table, which is where the time goes.
+
+**Flow control is what should absorb that, and the BIOS had it half done.** On
+the 6551, command register bits 3-2 of `00` are RTS high ("stop sending"). It
+is `Irq` that raises RTS during a paste, writing `$01` once the buffer holds
+`$F0` bytes. Lowering it again was `Chrin`'s job alone: `$01` after a read that
+left `$B0` or more, `$09` below that. BASIC's line input (`BasReadKey`), `INKEY`
+and the break check all read through `ReadBuffer` and never call `Chrin`, so
+once a paste raised RTS nothing lowered it. A terminal doing RTS/CTS would have
+stopped sending until reset.
+
+**Fixed:** the hysteresis moved from `Chrin` into `ReadBuffer`, so every reader,
+a cartridge's included, gets it. It is skipped with no serial card, as before,
+and while the receiver interrupt is off, because XModem writes `$0B` and drains
+the buffer through `ReadBuffer` mid-transfer. The Kernal is 3 bytes smaller for
+it, since `Chrin` no longer carries its own copy.
+
+**Evidence, on 6502-EMULATOR `serial-rts` at `6a8049e`**, which holds received
+bytes while RTS is high (run with `--vdp picovdp`, since 3.x defaults to the
+TMS9918A):
+
+| | Paste case | Whole suite |
+|---|---|---|
+| ROM before the fix | stalls: `LIST`'s echo stops at `1040 FOR K = ` and the wait times out at 60 s | 188 passed, 1 failed (the RTS case), 1 known-failing |
+| ROM with the fix | passes in 0.6 s (reported `XPASS`) | 189 passed, 0 failed, 1 unexpectedly passing (the paste) |
+
+Nothing else changes when RTS is honoured, the XModem cases included.
+
+**What is left:** only the CI pin. `527b53c` ignores RTS, so with the fix the
+paste still drops lines there and the case stays `xfail`. Pinning an emulator
+that honours RTS (3.0.1's flow-control setting, turned on for the suite's
+profiles) turns it into an `XPASS`; that commit removes the marker and moves
+this entry to Resolved. A keyword index in BASIC (a first-letter table) would
+still make a crunch roughly ten times cheaper, and help a terminal with no
+flow control.
+
+---|--:|--:|
 | `1040 FOR K = 2 TO 15 : V = NVRAM(B + K) : GOSUB 1500 : NEXT K` | 66,970 | 79,110 |
 | `50 PRINT "SLOT";S;": ";` | 14,248 | 16,732 |
 | `100 FOR X = 0 TO 31 : VPOKE X + 32,X : NEXT X` | 60,690 | 67,751 |

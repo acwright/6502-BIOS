@@ -60,7 +60,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code, or from BASIC with 
 All hardware-dependent operations are guarded at every level — Kernal and BASIC:
 
 - **CompactFlash absent** — `LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT` in BASIC print `NO DEVICE`; `StWaitReady` returns an error at once when the boot probe found no card, and times out instead of hanging on a card that stops answering
-- **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE`/`BLOAD`/`BSAVE` return an error
+- **Serial absent** — IRQ handler skips serial status polling; the RTS flow control writes that `ReadBuffer` (and so `Chrin`) makes are suppressed; XModem `LOAD`/`SAVE`/`BLOAD`/`BSAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence`, `SidSetVolume` silently return
 - **Video absent** — `CLS`, `LOCATE`, `COLOR`, `SCREEN`, `VPOKE`, `VREG`, `PALETTE`, `VLOAD`, `SPRITE`, `SCROLL` and `LAYER` silently skip (arguments are still consumed); `VPEEK()` and `VSTAT()` return 0; `VSYNC` waits 2 cs; `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; the VDP entries (`VdpInfo` through `VdpStatus`) return carry set having written nothing, and `WaitVBlank` waits 2 cs; console auto-switches to serial. An empty slot, a TMS9918A, and a PICOVDP whose firmware lacks the built-in font all count as absent

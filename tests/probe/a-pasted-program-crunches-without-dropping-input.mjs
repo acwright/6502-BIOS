@@ -7,15 +7,22 @@
 // SAVEMGR.BAS, as a user would paste them, and twenty lines of 2.0 graphics
 // code. LIST gives every line back exactly, or something was dropped.
 //
-// Known failing, on 1.6's table as well as 2.0's: see FINDINGS.md. It stays as
-// the plan wrote it, so whatever fixes the paste turns it into an XPASS.
+// A crunch costs 100-150 characters of line time, so the buffer fills and Irq
+// raises RTS at $F0. The BIOS lowers it again from ReadBuffer below $B0, which
+// BASIC's line input now goes through, and on an emulator that holds input
+// while RTS is high (6502-EMULATOR serial-rts, 6a8049e) this case passes in
+// 0.6 s. Before that fix it stalled there for good, the way a terminal doing
+// RTS/CTS would.
+//
+// Known failing only because CI's pinned emulator ignores RTS and drops what
+// overruns the buffer: see FINDINGS.md. Unmark it with the pin that honours RTS.
 
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'a 20-line program pasted at 19,200 baud crunches with nothing dropped'
-export const xfail = 'crunching a line takes 100-150 characters of line time, so a paste overruns the input buffer (on the 1.6 table too)'
+export const xfail = 'the pinned emulator ignores RTS, so a paste that fills the input buffer loses what overruns it'
 export const issue = 'tests/FINDINGS.md#a-paste-at-19200-baud-overruns-the-input-buffer'
 
 const HERE = dirname(fileURLToPath(import.meta.url))

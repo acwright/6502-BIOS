@@ -91,6 +91,52 @@ case drop the breakpoint.
 
 ## Resolved
 
+### Raising RTS stopped the transmitter, and the machine deadlocked
+
+- **Bucket:** BIOS bug, uncovered by the emulator's ACIA being made exact
+- **Found by:** the bench, on a real R6551, 2026-09-17 — not by a case
+- **Phase:** 2.0.1 / 1.6; the fix is `ScRts`, `ScRtsLow` and `ScRxPoll`
+
+The RTS scheme above was right about everything except the pin. On the R6551,
+command register bits 3-2 (TIC) of `00` raise RTS **and turn the transmitter
+off** — Rockwell's Rev. 4 sheet of 1987 spells the four TIC values out, and
+Synertek's agrees; the Rev. 1 sheet of 1981 calls it "transmit interrupt
+disabled" and is wrong.
+
+So the `$01` that `Irq` wrote when the buffer filled disabled the machine's own
+transmitter. BASIC echoes every character it reads through `Chrout`, so the very
+next echo left `SerialChrout` spinning on a TDRE that can never set: the buffer
+never drained, RTS never fell, and the board ignored CR and Ctrl-C. On the bench,
+`POKE 36866,1` then `PRINT` reproduced it in one line, with or without a
+terminal that honours RTS — the firmware was raising RTS on itself.
+
+**Fixed:** one routine owns the command register.
+
+- `ScRts` decides from the buffer: up at `SC_RTS_HIGH_WATER`, down below
+  `SC_RTS_LOW_WATER`, left alone between the two. `Irq` calls it after it stores
+  a byte, `ReadBuffer` after it takes one, `SerialChrout` when a byte has gone.
+- `SerialChrout` calls `ScRtsLow` first, so the transmitter is on for the byte,
+  and holds interrupts off across it so `Irq` cannot raise RTS mid-character.
+- `ScRxPoll` is the polling loop's old body, unchanged in what it does.
+- The XModem guard is unchanged: nothing touches the register while the receive
+  interrupt is off.
+
+**The marks moved from `$F0`/`$B0` to `$C0`/`$80`.** Each release around a
+transmitted byte lets a byte or two in at 19,200 baud, so `$10` bytes of room
+above the high mark was not enough; `$40` is. The `$40` band between the marks
+is the same hysteresis as before, so a line being read does not flap the pin.
+
+**Evidence, on 6502-EMULATOR `5e7b0f4`**, which turns the transmitter off at TIC
+`00` and defaults flow control on. A 50-line paste at 19,200 baud, then `LIST`:
+
+| | Flow control on | Off |
+|---|---|---|
+| ROM before the fix | deadlocks: nothing listed, `PRINT` ignored | deadlocks the same way |
+| ROM with the fix | all 50 lines, and the machine answers afterwards | 10 lines, 40 lost to overrun, no deadlock |
+
+Pinned by `serial-chrout-drops-rts-so-a-full-buffer-cannot-hang-it`, and the
+marks by the RTS probe next to it.
+
 ### A paste at 19,200 baud overran the input buffer
 
 - **Bucket:** BIOS bug, and an emulator limitation (serial input ignored RTS)

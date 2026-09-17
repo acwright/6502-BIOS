@@ -4,13 +4,14 @@
 [![CI](https://github.com/acwright/6502-BIOS/actions/workflows/ci.yml/badge.svg)](https://github.com/acwright/6502-BIOS/actions/workflows/ci.yml)
 
 > 📖 **Guide:** [AC6502 Documentation](https://acwright.github.io/6502-DOCS/) — the user's and programmer's guide for the whole family.
-> The tutorial half of what this README specifies lives there: [BASIC](https://acwright.github.io/6502-DOCS/basic/),
-> [assembly and the Kernal API](https://acwright.github.io/6502-DOCS/assembly/), and
-> [the Monitor](https://acwright.github.io/6502-DOCS/using/monitor).
+> The tutorial half of what this README specifies lives there: [BASIC](https://acwright.github.io/6502-DOCS/basic/)
+> and [assembly and the Kernal API](https://acwright.github.io/6502-DOCS/assembly/).
 
 ## Overview
 
 BIOS is the firmware ROM for the [A.C. Wright 6502](https://github.com/acwright/6502-ACE) family of computer systems. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
+
+This is **BIOS 2.x**: the Kernal, BASIC and Wozmon for a machine whose video card is a [6502-PICOVDP](https://github.com/acwright/6502-PICOVDP). It boots straight to BASIC on a 40×24 Text-mode console with a colour for every cell, hardware scroll and the font the card holds, and BASIC and the Kernal reach the card's modes, palette, layers and sprites. There is no machine-code Monitor and no TMS9918A support; 1.x (branch `v1.x`, tag `v1.6`) is the ROM for a TMS9918A.
 
 The CPU is a **WDC 65C02S**. That is the Rockwell instruction set — including the bit-addressed `RMB`/`SMB`/`BBR`/`BBS` — plus WDC's `WAI` and `STP`. Building the ROM therefore needs cc65's `W65C02` setting, not its narrower `65C02`; `BIOS.asm` asserts this and fails the build with a reason if it is narrowed.
 
@@ -21,29 +22,27 @@ The A.C. Wright 6502 family of computer systems is a modular design where every 
 The probe-and-boot sequence is:
 
 1. **Clear `HW_PRESENT`** — all bits start at zero
-2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY with timeout), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (active oscillator), Video (VRAM read-back)
-3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded
+2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY with timeout), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (active oscillator), Video (`STAT4` reads `$AC` and `STAT6` b7, the built-in font, is set — see [Video](#video))
+3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded. The video card is only put back in its reset-time state (the legacy submode, unscrolled); the Text console comes up the first time something is printed
 4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot)
 5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)
 6. **Boot vector check** — if `BOOT_VECTOR` (`$035B`) is non-zero, jump to the address stored there (cartridge or external program takes over). Otherwise continue to normal boot
 7. **Console check** — verify that at least video or serial is present. If neither is found and no boot vector was set, the CPU halts (interactive boot requires a console)
-8. **Splash screen** — displayed on the active console:
+8. **BASIC** — every reset is a cold BASIC start: the header prints, variables are cleared, and a program at `$0800` is kept. On video the screen is cleared and a colour "6502" logo is drawn above the header; a serial console gets the text alone, left aligned:
 
 ```
-  -- 6502 BIOS v1.6 --
-ENTER=BASIC  ESC=MONITOR
+6502 BIOS v2.0
+30718 BYTES FREE
+RAM RTC CF SER VIA SID VDP
+
+OK
 ```
 
-   On video the two lines are centred on the 40-column screen, as above. On a serial console they are printed as plain text, left aligned — a terminal's width is the user's to choose, so there is no column to centre on.
-
-9. **Boot menu with timeout** — waits ~5 seconds for a keypress, then auto-boots BASIC
-
-- **ENTER** (or timeout) — launches the BASIC interpreter
-- **ESC** — drops into the machine-code monitor
+   The third line names the cards the probe found, in `HW_PRESENT`'s bit order.
 
 #### Hardware Presence Flags
 
-The `HW_PRESENT` byte at `$030D` can be read from user code or inspected in the monitor. Each bit corresponds to an I/O slot:
+The `HW_PRESENT` byte at `$030D` can be read from user code, or from BASIC with `PEEK(781)`. Each bit corresponds to an I/O slot:
 
 | Bit | Mask | Card |
 |-----|------|------|
@@ -54,17 +53,17 @@ The `HW_PRESENT` byte at `$030D` can be read from user code or inspected in the 
 | 4 | `$10` | Serial R65C51 (IO 5) |
 | 5 | `$20` | GPIO/VIA 65C22 (IO 6) |
 | 6 | `$40` | SID/ARMSID (IO 7) |
-| 7 | `$80` | Video PICOVDP (IO 8) |
+| 7 | `$80` | Video: a PICOVDP with the built-in font (IO 8) |
 
 #### Graceful Degradation
 
-All hardware-dependent operations are guarded at every level — Kernal, BASIC, and Monitor:
+All hardware-dependent operations are guarded at every level — Kernal and BASIC:
 
-- **CompactFlash absent** — `LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT` in BASIC print `NO DEVICE`; Monitor `L`, `S`, `@` print `I/O ERROR`; `StWaitReady` returns an error at once when the boot probe found no card, and times out instead of hanging on a card that stops answering
+- **CompactFlash absent** — `LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT` in BASIC print `NO DEVICE`; `StWaitReady` returns an error at once when the boot probe found no card, and times out instead of hanging on a card that stops answering
 - **Serial absent** — IRQ handler skips serial status polling; `Chrin` flow control writes are suppressed; XModem `LOAD`/`SAVE`/`BLOAD`/`BSAVE` return an error
 - **GPIO/VIA absent** — `SysDelay` falls back to a calibrated software busy-loop; `JOY()` returns `$FF` (every line reads released, as an untouched stick does); keyboard IRQ check is skipped
 - **SID absent** — `Beep`, `SOUND`, `VOL`, `SidPlayNote`, `SidSilence`, `SidSetVolume` silently return
-- **Video absent** — `CLS`, `LOCATE`, `COLOR`, `SCREEN`, `VPOKE`, `VREG`, `PALETTE`, `VLOAD`, `SPRITE`, `SCROLL` and `LAYER` silently skip (arguments are still consumed); `VPEEK()` and `VSTAT()` return 0; `VSYNC` waits 2 cs; `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; console auto-switches to serial
+- **Video absent** — `CLS`, `LOCATE`, `COLOR`, `SCREEN`, `VPOKE`, `VREG`, `PALETTE`, `VLOAD`, `SPRITE`, `SCROLL` and `LAYER` silently skip (arguments are still consumed); `VPEEK()` and `VSTAT()` return 0; `VSYNC` waits 2 cs; `VideoClear`, `VideoSetCursor` and `VideoSetColor` skip with them, so a cartridge calling the slot gets the same treatment; the VDP entries (`VdpInfo` through `VdpStatus`) return carry set having written nothing, and `WaitVBlank` waits 2 cs; console auto-switches to serial. An empty slot, a TMS9918A, and a PICOVDP whose firmware lacks the built-in font all count as absent
 
 The two silent rows are silent because a screen and a speaker have nothing to report back — the statement had no answer to return, so there is nothing an error could say. The rows that move *data* (CompactFlash, RTC) raise `NO DEVICE` instead, because there the program asked for something it did not get. Either way the arguments are parsed and range-checked first: `LOCATE 24,0` and `VOL 16` are `ILLEGAL QUANTITY` on a machine with no screen and no sound card, so a program is wrong or right everywhere rather than only where it was written.
 - **RTC absent** — `TIME`, `DATE`, `SETTIME`, `SETDATE`, `NVRAM` (write), `NVSAVE`, `NVLOAD` and `NVERASE` in BASIC print `NO DEVICE`; `NVRAM()` (read) and `NVSTAT()` return 0, `NVFIND()` returns -1; the save-slot routines `NvStat` through `NvFormat` set carry without touching the card
@@ -149,10 +148,10 @@ Two rules for `.prg` files:
 - **Don't edit the BASIC line.** Inserting or deleting a line shifts the attached
   machine code, whose addresses were fixed when it was built. `LIST`, `RUN` and
   `SAVE` are all fine. (The C64 works the same way.)
-- **Load them with `LOAD`.** The Monitor's `L` also works, as long as you take its
-  default `$0800` address and then `X` back to BASIC. A Wozmon upload does not —
-  it has no way to tell BASIC how long the image is, so the machine code is lost
-  as soon as you assign a variable.
+- **Load them with `LOAD`.** A Wozmon upload does not work — it has no way to
+  tell BASIC how long the image is, so the machine code is lost as soon as you
+  assign a variable. A loader of your own can say, through `PRG_IMAGE_END`
+  (`$038E`); `ProgramEnd` in `Kernal.asm` describes the handover.
 
 **Video & Display**
 
@@ -320,7 +319,37 @@ There is no machine-code monitor in 2.x. Machine code is loaded, run and debugge
 
 ### Video
 
-Output is displayed on a 6502-PICOVDP in 40×24 Text mode, with a colour for every cell. The screen scrolls upward automatically, in hardware, when the cursor reaches the bottom. The Kernal tracks cursor position and exposes routines for direct character and cursor manipulation.
+The console is a [6502-PICOVDP](https://github.com/acwright/6502-PICOVDP) in its 40×24 Text mode, 6×8 cells, with a colour for every cell. The Kernal and BASIC need nothing else from the card than `SPEC.md` describes; the section numbers below are that file's.
+
+**Detection.** The boot probe selects `STAT4` and looks for `$AC`, records `STAT5` (firmware version) in `VDP_FW` and `STAT6` (capabilities) in `VDP_CAPS`, and sets `HW_VID` only if `STAT6` b7 says the card has the built-in font. The ROM carries no character set, so a card without it is not a console. A TMS9918A takes the probe's select as a harmless register 7 write and is left alone.
+
+**The console comes up on first use.** `KernalInit` leaves the card as its own reset leaves it — the legacy submode, where a program that writes `M1`/`M2`/`M3` and its tables itself gets what a TMS9918 gave it. The first `Chrout`, `VideoClear`, `VideoSetCursor`, `VideoGetCursor` or `VideoSetColor` calls `InitVideo` and clears the screen. BASIC's header is that first output.
+
+**`InitVideo`** writes the Text layout with the display off — name table `$0000`, attributes `$0400`, pattern table `$0800`, palette at `$FC00` (`PALBASE` = `$3F`), layer 1 and sprites off — then writes `FONT` (`$30`) for font `$00` and waits for the vertical blank at which the card copies it into `$0800` (§7), restores palette row 0 (the sixteen TMS9918 colours), sets the border from the pen and turns the display on. It does not clear the screen. It is also the way back to text for a program that changed modes, moved tables or overwrote the glyphs.
+
+**Per-cell colour.** Every character is written with an attribute byte, `fg<<4 | bg`, from the pen `VID_PEN`. `COLOR` and `VideoSetColor` set the pen, so text already on screen keeps its colours; `CLS` fills the whole screen with the pen. The pen survives `NEW`, `RUN`, `CLR` and errors; only `KernalInit` resets it, to `$1F` (black on white).
+
+**Hardware scroll.** Scrolling moves layer 0's origin (`L0SCRY`) down a row and clears the row that becomes the bottom line; nothing is copied. `VID_TOP` is the name-table row shown at the top, so a cell's address is `((row + VID_TOP) mod 24) × 40 + column`. `VideoGetCursor` still returns screen coordinates.
+
+**Ports and the pointer.** The card has two complete port pairs (§4): port A at `$9C00`/`$9C01` and port B at `$9C02`/`$9C03`, each with its own VRAM pointer, command flip-flop and status select.
+
+- The Kernal uses **port A only** and never touches port B. Port B is for interrupt handlers (see [Chaining an IRQ Handler](#chaining-an-irq-handler)), so no VDP work needs `sei`/`cli` around it.
+- `VBANK` (register `$08`) and `VINC` (`$09`) are shared by both ports. Every Kernal entry assumes and leaves `VBANK` = 0 and `VINC` = +1. A program or handler that changes either puts it back, or calls `InitVideo`, before anything is printed.
+- Outside the boot probe, the Kernal reads `STAT0` only where a caller asks it to (`VdpStatus` with `X` = 0, `VSTAT(0)`). `WaitVBlank` polls `STAT3`, so the `STAT0` flags and `STAT1` latches a program relies on are left alone.
+
+**Back to text.** `VID_MODE` (`$0393`) records whether the Text console is intact. `SCREEN` 1–3, `VREG 13`, `SPRITE`, `SCROLL`, `LAYER` and the matching Kernal entries mark it disturbed; when a BASIC program stops, BASIC then calls `InitVideo` and clears the screen. `VPOKE` and `PALETTE` do not, so glyphs redefined in Text mode survive `END`.
+
+The video variables, after `NV_ID`:
+
+| Address | Name | Meaning |
+|---------|------|---------|
+| `$0391` | `VID_PEN` | Attribute byte for new output, `fg<<4 \| bg` |
+| `$0392` | `VID_TOP` | Name-table row shown at the top (0–23); `L0SCRY` = `VID_TOP` × 8 |
+| `$0393` | `VID_MODE` | `$00` console not set up since `KernalInit`; `$01` Text console intact; otherwise the `VMODE` last set, b7 = disturbed |
+| `$0394` | `VDP_FW` | `STAT5` at boot, `$00` if no PICOVDP |
+| `$0395` | `VDP_CAPS` | `STAT6` at boot, `$00` if no PICOVDP |
+| `$0396–$0397` | `VDP_L0CTRL_SHADOW`, `VDP_L1CTRL_SHADOW` | What was last written to the write-only `L0CTRL`/`L1CTRL` |
+| `$0398–$039B` | `VDP_P0`–`VDP_P3` | Parameters for `VdpSprite` and `VdpSetScroll` |
 
 ### Keyboard
 
@@ -345,11 +374,11 @@ The keyboard is briefly offline for the duration — roughly 200 µs per read �
 
 ### CompactFlash Storage
 
-A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The card is divided into up to **256 disk banks** of 1 MB each (2048 sectors × 512 bytes), giving a maximum usable capacity of **256 MB**. The current disk bank is selected with `DISK n` in BASIC or `#NN` in the Monitor, and resets to 0 (disk 0) on power-on or reset.
+A simple flat filesystem is stored on a CompactFlash card (true 8-bit IDE). The card is divided into up to **256 disk banks** of 1 MB each (2048 sectors × 512 bytes), giving a maximum usable capacity of **256 MB**. The current disk bank is selected with `DISK n` in BASIC (or `FsSetDisk`), and resets to 0 (disk 0) on power-on or reset.
 
 Within each disk, the directory lives at the first sector (LBA `n×2048`) and holds up to **16 entries** (8.3 filenames). Data sectors follow contiguously. The filesystem prevents a file on one disk from spilling into the next disk's region.
 
-`LOAD`/`SAVE`/`DIR`/`DEL` in BASIC, and `L`/`S`/`@` in the Monitor, all operate on the currently selected disk bank. `BLOAD` and `BSAVE` load/save raw binary data to/from any memory address, making it straightforward to load game maps, graphics, or data files while a program is running.
+`LOAD`/`SAVE`/`DIR`/`DEL` in BASIC, and the Kernal's filesystem entries, all operate on the currently selected disk bank. `BLOAD` and `BSAVE` load/save raw binary data to/from any memory address, making it straightforward to load game maps, graphics, or data files while a program is running.
 
 Assembly programs can access disk storage directly through the Kernal jump table (see `FsLoadFileAddr`, `FsSaveFileAddr`, `FsSetDisk`, and `FsFormatDisk` below).
 
@@ -443,7 +472,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack — and therefore BASIC's `GOSUB` and `FOR` frames, which are pushed onto it |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime, `NV_ID` at `$0390`) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039B`; `$039C–$03FF` unassigned) |
 | `$0400–$04FF` | 256B | `BAS_LINBUF` — the raw input line, as typed |
 | `$0500–$05FF` | 256B | `BAS_TOKBUF` — tokenizing scratch |
 | `$0600–$07FF` | 512B | `FS_SECTOR_BUF` — CompactFlash sector buffer, overwritten by **any** filesystem call (`LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT`) |
@@ -501,7 +530,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 | `$A06F` | `StWriteSector` | Write one 512-byte CF sector |
 | `$A072` | `StWaitReady` | Wait for CF ready; carry set on error |
 | `$A075` | `SysDelay` | Delay `A`=count\_lo, `X`=count\_hi centiseconds (~10 ms each) using VIA T1 |
-| `$A078` | `KernalInit` | Initialise all hardware (caller must reset stack pointer first; no cli, no splash). Returns via `RTS` |
+| `$A078` | `KernalInit` | Initialise all hardware (caller must reset stack pointer first; no cli, no beep, no header; the video console is not brought up until first used). Returns via `RTS` |
 | `$A07B` | `KernalVersion` | Get BIOS version → `A`=major, `X`=minor |
 | `$A07E` | `FsLoadFileAddr` | Load named file from current disk to `FS_IO_ADDR` ($037F); returns size in `FS_FILE_SIZE` |
 | `$A081` | `FsSaveFileAddr` | Save `FS_FILE_SIZE` bytes from `FS_IO_ADDR` to a named file on the current disk |
@@ -536,13 +565,13 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 
 ### Cartridge Support
 
-Cartridges for this system overlay the ROM area from `$C000–$FFFF`. When inserted, the cartridge replaces the Monitor, BASIC, Wozmon, and CPU vectors (NMI/RESET/IRQ) with its own code. The Kernal (`$A000–$BFFF`) remains accessible. There is no character set in ROM: the text font comes from the PICOVDP (`InitVideo`).
+Cartridges for this system overlay the ROM area from `$C000–$FFFF`. When inserted, the cartridge replaces BASIC, Wozmon, and CPU vectors (NMI/RESET/IRQ) with its own code. The Kernal (`$A000–$BFFF`) remains accessible. There is no character set in ROM: the text font comes from the PICOVDP (`InitVideo`).
 
 Two Kernal facilities support cartridge development:
 
-**`KernalInit` ($A078)** — A callable subroutine that performs the complete hardware initialisation sequence (IRQ/BRK/NMI pointers, hardware probing, peripheral init, console auto-detection) and returns via `RTS`. It clears decimal mode and disables interrupts, but does **not** reset the stack pointer (the caller must do `ldx #$ff / txs` before the `JSR`), enable interrupts (`cli`), play the beep, display the splash screen, or enter the boot menu. This gives the cartridge full control over what happens after hardware init.
+**`KernalInit` ($A078)** — A callable subroutine that performs the complete hardware initialisation sequence (IRQ/BRK/NMI pointers, hardware probing, peripheral init, console auto-detection) and returns via `RTS`. It clears decimal mode and disables interrupts, but does **not** reset the stack pointer (the caller must do `ldx #$ff / txs` before the `JSR`), enable interrupts (`cli`), play the beep, or start BASIC. It leaves the PICOVDP in its legacy submode: a cartridge that programs the card's modes and tables itself finds it as a 1.x ROM left a TMS9918, and the Text console comes up the first time the cartridge prints. This gives the cartridge full control over what happens after hardware init.
 
-**`BOOT_VECTOR` ($035B–$035C)** — A 2-byte RAM address that, if non-zero after `KernalInit`, causes the normal `Reset` flow to jump to the specified address instead of continuing to the splash screen and boot menu. `KernalInit` zeroes this variable, so a cartridge must write to it *after* calling `KernalInit` but *before* `Reset` checks it — or use Pattern B below.
+**`BOOT_VECTOR` ($035B–$035C)** — A 2-byte RAM address that, if non-zero after `KernalInit`, causes the normal `Reset` flow to jump to the specified address instead of starting BASIC. `KernalInit` zeroes this variable, so a cartridge must write to it *after* calling `KernalInit` but *before* `Reset` checks it — or use Pattern B below.
 
 #### Cart Usage Patterns
 
@@ -559,7 +588,7 @@ CartReset:
     jmp CartMain         ; Cart's own program entry
 ```
 
-This is the simplest approach. The cartridge gets fully initialised hardware and takes complete control. No beep, no splash — the cart decides what the user sees and hears.
+This is the simplest approach. The cartridge gets fully initialised hardware and takes complete control. No beep, no header — the cart decides what the user sees and hears.
 
 **Pattern B — KernalInit + Beep** (get the audible startup feedback, then take control):
 
@@ -589,6 +618,8 @@ In practice, **Pattern A is recommended** for most cartridges.
 - **RAM vectors** — `IRQ_PTR` (`$0300`), `BRK_PTR` (`$0302`), `NMI_PTR` (`$0304`) can be overwritten to install custom interrupt handlers. **A handler that chains to the Kernal's must not leave anything on the stack** — see below
 - **`IO_MODE`** (`$0306`) — set via `SetIOMode` (`$A00F`) to route console output
 - **No-console safe** — `KernalInit` does not halt if neither video nor serial is detected, allowing cartridges with their own display hardware to boot normally
+- **`BRK_PTR`** — `KernalInit` points it at the Kernal's `BRK` report, which ends by warm-starting BASIC at `$C000`. A cartridge with no BASIC there must point `BRK_PTR` at a handler of its own
+- **No character set in ROM** — the whole of `$A000–$BFFF` is Kernal on 2.x. The font is the card's: `InitVideo` or `VdpLoadFont` loads it
 
 #### Chaining an IRQ Handler
 
@@ -611,6 +642,45 @@ Irq:
 That `$104,x` is an absolute offset, not a search. A handler in front of the Kernal's that pushes anything — even one byte it means to pull back after the chain — shifts the read onto the wrong byte, and the Kernal then services a hardware interrupt as a `BRK` or the reverse.
 
 So a chained handler either touches no register at all (`inc`, `dec` and `stz` on absolute addresses do useful work without one), or saves and restores everything it used *before* the `jmp`. The alternative is to replace the vector outright and end in `rti`, taking on the keyboard and serial servicing yourself.
+
+**A PICOVDP handler uses port B.** The Kernal's handler never touches the video card, and the Kernal and BASIC drive it through port A with interrupts enabled. A handler that reads or writes the card on port A could land between the two writes of a foreground command. On port B it cannot, and it acknowledges through `STAT1`, which clears the interrupt latches and leaves `STAT0`'s flags for foreground code. This one counts frames:
+
+```asm
+FRAMES   = $0040               ; the cartridge's own RAM: a program running under
+OLD_IRQ  = $0041               ;   BASIC puts these where BASIC does not (not zero page)
+
+InstallVblank:
+    sei
+    lda $0300           ; IRQ_PTR: keep the old handler
+    sta OLD_IRQ
+    lda $0301
+    sta OLD_IRQ+1
+    lda #<VblankIrq
+    sta $0300
+    lda #>VblankIrq
+    sta $0301
+    lda #$01            ; STATSEL_B = 1: port B's status reads STAT1
+    sta $9C03
+    lda #$8E            ; register $0E | $80
+    sta $9C03
+    lda #$01            ; IRQEN b0: vertical blank
+    ldx #$0A
+    jsr $A0B4           ; VdpWriteReg (port A, from the foreground)
+    cli
+    rts
+
+VblankIrq:
+    pha                 ; pulled again before the jmp, so the stack is as the CPU left it
+    lda $9C03           ; STAT1 on port B: reading it acknowledges
+    lsr a               ; b0, vertical blank, into carry
+    bcc @chain
+    inc FRAMES
+@chain:
+    pla
+    jmp (OLD_IRQ)
+```
+
+`InitVideo` writes `IRQEN` = 0, so a program installs this after the console is up — after its first `Chrout` — and enables the interrupt again after anything that calls `InitVideo` (`SCREEN 0`, or BASIC going back to text). A handler that writes `VBANK` or `VINC` puts them back before it returns, because both ports share them.
 
 A template project for creating cartridges for the A.C. Wright 6502 system is available here: [https://github.com/acwright/6502-CRT](https://github.com/acwright/6502-CRT).
 
@@ -670,14 +740,14 @@ make view
 
 ## Testing
 
-The ROM has a regression suite that runs it headless on the [A.C. Wright 6502 emulator](https://github.com/acwright/6502-EMULATOR), covering every Monitor command and every BASIC keyword:
+The ROM has a regression suite that runs it headless on the [A.C. Wright 6502 emulator](https://github.com/acwright/6502-EMULATOR), covering every BASIC keyword, the Kernal jump table and the video console:
 
 ```bash
 make test                # build the ROM and run everything
 make test-one T=gosub    # just the cases matching /gosub/
 ```
 
-It needs Node 22 or newer and the emulator's CLI as `6502` on `PATH`; `SIXTY502` points it at a checkout instead, which is how CI runs it. `tests/README.md` covers writing a case, and every fix to this ROM is expected to arrive with one that fails without it.
+It needs Node 22 or newer and an emulator CLI whose video card is a PICOVDP with the built-in font; `SIXTY502` points it at a build of the commit CI pins, and `tests/README.md` says how to make one. `tests/README.md` covers writing a case, and every fix to this ROM is expected to arrive with one that fails without it.
 
 ## Programming EEPROM
 
@@ -698,13 +768,14 @@ make clean
 ## Related
 
 - [6502-ACE](https://github.com/acwright/6502-ACE) — the hardware, and the index of the whole family
+- [6502-PICOVDP](https://github.com/acwright/6502-PICOVDP) — the video card: `SPEC.md` defines the registers, modes and built-in font this ROM drives
 - [6502-EMULATOR](https://github.com/acwright/6502-EMULATOR) — runs this ROM on desktop, in a browser, or headless; the regression suite above drives it
-- [6502-PRG](https://github.com/acwright/6502-PRG) / [6502-CRT](https://github.com/acwright/6502-CRT) — templates for programs and cartridges, each shipping a `6502.inc` that tracks the Kernal API documented above
+- [6502-PRG](https://github.com/acwright/6502-PRG) / [6502-CRT](https://github.com/acwright/6502-CRT) — templates for programs and cartridges, each shipping an include that tracks the Kernal API documented above
 - [6502-ASM](https://github.com/acwright/6502-ASM) / [6502-BAS](https://github.com/acwright/6502-BAS) — example programs and BASIC listings
 - [cffs](https://github.com/acwright/cffs) — builds CompactFlash images for the filesystem described above
 - [bastok](https://github.com/acwright/bastok) — tokenizes BASIC listings into `.prg` images
 - [bin2woz](https://github.com/acwright/bin2woz) — converts a binary into a paste-able upload for the Wozmon at `$FF00`
-- [6502-DOCS](https://github.com/acwright/6502-DOCS) — the documentation site: the guide, the printable reference cards, and the memory-map and character-set references
+- [6502-DOCS](https://github.com/acwright/6502-DOCS) — the documentation site: the guide, the printable reference cards, and the memory-map and character-set references (the character set is the PICOVDP's font `$00`)
 
 ## License
 

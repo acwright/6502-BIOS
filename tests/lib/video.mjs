@@ -61,10 +61,11 @@ export async function typeLine(m, text) {
 // and it is required: the failure message is the whole diagnostic here, since a
 // screen that never arrived leaves nothing else to look at.
 // Every read is taken with the machine **paused**, and that is not tidiness. A
-// scroll copies the name table a row at a time, and a read taken while one is
-// in flight returns a torn frame — in practice a screen with one row appearing
-// twice, which looks exactly like a scroll bug and comes and goes with how the
-// host was scheduled. Pausing first is what makes a frame a frame.
+// scroll moves layer 0's origin and then clears the new bottom row a byte at a
+// time, and a read taken part-way through that returns a torn frame — a row
+// half blank, or the origin moved before the row it now shows was cleared,
+// which looks exactly like a scroll bug and comes and goes with how the host
+// was scheduled. Pausing first is what makes a frame a frame.
 //
 // The machine is left paused on the way out. `typeLine` resumes it, and a case
 // that wants to read memory alongside the screen — the cursor variables, say —

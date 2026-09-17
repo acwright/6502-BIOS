@@ -1,8 +1,9 @@
 // Recording what the machine wrote to a block of hardware registers.
 //
-// SID and VIA registers read back as $00 through `mem.read`, and the TMS9918's
-// register file is write-only on the real chip. So the sound, GPIO and colour
-// cases cannot assert on state — the only evidence a register was ever set is
+// SID and VIA registers read back as $00 through `mem.read`, and the PICOVDP's
+// register file is write-only from the 6502 (`video.registers` sees it, a
+// program cannot). So the sound and GPIO cases, and any case about what went
+// over the video card's bus, cannot assert on state — the only evidence a register was ever set is
 // the write itself, caught on the bus.
 //
 // A range watchpoint stops the machine on every write in the block. The stop

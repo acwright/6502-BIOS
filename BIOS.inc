@@ -5,7 +5,7 @@
 ;   Role        :  .include'd by BIOS.asm before any segment. Defines the
 ;                   zero-page layout, stack/buffer addresses, Kernal RAM
 ;                   variables, and the memory-mapped I/O registers (VIA,
-;                   6551 ACIA, TMS9918, SID, RTC, CompactFlash) shared by
+;                   6551 ACIA, 6502-PICOVDP, SID, RTC, CompactFlash) shared by
 ;                   every segment.
 ;   Assembler   :  ca65  (cc65 toolchain)
 ;
@@ -67,7 +67,7 @@ HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFla
 HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
 HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
 HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
-HW_VID              = %10000000          ; Bit 7: Video card (IO 8, PICOVDP)
+HW_VID              = %10000000          ; Bit 7: Video card (IO 8): a PICOVDP with the built-in font
 BAS_PENDKEY         := $030E             ; Pending key from BasCheckBreak (1 byte)
 CF_DISK             := $030F             ; Current CF "disk" bank (0-255); base LBA = CF_DISK * FS_DISK_SECTORS
 BRK_P               := $0310             ; Saved P at time of BRK
@@ -125,8 +125,8 @@ VID_TOP             := $0392             ; Name-table row shown at the top of th
 VID_MODE            := $0393             ; $00 = console not set up since KernalInit (card in the legacy submode);
                                          ;   $01 = text console intact.  Otherwise low nibble = the VMODE the Kernal
                                          ;   last set, b7 = disturbed (sprites, scroll, layers)
-VDP_FW              := $0394             ; STAT5 (firmware version, BCD) at boot; $00 if no card
-VDP_CAPS            := $0395             ; STAT6 (capability bits) at boot; $00 if no card
+VDP_FW              := $0394             ; STAT5 (firmware version, BCD) at boot; $00 if no PICOVDP
+VDP_CAPS            := $0395             ; STAT6 (capability bits) at boot; $00 if no PICOVDP
 VDP_L0CTRL_SHADOW   := $0396             ; Shadow of the write-only L0CTRL register
 VDP_L1CTRL_SHADOW   := $0397             ; Shadow of the write-only L1CTRL register
 VDP_P0              := $0398             ; Parameter block for VDP entries that take more than A/X/Y

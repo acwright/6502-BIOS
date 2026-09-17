@@ -2,7 +2,7 @@
 ; BASIC v2.0  —  5-Byte Floating-Point MSBASIC-Compatible Interpreter
 ;                for AC6502 Homebrew Computer
 ;
-;   ROM Region  :  $C000-$EDFF  (11,776 bytes / $2E00)
+;   ROM Region  :  $C000-$FEFF  (16,128 bytes / $3F00)
 ;   Segment     :  BASIC
 ;   Entry point :  BasEntry  (first byte of segment = $C000)
 ;   Assembler   :  ca65  (cc65 toolchain)

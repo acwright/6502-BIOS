@@ -8,7 +8,8 @@ Current file: BIOS.asm
 000000r 1               ;
 000000r 1               ;   Role        :  Sets the CPU target, then .include's every segment source
 000000r 1               ;                   below in link order to produce the assembled ROM image.
-000000r 1               ;   Segments    :  KERNAL, BASIC, WOZMON, VECTORS  (see BIOS.cfg)
+000000r 1               ;   Segments    :  KERNAL $A000-$BFFF, BASIC $C000-$FEFF, WOZMON $FF00-$FFF9,
+000000r 1               ;                   VECTORS $FFFA-$FFFF  (see BIOS.cfg)
 000000r 1               ;   Assembler   :  ca65  (cc65 toolchain)
 000000r 1               ;   Linker cfg  :  BIOS.cfg
 000000r 1               ;
@@ -38,7 +39,7 @@ Current file: BIOS.asm
 000000r 2               ;   Role        :  .include'd by BIOS.asm before any segment. Defines the
 000000r 2               ;                   zero-page layout, stack/buffer addresses, Kernal RAM
 000000r 2               ;                   variables, and the memory-mapped I/O registers (VIA,
-000000r 2               ;                   6551 ACIA, TMS9918, SID, RTC, CompactFlash) shared by
+000000r 2               ;                   6551 ACIA, 6502-PICOVDP, SID, RTC, CompactFlash) shared by
 000000r 2               ;                   every segment.
 000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
 000000r 2               ;
@@ -100,7 +101,7 @@ Current file: BIOS.asm
 000000r 2               HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
 000000r 2               HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
 000000r 2               HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
-000000r 2               HW_VID              = %10000000          ; Bit 7: Video card (IO 8, PICOVDP)
+000000r 2               HW_VID              = %10000000          ; Bit 7: Video card (IO 8): a PICOVDP with the built-in font
 000000r 2               BAS_PENDKEY         := $030E             ; Pending key from BasCheckBreak (1 byte)
 000000r 2               CF_DISK             := $030F             ; Current CF "disk" bank (0-255); base LBA = CF_DISK * FS_DISK_SECTORS
 000000r 2               BRK_P               := $0310             ; Saved P at time of BRK
@@ -158,8 +159,8 @@ Current file: BIOS.asm
 000000r 2               VID_MODE            := $0393             ; $00 = console not set up since KernalInit (card in the legacy submode);
 000000r 2                                                        ;   $01 = text console intact.  Otherwise low nibble = the VMODE the Kernal
 000000r 2                                                        ;   last set, b7 = disturbed (sprites, scroll, layers)
-000000r 2               VDP_FW              := $0394             ; STAT5 (firmware version, BCD) at boot; $00 if no card
-000000r 2               VDP_CAPS            := $0395             ; STAT6 (capability bits) at boot; $00 if no card
+000000r 2               VDP_FW              := $0394             ; STAT5 (firmware version, BCD) at boot; $00 if no PICOVDP
+000000r 2               VDP_CAPS            := $0395             ; STAT6 (capability bits) at boot; $00 if no PICOVDP
 000000r 2               VDP_L0CTRL_SHADOW   := $0396             ; Shadow of the write-only L0CTRL register
 000000r 2               VDP_L1CTRL_SHADOW   := $0397             ; Shadow of the write-only L1CTRL register
 000000r 2               VDP_P0              := $0398             ; Parameter block for VDP entries that take more than A/X/Y
@@ -435,7 +436,7 @@ Current file: BIOS.asm
 000000r 2               ; KERNAL  —  Hardware Driver Library and Jump Table
 000000r 2               ;             for AC6502 Homebrew Computer
 000000r 2               ;
-000000r 2               ;   ROM Region  :  $A000-$B7FF  (6,144 bytes / $1800)
+000000r 2               ;   ROM Region  :  $A000-$BFFF  (8,192 bytes / $2000)
 000000r 2               ;   Segment     :  KERNAL
 000000r 2               ;   Entry point :  Chrout  (jump table, first byte of segment = $A000)
 000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
@@ -443,9 +444,12 @@ Current file: BIOS.asm
 000000r 2               ;
 000000r 2               ;   Contents    :  85-slot JMP table ($A000-$A0FF) giving external code and
 000000r 2               ;                   cartridges stable entry points, followed by the driver
-000000r 2               ;                   implementations for character I/O, TMS9918 video, SID
-000000r 2               ;                   sound, CompactFlash storage, RTC, keyboard/joystick,
-000000r 2               ;                   serial (6551 + XModem), and the Reset/NMI/IRQ handlers.
+000000r 2               ;                   implementations for character I/O, the 6502-PICOVDP
+000000r 2               ;                   (Text-mode console and the VDP entries), SID sound,
+000000r 2               ;                   CompactFlash storage, RTC and NVRAM save slots,
+000000r 2               ;                   keyboard/joystick, serial (6551 + XModem), the BRK report,
+000000r 2               ;                   and the Reset/NMI/IRQ handlers.  BIOS 2.x: no Monitor, no
+000000r 2               ;                   character set (the font comes from the card), no TMS9918A.
 000000r 2               ;
 000000r 2               ;   Coding style :  Match the rest of the BIOS project.
 000000r 2               ;                   * Routine / data labels : PascalCase  (e.g. ChroutDispatch,
@@ -468,7 +472,7 @@ Current file: BIOS.asm
 00000Fr 2               ; --- IO Mode ---
 00000Fr 2  4C rr rr     SetIOMode:      jmp SetIOModeImpl       ; $A00F - Set IO_MODE
 000012r 2  4C rr rr     GetIOMode:      jmp GetIOModeImpl       ; $A012 - Get IO_MODE
-000015r 2               ; --- Video (PICOVDP) ---
+000015r 2               ; --- Video console (PICOVDP) ---
 000015r 2  4C rr rr     InitVideo:      jmp InitVideoImpl       ; $A015 - Text-mode console: registers, the card's font, palette row 0
 000018r 2  4C rr rr     VideoClear:     jmp VideoClearImpl      ; $A018 - Clear video screen
 00001Br 2  4C rr rr     VideoPutChar:   jmp VideoPutCharImpl    ; $A01B - Write char at cursor
@@ -533,7 +537,7 @@ Current file: BIOS.asm
 0000ABr 2  4C rr rr     NvFind:         jmp NvFindImpl          ; $A0AB - Lowest slot owned by A ($00 = first free) → X
 0000AEr 2  4C rr rr     NvFormat:       jmp NvFormatImpl        ; $A0AE - Erase all 16 slots
 0000B1r 2               
-0000B1r 2               ; --- PICOVDP ---
+0000B1r 2               ; --- PICOVDP (2.0) ---
 0000B1r 2  4C rr rr     VdpInfo:        jmp VdpInfoImpl         ; $A0B1 - Card found at boot → A=VDP_FW, X=VDP_CAPS, Y=$AC; carry set if none
 0000B4r 2  4C rr rr     VdpWriteReg:    jmp VdpWriteRegImpl     ; $A0B4 - Write register (A=value, X=0-127), keeping VID_MODE and the LxCTRL shadows
 0000B7r 2  4C rr rr     VdpSetMode:     jmp VdpSetModeImpl      ; $A0B7 - Write VMODE (A=1-4); carry set if out of range
@@ -4371,7 +4375,7 @@ Current file: BIOS.asm
 000000r 2               ; BASIC v2.0  —  5-Byte Floating-Point MSBASIC-Compatible Interpreter
 000000r 2               ;                for AC6502 Homebrew Computer
 000000r 2               ;
-000000r 2               ;   ROM Region  :  $C000-$EDFF  (11,776 bytes / $2E00)
+000000r 2               ;   ROM Region  :  $C000-$FEFF  (16,128 bytes / $3F00)
 000000r 2               ;   Segment     :  BASIC
 000000r 2               ;   Entry point :  BasEntry  (first byte of segment = $C000)
 000000r 2               ;   Assembler   :  ca65  (cc65 toolchain)
@@ -14192,7 +14196,8 @@ Current file: BIOS.asm
 000000r 2               ;                   <addr>: <byte> [<byte> ...]   Store
 000000r 2               ;                   <addr>R                        Run
 000000r 2               ;
-000000r 2               ;   Reachable from the Monitor with "G FF00" or from BASIC with "SYS $FF00".
+000000r 2               ;   Reachable from BASIC with "SYS 65280" (SYS $FF00); "C000R" warm-starts
+000000r 2               ;   BASIC with the program kept.
 000000r 2               ; =============================================================================
 000000r 2               
 000000r 2               WOZ_XAML  = $24               ; Last "opened" location Low

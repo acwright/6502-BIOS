@@ -7,9 +7,11 @@ tests/run.mjs --help
 ```
 
 Needs Node ≥ 22 and an A.C. Wright 6502 emulator whose video card is a
-PICOVDP. No release has that card yet, so build the CLI from the emulator
-commit `EMULATOR_REF` in `.github/workflows/ci.yml` names, and point `SIXTY502`
-at it:
+PICOVDP with SPEC draft 0.5's built-in font. BIOS 2.x supports no other video
+card. Emulator 3.x fits one with `--vdp picovdp`, but its default card is a
+TMS9918A and the profiles in `run.mjs` do not pass that flag yet, so for now
+build the CLI from the emulator commit `EMULATOR_REF` in
+`.github/workflows/ci.yml` names, and point `SIXTY502` at it:
 
 ```sh
 git -C …/6502-EMULATOR worktree add --detach /tmp/emu <EMULATOR_REF>
@@ -18,7 +20,11 @@ SIXTY502="node /tmp/emu/out/cli/index.js" make test
 ```
 
 That is what CI does on every push. Without `SIXTY502` the suite runs `6502` on
-PATH, which is fine once a 3.x release is installed.
+PATH, which is right once the suite moves to a 3.x release and its profiles
+select the card.
+
+The font the card loads is pinned apart from the card: `fixtures/cp437-font.hex`
+is v1.6's character set, checked against SPEC §7's SHA-256 by `lib/font.mjs`.
 
 This file is the map: how a run works, and how to write a case at each tier.
 FINDINGS.md is what the suite has found and not yet resolved.

@@ -13,7 +13,8 @@
 ;                   <addr>: <byte> [<byte> ...]   Store
 ;                   <addr>R                        Run
 ;
-;   Reachable from the Monitor with "G FF00" or from BASIC with "SYS $FF00".
+;   Reachable from BASIC with "SYS 65280" (SYS $FF00); "C000R" warm-starts
+;   BASIC with the program kept.
 ; =============================================================================
 
 WOZ_XAML  = $24               ; Last "opened" location Low

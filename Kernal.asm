@@ -2,7 +2,7 @@
 ; KERNAL  —  Hardware Driver Library and Jump Table
 ;             for AC6502 Homebrew Computer
 ;
-;   ROM Region  :  $A000-$B7FF  (6,144 bytes / $1800)
+;   ROM Region  :  $A000-$BFFF  (8,192 bytes / $2000)
 ;   Segment     :  KERNAL
 ;   Entry point :  Chrout  (jump table, first byte of segment = $A000)
 ;   Assembler   :  ca65  (cc65 toolchain)
@@ -10,9 +10,12 @@
 ;
 ;   Contents    :  85-slot JMP table ($A000-$A0FF) giving external code and
 ;                   cartridges stable entry points, followed by the driver
-;                   implementations for character I/O, TMS9918 video, SID
-;                   sound, CompactFlash storage, RTC, keyboard/joystick,
-;                   serial (6551 + XModem), and the Reset/NMI/IRQ handlers.
+;                   implementations for character I/O, the 6502-PICOVDP
+;                   (Text-mode console and the VDP entries), SID sound,
+;                   CompactFlash storage, RTC and NVRAM save slots,
+;                   keyboard/joystick, serial (6551 + XModem), the BRK report,
+;                   and the Reset/NMI/IRQ handlers.  BIOS 2.x: no Monitor, no
+;                   character set (the font comes from the card), no TMS9918A.
 ;
 ;   Coding style :  Match the rest of the BIOS project.
 ;                   * Routine / data labels : PascalCase  (e.g. ChroutDispatch,
@@ -35,7 +38,7 @@ BufferSize:     jmp BufferSizeImpl      ; $A00C - Get buffer count
 ; --- IO Mode ---
 SetIOMode:      jmp SetIOModeImpl       ; $A00F - Set IO_MODE
 GetIOMode:      jmp GetIOModeImpl       ; $A012 - Get IO_MODE
-; --- Video (PICOVDP) ---
+; --- Video console (PICOVDP) ---
 InitVideo:      jmp InitVideoImpl       ; $A015 - Text-mode console: registers, the card's font, palette row 0
 VideoClear:     jmp VideoClearImpl      ; $A018 - Clear video screen
 VideoPutChar:   jmp VideoPutCharImpl    ; $A01B - Write char at cursor
@@ -100,7 +103,7 @@ NvErase:        jmp NvEraseImpl         ; $A0A8 - Zero all 16 bytes of a slot (X
 NvFind:         jmp NvFindImpl          ; $A0AB - Lowest slot owned by A ($00 = first free) → X
 NvFormat:       jmp NvFormatImpl        ; $A0AE - Erase all 16 slots
 
-; --- PICOVDP ---
+; --- PICOVDP (2.0) ---
 VdpInfo:        jmp VdpInfoImpl         ; $A0B1 - Card found at boot → A=VDP_FW, X=VDP_CAPS, Y=$AC; carry set if none
 VdpWriteReg:    jmp VdpWriteRegImpl     ; $A0B4 - Write register (A=value, X=0-127), keeping VID_MODE and the LxCTRL shadows
 VdpSetMode:     jmp VdpSetModeImpl      ; $A0B7 - Write VMODE (A=1-4); carry set if out of range

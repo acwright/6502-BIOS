@@ -1283,8 +1283,13 @@ InitBuffer:
 ; Modifies: Flags, X
 WriteBufferImpl:
   ldx WRITE_PTR
+  inx
+  cpx READ_PTR                  ; Would this byte make the ring look empty again?
+  beq @WriteFull                ; Full — drop this byte, never lap the reader
+  dex
   sta INPUT_BUFFER,x
   inc WRITE_PTR
+@WriteFull:
   rts
 
 ; --- The Serial Card's command register ---
@@ -1433,6 +1438,8 @@ SerialChroutImpl:
   phx                           ; WriteBuffer uses X
   php
   sei                           ; Irq must not raise RTS while the byte goes out
+  jsr ScFlooded                 ; Input buffer full? Then RTS has to stay up
+  bcs @ChroutDrop               ; Drop this byte rather than open the gate
   jsr ScRtsLow                  ; The transmitter only runs with RTS down
   sta SC_DATA
 @ChroutWait:
@@ -1440,9 +1447,40 @@ SerialChroutImpl:
   and #SC_STATUS_TDRE           ; Check if TX buffer not empty
   beq @ChroutWait               ; Loop if TX buffer not empty
   jsr ScRts                     ; Byte is gone — RTS may go back up
+@ChroutDrop:
   plp                           ; Interrupts back as the caller had them
   plx
   pla                           ; The character, and the flags it left, as before
+  rts
+
+; ScFlooded — Is the input buffer too full to open the gate for a byte out?
+; Sending means lowering RTS, because TIC 00 stops the transmitter as well as
+; raising the pin. Every one of those windows lets the far end push another byte
+; in, and a paste arrives at least as fast as BASIC can swallow it — so a
+; machine that echoes every character it reads never gets its buffer back and
+; starts dropping input. Above the high mark the console therefore goes quiet
+; instead: RTS stays up, the far end really stops, and the buffer drains. The
+; cost is echo the reader never sees; the alternative is input the program never
+; gets. XModem is the exception — it owns the line and its bytes always go.
+; Output: C set if the byte should be dropped
+; Modifies: Flags, A
+ScFlooded:
+  pha
+  lda HW_PRESENT
+  and #HW_SC
+  beq @ScNotFlooded             ; No serial card — nothing to hold back
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @ScNotFlooded             ; XModem owns the line — always send
+  lda WRITE_PTR
+  sec
+  sbc READ_PTR                  ; Unread bytes
+  cmp #SC_RTS_HIGH_WATER
+  bcs @ScFloodedDone            ; At or above the mark — carry set, drop it
+@ScNotFlooded:
+  clc
+@ScFloodedDone:
+  pla
   rts
 
 ; SidPlayNote — Play a note on a SID voice
@@ -3956,8 +3994,11 @@ Irq:
   lda HW_PRESENT
   and #HW_SC
   beq @IrqCheckKB               ; Serial not present — skip
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @IrqCheckKB               ; XModem owns the receiver — its bytes are its own
   lda SC_STATUS
-  and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
+  and #SC_STATUS_RDRF           ; A byte really waiting, not just an interrupt?
   beq @IrqCheckKB               ; If not, check keyboard
   lda SC_DATA                   ; Read the data from serial register
   jsr WriteBuffer               ; Store to the input buffer

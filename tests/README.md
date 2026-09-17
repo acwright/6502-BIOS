@@ -6,7 +6,7 @@ make test-one T=gosub          # just the cases matching /gosub/
 tests/run.mjs --help
 ```
 
-Needs Node ≥ 22 and an A.C. Wright 6502 emulator whose video card is a
+Needs Node ≥ 22 and an AC6502 emulator whose video card is a
 PICOVDP with SPEC draft 0.5's built-in font. BIOS 2.x supports no other video
 card. Emulator 3.x fits one with `--vdp picovdp`, but its default card is a
 TMS9918A and the profiles in `run.mjs` do not pass that flag yet, so for now

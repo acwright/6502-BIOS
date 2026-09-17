@@ -9,7 +9,7 @@
 
 ## Overview
 
-BIOS is the firmware ROM for the [A.C. Wright 6502](https://github.com/acwright/6502-ACE) family of computer systems. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
+BIOS is the firmware ROM for the [AC6502](https://github.com/acwright/6502-ACE) family of computer systems. It occupies the upper 32KB of the address space (`$8000–$FFFF`) and provides everything the machine needs to go from power-on to a usable computing environment.
 
 This is **BIOS 2.x**: the Kernal, BASIC and Wozmon for a machine whose video card is a [6502-PICOVDP](https://github.com/acwright/6502-PICOVDP). It boots straight to BASIC on a 40×24 Text-mode console with a colour for every cell, hardware scroll and the font the card holds, and BASIC and the Kernal reach the card's modes, palette, layers and sprites. There is no machine-code Monitor and no TMS9918A support; 1.x (branch `v1.x`, tag `v1.6`) is the ROM for a TMS9918A.
 
@@ -17,7 +17,7 @@ The CPU is a **WDC 65C02S**. That is the Rockwell instruction set — including 
 
 ### Boot Sequence
 
-The A.C. Wright 6502 family of computer systems is a modular design where every I/O card is optional. On reset, the Kernal probes each I/O slot to discover which hardware is installed and records the results in a single bitmask byte at `HW_PRESENT` (`$030D`). Only detected hardware is initialised — missing cards are silently skipped and never cause a hang.
+The AC6502 family of computer systems is a modular design where every I/O card is optional. On reset, the Kernal probes each I/O slot to discover which hardware is installed and records the results in a single bitmask byte at `HW_PRESENT` (`$030D`). Only detected hardware is initialised — missing cards are silently skipped and never cause a hang.
 
 The probe-and-boot sequence is:
 
@@ -682,7 +682,7 @@ VblankIrq:
 
 `InitVideo` writes `IRQEN` = 0, so a program installs this after the console is up — after its first `Chrout` — and enables the interrupt again after anything that calls `InitVideo` (`SCREEN 0`, or BASIC going back to text). A handler that writes `VBANK` or `VINC` puts them back before it returns, because both ports share them.
 
-A template project for creating cartridges for the A.C. Wright 6502 system is available here: [https://github.com/acwright/6502-CRT](https://github.com/acwright/6502-CRT).
+A template project for creating cartridges for the AC6502 is available here: [https://github.com/acwright/6502-CRT](https://github.com/acwright/6502-CRT).
 
 ---
 
@@ -740,7 +740,7 @@ make view
 
 ## Testing
 
-The ROM has a regression suite that runs it headless on the [A.C. Wright 6502 emulator](https://github.com/acwright/6502-EMULATOR), covering every BASIC keyword, the Kernal jump table and the video console:
+The ROM has a regression suite that runs it headless on the [AC6502 emulator](https://github.com/acwright/6502-EMULATOR), covering every BASIC keyword, the Kernal jump table and the video console:
 
 ```bash
 make test                # build the ROM and run everything

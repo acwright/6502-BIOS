@@ -290,6 +290,14 @@ Current file: BIOS.asm
 000000r 2               SC_STATUS_FRME      := %00000010         ; Framing Error
 000000r 2               SC_STATUS_PARE      := %00000001         ; Parity Error
 000000r 2               SC_CMD_RXIRQ_OFF    := %00000010         ; Receiver interrupt disabled
+000000r 2               ; Command register bytes. TIC (bits 3-2) drives RTS *and* the transmitter: 00
+000000r 2               ; raises RTS and turns the transmitter off, 10 lowers RTS and turns it on. So
+000000r 2               ; the machine cannot send a character while it is holding RTS high — see ScRts.
+000000r 2               SC_CMD_RTS_LOW      := %00001001         ; DTR on, RX IRQ on, TIC 10: RTS low, transmitter on
+000000r 2               SC_CMD_RTS_HIGH     := %00000001         ; DTR on, RX IRQ on, TIC 00: RTS high, transmitter off
+000000r 2               SC_CMD_XMODEM       := %00001011         ; DTR on, RX IRQ off, TIC 10: XModem polls the chip itself
+000000r 2               SC_RTS_HIGH_WATER   = $C0                ; Unread bytes at which RTS goes up
+000000r 2               SC_RTS_LOW_WATER    = $80                ; Unread bytes below which RTS comes down
 000000r 2               
 000000r 2               ; GPIO Card / Input Board (65C22) | IO 6 | $9400-$940F
 000000r 2               GPIO_PORTB          := $9400
@@ -395,6 +403,17 @@ Current file: BIOS.asm
 000000r 2               ;                   * Local labels           : @camelCase or @PascalCase.
 000000r 2               ;                   * Opcodes are lowercase.
 000000r 2               ; =============================================================================
+000000r 2               
+000000r 2               ; Padding that holds 1.6's frozen routine addresses: every Kernal routine keeps
+000000r 2               ; the address 1.6 gave it, so the frozen 6502.inc and everything written against
+000000r 2               ; it stay valid. The four .assert lines further down check it at link time; when
+000000r 2               ; the code between them changes size, adjust these four numbers and nothing else.
+000000r 2               ; New routines go at the very end of the Kernal, past the vectors, for the same
+000000r 2               ; reason: nothing above them may move.
+000000r 2               PAD_A  = 25                     ; Before BufferSizeImpl    ($A546)
+000000r 2               PAD_A2 = 3                      ; Before SerialChroutImpl  ($A561)
+000000r 2               PAD_B  = 13                     ; Before SidPlayNoteImpl   ($A586)
+000000r 2               PAD_C  = 9                      ; Before NmiVec            ($B329)
 000000r 2               
 000000r 2               ; === Kernal Jump Table ($A000-$A0FF) ===
 000000r 2               ; 85 slots of 3-byte JMP instructions plus 1 padding byte
@@ -1175,7 +1194,7 @@ Current file: BIOS.asm
 0004A6r 2               InitSCImpl:
 0004A6r 2  A9 1F          lda     #$1F                  ; 8-N-1, 19200 baud
 0004A8r 2  8D 03 90       sta     SC_CTRL
-0004ABr 2  A9 09          lda     #$09                  ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+0004ABr 2  A9 09          lda     #SC_CMD_RTS_LOW       ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
 0004ADr 2  8D 02 90       sta     SC_CMD
 0004B0r 2  60             rts
 0004B1r 2               
@@ -1273,36 +1292,30 @@ Current file: BIOS.asm
 00051Dr 2  60             rts
 00051Er 2               
 00051Er 2               ; Read a character from the INPUT_BUFFER and store it in A register
-00051Er 2               ; Irq raises RTS once the buffer holds $F0 bytes. Every reader comes through here
-00051Er 2               ; — Chrin, BASIC's line input, INKEY, the break check, a cartridge — so this is
-00051Er 2               ; where RTS is lowered again: high while $B0 or more are still unread, low below
-00051Er 2               ; that. A reader that skipped it would leave a terminal with RTS/CTS flow control
-00051Er 2               ; waiting for good. XModem turns the receiver interrupt off and sets the command
-00051Er 2               ; register itself, so while that bit is set the register is left alone.
+00051Er 2               ; Every reader comes through here — Chrin, BASIC's line input, INKEY, the break
+00051Er 2               ; check, a cartridge — so this is where RTS is lowered again once the buffer has
+00051Er 2               ; drained. A reader that skipped it would leave a terminal with RTS/CTS flow
+00051Er 2               ; control waiting for good.
 00051Er 2               ; Modifies: Flags, X, A
 00051Er 2               ReadBufferImpl:
 00051Er 2  A6 00          ldx READ_PTR
 000520r 2  BD 00 02       lda INPUT_BUFFER,x
 000523r 2  E6 00          inc READ_PTR
 000525r 2  48             pha
-000526r 2  AD 0D 03       lda HW_PRESENT
-000529r 2  29 10          and #HW_SC
-00052Br 2  F0 17          beq @ReadDone                 ; No serial card — nothing to signal
-00052Dr 2  AD 02 90       lda SC_CMD
-000530r 2  29 02          and #SC_CMD_RXIRQ_OFF
-000532r 2  D0 10          bne @ReadDone                 ; XModem owns the receiver
-000534r 2  A5 01          lda WRITE_PTR                 ; Unread bytes
-000536r 2  38             sec
-000537r 2  E5 00          sbc READ_PTR
-000539r 2  C9 B0          cmp #$B0                      ; Is the buffer still mostly full?
-00053Br 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-00053Dr 2  B0 02          bcs @ReadRts
-00053Fr 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-000541r 2               @ReadRts:
-000541r 2  8D 02 90       sta SC_CMD
-000544r 2               @ReadDone:
-000544r 2  68             pla
-000545r 2  60             rts
+000526r 2  DA             phx                           ; ScRts uses X, and callers have leaned on
+000527r 2                                               ;   ReadBuffer leaving the read pointer there —
+000527r 2                                               ;   1.6's boot menu counts its timeout down in X
+000527r 2  20 rr rr       jsr ScRts                     ; One fewer unread byte — RTS may come down
+00052Ar 2  FA             plx
+00052Br 2  68             pla
+00052Cr 2  60             rts
+00052Dr 2               
+00052Dr 2               ; ReadBuffer shrank when its RTS decision moved into ScRts; this keeps
+00052Dr 2               ; BufferSize, Chrin and the two jump slots that point at them where 1.6 put them.
+00052Dr 2  EA EA EA EA    .res PAD_A, $EA
+000531r 2  EA EA EA EA  
+000535r 2  EA EA EA EA  
+000546r 2                 .assert BufferSizeImpl = $A546, lderror, "BufferSize moved from its 1.6 address"
 000546r 2               
 000546r 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
 000546r 2               ; Modifies: Flags, A
@@ -1330,49 +1343,46 @@ Current file: BIOS.asm
 00055Cr 2  18             clc
 00055Dr 2  60             rts
 00055Er 2               
-00055Er 2               ; 1.6 first shipped with the RTS release in Chrin rather than ReadBuffer, and
-00055Er 2               ; ReadBuffer, BufferSize and Chrin were three bytes longer then. The padding keeps
-00055Er 2               ; every Kernal routine from here on at the address 1.6 gave it, so the fix changes
-00055Er 2               ; nothing in the ROM outside those three routines and the two jump slots that
-00055Er 2               ; point into them — not BASIC's or the Monitor's calls into the Kernal, and not
-00055Er 2               ; the CPU vectors.
-00055Er 2  EA EA EA       .res 3, $EA
+00055Er 2               ; 1.6 first shipped with the RTS release inline in Chrin, and ReadBuffer,
+00055Er 2               ; BufferSize and Chrin filled the room this padding now takes; the RTS fix for a
+00055Er 2               ; real R6551 (see ScRts) shortened ReadBuffer again. The padding keeps every
+00055Er 2               ; Kernal routine from here on at the address 1.6 gave it, so the ROM changes only
+00055Er 2               ; inside the routines that were rewritten and the jump slots that point into them
+00055Er 2               ; — not BASIC's or the Monitor's calls into the Kernal, and not the CPU vectors.
+00055Er 2               ; The new routines go at the end of the Kernal, below, for the same reason.
+00055Er 2  EA EA EA       .res PAD_A2, $EA
 000561r 2                 .assert SerialChroutImpl = $A561, lderror, "Kernal routines after Chrin moved from their 1.6 addresses"
 000561r 2               
 000561r 2               ; Output a character from the A register to the Serial Card
+000561r 2               ; TIC 00 turns the transmitter off as well as raising RTS, so a character
+000561r 2               ; written while the BIOS is holding RTS up would never leave: the loop below
+000561r 2               ; would spin on a TDRE that cannot come. RTS is therefore dropped for the byte
+000561r 2               ; and put back afterwards if the buffer is still full, and interrupts are held
+000561r 2               ; off meanwhile so that Irq cannot raise it again mid-character.
 000561r 2               ; Modifies: Flags
 000561r 2               SerialChroutImpl:
-000561r 2  8D 00 90       sta SC_DATA
-000564r 2  48             pha
-000565r 2  DA             phx                           ; WriteBuffer uses X
-000566r 2               @ChroutWait:
-000566r 2  AD 01 90       lda SC_STATUS
-000569r 2                 ; Reading the status register clears a pending receive interrupt. A byte that
-000569r 2                 ; arrives while this loop is running therefore loses its interrupt before Irq
-000569r 2                 ; can see it, and since the receive register stays full the ACIA will not hand
-000569r 2                 ; over the next one either — the console stops accepting input for good. So
-000569r 2                 ; the byte is collected here rather than left for a handler that will never
-000569r 2                 ; run. XModem is the exception: it turns the receiver interrupt off and polls
-000569r 2                 ; the chip itself, and those bytes belong to it.
-000569r 2  89 08          bit #SC_STATUS_RDRF           ; Did a byte arrive during the poll?
-00056Br 2  F0 12          beq @ChroutNoRx
-00056Dr 2  48             pha                           ; Keep the status just read
-00056Er 2  AD 02 90       lda SC_CMD
-000571r 2  29 02          and #SC_CMD_RXIRQ_OFF
-000573r 2  D0 09          bne @ChroutRxDone             ; Receiver is somebody else's — leave it alone
-000575r 2  08             php
-000576r 2  78             sei                           ; WriteBuffer's pointer bump is not atomic
-000577r 2  AD 00 90       lda SC_DATA                   ; Frees the receive register
-00057Ar 2  20 rr rr       jsr WriteBuffer
-00057Dr 2  28             plp
-00057Er 2               @ChroutRxDone:
-00057Er 2  68             pla                           ; Back to the status
-00057Fr 2               @ChroutNoRx:
-00057Fr 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
-000581r 2  F0 E3          beq @ChroutWait               ; Loop if TX buffer not empty
-000583r 2  FA             plx
-000584r 2  68             pla
-000585r 2  60             rts
+000561r 2  48             pha
+000562r 2  DA             phx                           ; WriteBuffer uses X
+000563r 2  08             php
+000564r 2  78             sei                           ; Irq must not raise RTS while the byte goes out
+000565r 2  20 rr rr       jsr ScRtsLow                  ; The transmitter only runs with RTS down
+000568r 2  8D 00 90       sta SC_DATA
+00056Br 2               @ChroutWait:
+00056Br 2  20 rr rr       jsr ScRxPoll                  ; Status, and any byte that arrived with it
+00056Er 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
+000570r 2  F0 F9          beq @ChroutWait               ; Loop if TX buffer not empty
+000572r 2  20 rr rr       jsr ScRts                     ; Byte is gone — RTS may go back up
+000575r 2  28             plp                           ; Interrupts back as the caller had them
+000576r 2  FA             plx
+000577r 2  68             pla                           ; The character, and the flags it left, as before
+000578r 2  60             rts
+000579r 2               
+000579r 2               ; Chrout shrank when the polling loop moved into ScRxPoll; this keeps SidPlayNote
+000579r 2               ; and everything after it at its 1.6 address.
+000579r 2  EA EA EA EA    .res PAD_B, $EA
+00057Dr 2  EA EA EA EA  
+000581r 2  EA EA EA EA  
+000586r 2                 .assert SidPlayNoteImpl = $A586, lderror, "Kernal routines after Chrout moved from their 1.6 addresses"
 000586r 2               
 000586r 2               ; SidPlayNote — Play a note on a SID voice
 000586r 2               ; Input: A = voice (0-2), X = frequency low byte, Y = frequency high byte
@@ -3431,7 +3441,7 @@ Current file: BIOS.asm
 001027r 2  A9 01          lda #$01
 001029r 2  8D 06 03       sta IO_MODE
 00102Cr 2                 ; Disable serial RX IRQ — XModem polls SC_STATUS directly
-00102Cr 2  A9 0B          lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+00102Cr 2  A9 0B          lda #SC_CMD_XMODEM            ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
 00102Er 2  8D 02 90       sta SC_CMD
 001031r 2                 ; Initialize
 001031r 2  A9 01          lda #$01
@@ -3474,8 +3484,8 @@ Current file: BIOS.asm
 001072r 2               @RecvEOT:
 001072r 2  A9 06          lda #XMODEM_ACK
 001074r 2  20 rr rr       jsr SerialChrout
-001077r 2                 ; Re-enable serial RX IRQ
-001077r 2  A9 09          lda #$09
+001077r 2                 ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+001077r 2  A9 09          lda #SC_CMD_RTS_LOW
 001079r 2  8D 02 90       sta SC_CMD
 00107Cr 2  AD 19 03       lda XFER_IO_SAVE
 00107Fr 2  8D 06 03       sta IO_MODE
@@ -3487,8 +3497,8 @@ Current file: BIOS.asm
 001086r 2  20 rr rr       jsr SerialChrout
 001089r 2  A9 18          lda #XMODEM_CAN
 00108Br 2  20 rr rr       jsr SerialChrout
-00108Er 2                 ; Re-enable serial RX IRQ
-00108Er 2  A9 09          lda #$09
+00108Er 2                 ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+00108Er 2  A9 09          lda #SC_CMD_RTS_LOW
 001090r 2  8D 02 90       sta SC_CMD
 001093r 2  AD 19 03       lda XFER_IO_SAVE
 001096r 2  8D 06 03       sta IO_MODE
@@ -3587,7 +3597,7 @@ Current file: BIOS.asm
 001120r 2  A9 01          lda #$01
 001122r 2  8D 06 03       sta IO_MODE
 001125r 2                 ; Disable serial RX IRQ — XModem polls SC_STATUS directly
-001125r 2  A9 0B          lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+001125r 2  A9 0B          lda #SC_CMD_XMODEM            ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
 001127r 2  8D 02 90       sta SC_CMD
 00112Ar 2                 ; Initialize
 00112Ar 2  A9 01          lda #$01
@@ -3729,8 +3739,8 @@ Current file: BIOS.asm
 0011FAr 2  68             pla
 0011FBr 2  68             pla
 0011FCr 2               @SendFail:
-0011FCr 2                 ; Re-enable serial RX IRQ
-0011FCr 2  A9 09          lda #$09
+0011FCr 2                 ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+0011FCr 2  A9 09          lda #SC_CMD_RTS_LOW
 0011FEr 2  8D 02 90       sta SC_CMD
 001201r 2  AD 19 03       lda XFER_IO_SAVE
 001204r 2  8D 06 03       sta IO_MODE
@@ -3743,8 +3753,8 @@ Current file: BIOS.asm
 00120Br 2  20 rr rr       jsr SerialChrout
 00120Er 2                 ; Wait for ACK (best-effort; don't fail if timeout)
 00120Er 2  20 rr rr       jsr XModemGetByte
-001211r 2                 ; Re-enable serial RX IRQ
-001211r 2  A9 09          lda #$09
+001211r 2                 ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+001211r 2  A9 09          lda #SC_CMD_RTS_LOW
 001213r 2  8D 02 90       sta SC_CMD
 001216r 2  AD 19 03       lda XFER_IO_SAVE
 001219r 2  8D 06 03       sta IO_MODE
@@ -3840,49 +3850,52 @@ Current file: BIOS.asm
 0012D3r 2  BA             tsx                           ; Get stack pointer to check saved status register
 0012D4r 2  BD 04 01       lda $104,x                    ; Load saved P (SP+4: past X, Y, A we pushed)
 0012D7r 2  29 10          and #$10                      ; Test B flag — set by BRK, clear by hardware IRQ
-0012D9r 2  D0 47          bne @IrqBrk                   ; Branch if this was a BRK instruction
+0012D9r 2  D0 3E          bne @IrqBrk                   ; Branch if this was a BRK instruction
 0012DBr 2               @IrqSc:
 0012DBr 2  AD 0D 03       lda HW_PRESENT
 0012DEr 2  29 10          and #HW_SC
-0012E0r 2  F0 19          beq @IrqCheckKB               ; Serial not present — skip
+0012E0r 2  F0 10          beq @IrqCheckKB               ; Serial not present — skip
 0012E2r 2  AD 01 90       lda SC_STATUS
 0012E5r 2  29 80          and #SC_STATUS_IRQ            ; Check if serial data caused the interrupt
-0012E7r 2  F0 12          beq @IrqCheckKB               ; If not, check keyboard
+0012E7r 2  F0 09          beq @IrqCheckKB               ; If not, check keyboard
 0012E9r 2  AD 00 90       lda SC_DATA                   ; Read the data from serial register
 0012ECr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-0012EFr 2  20 rr rr       jsr BufferSize
-0012F2r 2  C9 F0          cmp #$F0                      ; Is the buffer almost full?
-0012F4r 2  90 05          bcc @IrqCheckKB               ; If not, also check keyboard
-0012F6r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-0012F8r 2  8D 02 90       sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
-0012FBr 2                                               ; Fall through to check keyboard — always clear VIA flags
-0012FBr 2               @IrqCheckKB:
-0012FBr 2  AD 0D 03       lda HW_PRESENT
-0012FEr 2  29 20          and #HW_GPIO
-001300r 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
-001302r 2  AD 0D 94       lda GPIO_IFR
-001305r 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
-001307r 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
-001309r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
-00130Cr 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-00130Fr 2  80 0D          bra @IrqExit
-001311r 2               @IrqCheckPS2:
-001311r 2  AD 0D 94       lda GPIO_IFR
-001314r 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
-001316r 2  F0 06          beq @IrqExit                  ; If not, exit
-001318r 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
-00131Br 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
-00131Er 2               @IrqExit:
-00131Er 2  FA             plx
-00131Fr 2  7A             ply
-001320r 2  68             pla
-001321r 2  40             rti
-001322r 2               @IrqBrk:
-001322r 2  FA             plx                           ; Restore saved registers
-001323r 2  7A             ply
-001324r 2  68             pla
-001325r 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
-001326r 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+0012EFr 2  20 rr rr       jsr ScRts                     ; One more unread byte — RTS may go up
+0012F2r 2                                               ; Fall through to check keyboard — always clear VIA flags
+0012F2r 2               @IrqCheckKB:
+0012F2r 2  AD 0D 03       lda HW_PRESENT
+0012F5r 2  29 20          and #HW_GPIO
+0012F7r 2  F0 1C          beq @IrqExit                  ; GPIO not present — skip
+0012F9r 2  AD 0D 94       lda GPIO_IFR
+0012FCr 2  29 10          and #GPIO_INT_CB1             ; Check if CB1 (matrix keyboard data ready) caused the interrupt
+0012FEr 2  F0 08          beq @IrqCheckPS2              ; If not, check PS/2 keyboard
+001300r 2  AD 00 94       lda GPIO_PORTB                ; Read ASCII byte from matrix keyboard (also clears CB1 IFR flag)
+001303r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+001306r 2  80 0D          bra @IrqExit
+001308r 2               @IrqCheckPS2:
+001308r 2  AD 0D 94       lda GPIO_IFR
+00130Br 2  29 02          and #GPIO_INT_CA1             ; Check if CA1 (PS/2 keyboard data ready) caused the interrupt
+00130Dr 2  F0 06          beq @IrqExit                  ; If not, exit
+00130Fr 2  AD 01 94       lda GPIO_PORTA                ; Read ASCII byte from PS/2 keyboard (also clears CA1 IFR flag)
+001312r 2  20 rr rr       jsr WriteBuffer               ; Store to the input buffer
+001315r 2               @IrqExit:
+001315r 2  FA             plx
+001316r 2  7A             ply
+001317r 2  68             pla
+001318r 2  40             rti
+001319r 2               @IrqBrk:
+001319r 2  FA             plx                           ; Restore saved registers
+00131Ar 2  7A             ply
+00131Br 2  68             pla
+00131Cr 2  58             cli                           ; Re-enable interrupts — abandoning interrupt context
+00131Dr 2  6C 02 03       jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
+001320r 2               
+001320r 2               ; Irq shrank when its RTS decision moved into ScRts; this keeps the three
+001320r 2               ; vectors below, and everything between, at its 1.6 address.
+001320r 2  EA EA EA EA    .res PAD_C, $EA
+001324r 2  EA EA EA EA  
+001328r 2  EA           
+001329r 2                 .assert NmiVec = $B329, lderror, "The Kernal vectors moved from their 1.6 addresses"
 001329r 2               
 001329r 2               ; NMI Vector
 001329r 2               NmiVec:
@@ -3896,7 +3909,97 @@ Current file: BIOS.asm
 00132Fr 2               IrqVec:
 00132Fr 2  6C 00 03       jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
 001332r 2               
-001332r 1               .segment "CHARS"
+001332r 2               ; --- The Serial Card's command register ---
+001332r 2               ;
+001332r 2               ; New in the 1.6 rewrite, and down here because 1.6's routine addresses are
+001332r 2               ; frozen: nothing above may move. Once InitSC has run, ScRts and ScRtsLow are
+001332r 2               ; the only places that write the command register, so the whole RTS scheme lives
+001332r 2               ; here. XModem is the exception: it turns the receive interrupt off and drives
+001332r 2               ; the register itself, and while that bit is set these routines leave it alone.
+001332r 2               ;
+001332r 2               ; RTS is the machine saying "stop sending". The catch is that TIC 00 raises RTS
+001332r 2               ; *and* turns the transmitter off, so while RTS is up the machine cannot send a
+001332r 2               ; character either — and BASIC echoes every character it reads. Holding RTS up
+001332r 2               ; across a transmit therefore hangs the board: SerialChrout spins on TDRE that
+001332r 2               ; can never come, the buffer never drains and RTS never falls. (Seen on a real
+001332r 2               ; R6551, 2026-09-17.)
+001332r 2               ;
+001332r 2               ; So RTS goes up only between transmits, and SerialChrout drops it around every
+001332r 2               ; byte it sends. Each of those releases lets a byte or two in at 19,200 baud,
+001332r 2               ; which is why the marks sit well below the 256-byte buffer: up at
+001332r 2               ; SC_RTS_HIGH_WATER ($C0) with $40 bytes still spare, down again below
+001332r 2               ; SC_RTS_LOW_WATER ($80). The $40 between them is the hysteresis — the same band
+001332r 2               ; the old $F0/$B0 pair had — so a line being read does not flap the pin.
+001332r 2               ;
+001332r 2               ; Irq calls ScRts after it stores a byte, ReadBuffer after it takes one, and
+001332r 2               ; SerialChrout at the end of each character.
+001332r 2               
+001332r 2               ; ScRts — Put RTS where the amount of unread input says it belongs
+001332r 2               ; Raises it at SC_RTS_HIGH_WATER unread bytes, lowers it below SC_RTS_LOW_WATER,
+001332r 2               ; and between the two leaves the pin as it is.
+001332r 2               ; Modifies: Flags, A, X
+001332r 2               ScRts:
+001332r 2  A5 01          lda WRITE_PTR                 ; Unread bytes
+001334r 2  38             sec
+001335r 2  E5 00          sbc READ_PTR
+001337r 2  A2 01          ldx #SC_CMD_RTS_HIGH
+001339r 2  C9 C0          cmp #SC_RTS_HIGH_WATER
+00133Br 2  B0 09          bcs ScRtsWrite                ; Full enough — stop the far end
+00133Dr 2  A2 09          ldx #SC_CMD_RTS_LOW
+00133Fr 2  C9 80          cmp #SC_RTS_LOW_WATER
+001341r 2  90 03          bcc ScRtsWrite                ; Drained — let it talk again
+001343r 2  60             rts                           ; Between the marks — leave the pin alone
+001344r 2               
+001344r 2               ; ScRtsLow — Lower RTS, which is also what turns the transmitter back on
+001344r 2               ; Preserves: A
+001344r 2               ; Modifies: Flags, X
+001344r 2               ScRtsLow:
+001344r 2  A2 09          ldx #SC_CMD_RTS_LOW
+001346r 2                 ; Fall through
+001346r 2               
+001346r 2               ; ScRtsWrite — Write X to the command register unless XModem owns it
+001346r 2               ; Preserves: A
+001346r 2               ; Modifies: Flags
+001346r 2               ScRtsWrite:
+001346r 2  48             pha
+001347r 2  AD 0D 03       lda HW_PRESENT
+00134Ar 2  29 10          and #HW_SC
+00134Cr 2  F0 0A          beq @ScRtsDone                ; No serial card — nothing to signal
+00134Er 2  AD 02 90       lda SC_CMD
+001351r 2  29 02          and #SC_CMD_RXIRQ_OFF
+001353r 2  D0 03          bne @ScRtsDone                ; XModem owns the receiver
+001355r 2  8E 02 90       stx SC_CMD
+001358r 2               @ScRtsDone:
+001358r 2  68             pla
+001359r 2  60             rts
+00135Ar 2               
+00135Ar 2               ; ScRxPoll — Read the Serial Card's status, keeping any byte that came with it
+00135Ar 2               ; Reading the status register clears a pending receive interrupt. A byte that
+00135Ar 2               ; arrives while SerialChrout is polling would therefore lose its interrupt
+00135Ar 2               ; before Irq could see it, and since the receive register stays full the ACIA
+00135Ar 2               ; would not hand over the next one either — the console would stop accepting
+00135Ar 2               ; input for good. So the byte is collected here rather than left for a handler
+00135Ar 2               ; that will never run. XModem is the exception: it turns the receiver interrupt
+00135Ar 2               ; off and polls the chip itself, and those bytes belong to it.
+00135Ar 2               ; Callers hold interrupts off, so WriteBuffer's pointer bump is safe here.
+00135Ar 2               ; Output: A = the status register
+00135Ar 2               ; Modifies: Flags, A, X
+00135Ar 2               ScRxPoll:
+00135Ar 2  AD 01 90       lda SC_STATUS
+00135Dr 2  89 08          bit #SC_STATUS_RDRF           ; Did a byte arrive during the poll?
+00135Fr 2  F0 0F          beq @ScRxPollDone
+001361r 2  48             pha                           ; Keep the status just read
+001362r 2  AD 02 90       lda SC_CMD
+001365r 2  29 02          and #SC_CMD_RXIRQ_OFF
+001367r 2  D0 06          bne @ScRxPollKeep             ; Receiver is somebody else's — leave it alone
+001369r 2  AD 00 90       lda SC_DATA                   ; Frees the receive register
+00136Cr 2  20 rr rr       jsr WriteBuffer
+00136Fr 2               @ScRxPollKeep:
+00136Fr 2  68             pla                           ; Back to the status
+001370r 2               @ScRxPollDone:
+001370r 2  60             rts
+001371r 2               
+001371r 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; =============================================================================
 000000r 2               ; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)

@@ -255,6 +255,14 @@ SC_STATUS_OVR       := %00000100         ; Overrun
 SC_STATUS_FRME      := %00000010         ; Framing Error
 SC_STATUS_PARE      := %00000001         ; Parity Error
 SC_CMD_RXIRQ_OFF    := %00000010         ; Receiver interrupt disabled
+; Command register bytes. TIC (bits 3-2) drives RTS *and* the transmitter: 00
+; raises RTS and turns the transmitter off, 10 lowers RTS and turns it on. So
+; the machine cannot send a character while it is holding RTS high — see ScRts.
+SC_CMD_RTS_LOW      := %00001001         ; DTR on, RX IRQ on, TIC 10: RTS low, transmitter on
+SC_CMD_RTS_HIGH     := %00000001         ; DTR on, RX IRQ on, TIC 00: RTS high, transmitter off
+SC_CMD_XMODEM       := %00001011         ; DTR on, RX IRQ off, TIC 10: XModem polls the chip itself
+SC_RTS_HIGH_WATER   = $C0                ; Unread bytes at which RTS goes up
+SC_RTS_LOW_WATER    = $80                ; Unread bytes below which RTS comes down
 
 ; GPIO Card / Input Board (65C22) | IO 6 | $9400-$940F
 GPIO_PORTB          := $9400

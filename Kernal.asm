@@ -22,6 +22,17 @@
 ;                   * Opcodes are lowercase.
 ; =============================================================================
 
+; Padding that holds 1.6's frozen routine addresses: every Kernal routine keeps
+; the address 1.6 gave it, so the frozen 6502.inc and everything written against
+; it stay valid. The four .assert lines further down check it at link time; when
+; the code between them changes size, adjust these four numbers and nothing else.
+; New routines go at the very end of the Kernal, past the vectors, for the same
+; reason: nothing above them may move.
+PAD_A  = 25                     ; Before BufferSizeImpl    ($A546)
+PAD_A2 = 3                      ; Before SerialChroutImpl  ($A561)
+PAD_B  = 13                     ; Before SidPlayNoteImpl   ($A586)
+PAD_C  = 9                      ; Before NmiVec            ($B329)
+
 ; === Kernal Jump Table ($A000-$A0FF) ===
 ; 85 slots of 3-byte JMP instructions plus 1 padding byte
 ; Provides stable entry points for external code and cartridges
@@ -799,7 +810,7 @@ InitKBImpl:
 InitSCImpl:
   lda     #$1F                  ; 8-N-1, 19200 baud
   sta     SC_CTRL
-  lda     #$09                  ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+  lda     #SC_CMD_RTS_LOW       ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
   sta     SC_CMD
   rts
 
@@ -897,36 +908,28 @@ WriteBufferImpl:
   rts
 
 ; Read a character from the INPUT_BUFFER and store it in A register
-; Irq raises RTS once the buffer holds $F0 bytes. Every reader comes through here
-; — Chrin, BASIC's line input, INKEY, the break check, a cartridge — so this is
-; where RTS is lowered again: high while $B0 or more are still unread, low below
-; that. A reader that skipped it would leave a terminal with RTS/CTS flow control
-; waiting for good. XModem turns the receiver interrupt off and sets the command
-; register itself, so while that bit is set the register is left alone.
+; Every reader comes through here — Chrin, BASIC's line input, INKEY, the break
+; check, a cartridge — so this is where RTS is lowered again once the buffer has
+; drained. A reader that skipped it would leave a terminal with RTS/CTS flow
+; control waiting for good.
 ; Modifies: Flags, X, A
 ReadBufferImpl:
   ldx READ_PTR
   lda INPUT_BUFFER,x
   inc READ_PTR
   pha
-  lda HW_PRESENT
-  and #HW_SC
-  beq @ReadDone                 ; No serial card — nothing to signal
-  lda SC_CMD
-  and #SC_CMD_RXIRQ_OFF
-  bne @ReadDone                 ; XModem owns the receiver
-  lda WRITE_PTR                 ; Unread bytes
-  sec
-  sbc READ_PTR
-  cmp #$B0                      ; Is the buffer still mostly full?
-  lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-  bcs @ReadRts
-  lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-@ReadRts:
-  sta SC_CMD
-@ReadDone:
+  phx                           ; ScRts uses X, and callers have leaned on
+                                ;   ReadBuffer leaving the read pointer there —
+                                ;   1.6's boot menu counts its timeout down in X
+  jsr ScRts                     ; One fewer unread byte — RTS may come down
+  plx
   pla
   rts
+
+; ReadBuffer shrank when its RTS decision moved into ScRts; this keeps
+; BufferSize, Chrin and the two jump slots that point at them where 1.6 put them.
+  .res PAD_A, $EA
+  .assert BufferSizeImpl = $A546, lderror, "BufferSize moved from its 1.6 address"
 
 ; Return in A register the number of unread bytes in the INPUT_BUFFER
 ; Modifies: Flags, A
@@ -954,49 +957,44 @@ ChrinImpl:
   clc
   rts
 
-; 1.6 first shipped with the RTS release in Chrin rather than ReadBuffer, and
-; ReadBuffer, BufferSize and Chrin were three bytes longer then. The padding keeps
-; every Kernal routine from here on at the address 1.6 gave it, so the fix changes
-; nothing in the ROM outside those three routines and the two jump slots that
-; point into them — not BASIC's or the Monitor's calls into the Kernal, and not
-; the CPU vectors.
-  .res 3, $EA
+; 1.6 first shipped with the RTS release inline in Chrin, and ReadBuffer,
+; BufferSize and Chrin filled the room this padding now takes; the RTS fix for a
+; real R6551 (see ScRts) shortened ReadBuffer again. The padding keeps every
+; Kernal routine from here on at the address 1.6 gave it, so the ROM changes only
+; inside the routines that were rewritten and the jump slots that point into them
+; — not BASIC's or the Monitor's calls into the Kernal, and not the CPU vectors.
+; The new routines go at the end of the Kernal, below, for the same reason.
+  .res PAD_A2, $EA
   .assert SerialChroutImpl = $A561, lderror, "Kernal routines after Chrin moved from their 1.6 addresses"
 
 ; Output a character from the A register to the Serial Card
+; TIC 00 turns the transmitter off as well as raising RTS, so a character
+; written while the BIOS is holding RTS up would never leave: the loop below
+; would spin on a TDRE that cannot come. RTS is therefore dropped for the byte
+; and put back afterwards if the buffer is still full, and interrupts are held
+; off meanwhile so that Irq cannot raise it again mid-character.
 ; Modifies: Flags
 SerialChroutImpl:
-  sta SC_DATA
   pha
   phx                           ; WriteBuffer uses X
-@ChroutWait:
-  lda SC_STATUS
-  ; Reading the status register clears a pending receive interrupt. A byte that
-  ; arrives while this loop is running therefore loses its interrupt before Irq
-  ; can see it, and since the receive register stays full the ACIA will not hand
-  ; over the next one either — the console stops accepting input for good. So
-  ; the byte is collected here rather than left for a handler that will never
-  ; run. XModem is the exception: it turns the receiver interrupt off and polls
-  ; the chip itself, and those bytes belong to it.
-  bit #SC_STATUS_RDRF           ; Did a byte arrive during the poll?
-  beq @ChroutNoRx
-  pha                           ; Keep the status just read
-  lda SC_CMD
-  and #SC_CMD_RXIRQ_OFF
-  bne @ChroutRxDone             ; Receiver is somebody else's — leave it alone
   php
-  sei                           ; WriteBuffer's pointer bump is not atomic
-  lda SC_DATA                   ; Frees the receive register
-  jsr WriteBuffer
-  plp
-@ChroutRxDone:
-  pla                           ; Back to the status
-@ChroutNoRx:
+  sei                           ; Irq must not raise RTS while the byte goes out
+  jsr ScRtsLow                  ; The transmitter only runs with RTS down
+  sta SC_DATA
+@ChroutWait:
+  jsr ScRxPoll                  ; Status, and any byte that arrived with it
   and #SC_STATUS_TDRE           ; Check if TX buffer not empty
   beq @ChroutWait               ; Loop if TX buffer not empty
+  jsr ScRts                     ; Byte is gone — RTS may go back up
+  plp                           ; Interrupts back as the caller had them
   plx
-  pla
+  pla                           ; The character, and the flags it left, as before
   rts
+
+; Chrout shrank when the polling loop moved into ScRxPoll; this keeps SidPlayNote
+; and everything after it at its 1.6 address.
+  .res PAD_B, $EA
+  .assert SidPlayNoteImpl = $A586, lderror, "Kernal routines after Chrout moved from their 1.6 addresses"
 
 ; SidPlayNote — Play a note on a SID voice
 ; Input: A = voice (0-2), X = frequency low byte, Y = frequency high byte
@@ -3050,7 +3048,7 @@ XModemLoadImpl:
   lda #$01
   sta IO_MODE
   ; Disable serial RX IRQ — XModem polls SC_STATUS directly
-  lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+  lda #SC_CMD_XMODEM            ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
   sta SC_CMD
   ; Initialize
   lda #$01
@@ -3093,8 +3091,8 @@ XModemLoadImpl:
 @RecvEOT:
   lda #XMODEM_ACK
   jsr SerialChrout
-  ; Re-enable serial RX IRQ
-  lda #$09
+  ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+  lda #SC_CMD_RTS_LOW
   sta SC_CMD
   lda XFER_IO_SAVE
   sta IO_MODE
@@ -3106,8 +3104,8 @@ XModemLoadImpl:
   jsr SerialChrout
   lda #XMODEM_CAN
   jsr SerialChrout
-  ; Re-enable serial RX IRQ
-  lda #$09
+  ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+  lda #SC_CMD_RTS_LOW
   sta SC_CMD
   lda XFER_IO_SAVE
   sta IO_MODE
@@ -3206,7 +3204,7 @@ XModemSaveImpl:
   lda #$01
   sta IO_MODE
   ; Disable serial RX IRQ — XModem polls SC_STATUS directly
-  lda #$0B                      ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
+  lda #SC_CMD_XMODEM            ; Bit 1 set = RX IRQ disabled, RTSB low, DTR
   sta SC_CMD
   ; Initialize
   lda #$01
@@ -3348,8 +3346,8 @@ XModemSaveImpl:
   pla
   pla
 @SendFail:
-  ; Re-enable serial RX IRQ
-  lda #$09
+  ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+  lda #SC_CMD_RTS_LOW
   sta SC_CMD
   lda XFER_IO_SAVE
   sta IO_MODE
@@ -3362,8 +3360,8 @@ XModemSaveImpl:
   jsr SerialChrout
   ; Wait for ACK (best-effort; don't fail if timeout)
   jsr XModemGetByte
-  ; Re-enable serial RX IRQ
-  lda #$09
+  ; Re-enable serial RX IRQ; ScRts takes the pin back over from here
+  lda #SC_CMD_RTS_LOW
   sta SC_CMD
   lda XFER_IO_SAVE
   sta IO_MODE
@@ -3461,11 +3459,7 @@ Irq:
   beq @IrqCheckKB               ; If not, check keyboard
   lda SC_DATA                   ; Read the data from serial register
   jsr WriteBuffer               ; Store to the input buffer
-  jsr BufferSize
-  cmp #$F0                      ; Is the buffer almost full?
-  bcc @IrqCheckKB               ; If not, also check keyboard
-  lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-  sta SC_CMD                    ; Otherwise, signal not ready for receiving (RTSB high)
+  jsr ScRts                     ; One more unread byte — RTS may go up
                                 ; Fall through to check keyboard — always clear VIA flags
 @IrqCheckKB:
   lda HW_PRESENT
@@ -3495,6 +3489,11 @@ Irq:
   cli                           ; Re-enable interrupts — abandoning interrupt context
   jmp (BRK_PTR)                 ; BRK — dispatch with P/PCL/PCH still on stack
 
+; Irq shrank when its RTS decision moved into ScRts; this keeps the three
+; vectors below, and everything between, at its 1.6 address.
+  .res PAD_C, $EA
+  .assert NmiVec = $B329, lderror, "The Kernal vectors moved from their 1.6 addresses"
+
 ; NMI Vector
 NmiVec:
   jmp (NMI_PTR)                 ; Indirect jump through NMI pointer to the NMI handler
@@ -3506,3 +3505,93 @@ ResetVec:
 ; IRQ Vector
 IrqVec:
   jmp (IRQ_PTR)                 ; Indirect jump through IRQ pointer to the IRQ handler
+
+; --- The Serial Card's command register ---
+;
+; New in the 1.6 rewrite, and down here because 1.6's routine addresses are
+; frozen: nothing above may move. Once InitSC has run, ScRts and ScRtsLow are
+; the only places that write the command register, so the whole RTS scheme lives
+; here. XModem is the exception: it turns the receive interrupt off and drives
+; the register itself, and while that bit is set these routines leave it alone.
+;
+; RTS is the machine saying "stop sending". The catch is that TIC 00 raises RTS
+; *and* turns the transmitter off, so while RTS is up the machine cannot send a
+; character either — and BASIC echoes every character it reads. Holding RTS up
+; across a transmit therefore hangs the board: SerialChrout spins on TDRE that
+; can never come, the buffer never drains and RTS never falls. (Seen on a real
+; R6551, 2026-09-17.)
+;
+; So RTS goes up only between transmits, and SerialChrout drops it around every
+; byte it sends. Each of those releases lets a byte or two in at 19,200 baud,
+; which is why the marks sit well below the 256-byte buffer: up at
+; SC_RTS_HIGH_WATER ($C0) with $40 bytes still spare, down again below
+; SC_RTS_LOW_WATER ($80). The $40 between them is the hysteresis — the same band
+; the old $F0/$B0 pair had — so a line being read does not flap the pin.
+;
+; Irq calls ScRts after it stores a byte, ReadBuffer after it takes one, and
+; SerialChrout at the end of each character.
+
+; ScRts — Put RTS where the amount of unread input says it belongs
+; Raises it at SC_RTS_HIGH_WATER unread bytes, lowers it below SC_RTS_LOW_WATER,
+; and between the two leaves the pin as it is.
+; Modifies: Flags, A, X
+ScRts:
+  lda WRITE_PTR                 ; Unread bytes
+  sec
+  sbc READ_PTR
+  ldx #SC_CMD_RTS_HIGH
+  cmp #SC_RTS_HIGH_WATER
+  bcs ScRtsWrite                ; Full enough — stop the far end
+  ldx #SC_CMD_RTS_LOW
+  cmp #SC_RTS_LOW_WATER
+  bcc ScRtsWrite                ; Drained — let it talk again
+  rts                           ; Between the marks — leave the pin alone
+
+; ScRtsLow — Lower RTS, which is also what turns the transmitter back on
+; Preserves: A
+; Modifies: Flags, X
+ScRtsLow:
+  ldx #SC_CMD_RTS_LOW
+  ; Fall through
+
+; ScRtsWrite — Write X to the command register unless XModem owns it
+; Preserves: A
+; Modifies: Flags
+ScRtsWrite:
+  pha
+  lda HW_PRESENT
+  and #HW_SC
+  beq @ScRtsDone                ; No serial card — nothing to signal
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @ScRtsDone                ; XModem owns the receiver
+  stx SC_CMD
+@ScRtsDone:
+  pla
+  rts
+
+; ScRxPoll — Read the Serial Card's status, keeping any byte that came with it
+; Reading the status register clears a pending receive interrupt. A byte that
+; arrives while SerialChrout is polling would therefore lose its interrupt
+; before Irq could see it, and since the receive register stays full the ACIA
+; would not hand over the next one either — the console would stop accepting
+; input for good. So the byte is collected here rather than left for a handler
+; that will never run. XModem is the exception: it turns the receiver interrupt
+; off and polls the chip itself, and those bytes belong to it.
+; Callers hold interrupts off, so WriteBuffer's pointer bump is safe here.
+; Output: A = the status register
+; Modifies: Flags, A, X
+ScRxPoll:
+  lda SC_STATUS
+  bit #SC_STATUS_RDRF           ; Did a byte arrive during the poll?
+  beq @ScRxPollDone
+  pha                           ; Keep the status just read
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @ScRxPollKeep             ; Receiver is somebody else's — leave it alone
+  lda SC_DATA                   ; Frees the receive register
+  jsr WriteBuffer
+@ScRxPollKeep:
+  pla                           ; Back to the status
+@ScRxPollDone:
+  rts

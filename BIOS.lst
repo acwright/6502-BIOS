@@ -1273,57 +1273,71 @@ Current file: BIOS.asm
 00051Dr 2  60             rts
 00051Er 2               
 00051Er 2               ; Read a character from the INPUT_BUFFER and store it in A register
+00051Er 2               ; Irq raises RTS once the buffer holds $F0 bytes. Every reader comes through here
+00051Er 2               ; — Chrin, BASIC's line input, INKEY, the break check, a cartridge — so this is
+00051Er 2               ; where RTS is lowered again: high while $B0 or more are still unread, low below
+00051Er 2               ; that. A reader that skipped it would leave a terminal with RTS/CTS flow control
+00051Er 2               ; waiting for good. XModem turns the receiver interrupt off and sets the command
+00051Er 2               ; register itself, so while that bit is set the register is left alone.
 00051Er 2               ; Modifies: Flags, X, A
 00051Er 2               ReadBufferImpl:
 00051Er 2  A6 00          ldx READ_PTR
 000520r 2  BD 00 02       lda INPUT_BUFFER,x
 000523r 2  E6 00          inc READ_PTR
-000525r 2  60             rts
-000526r 2               
-000526r 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
-000526r 2               ; Modifies: Flags, A
-000526r 2               BufferSizeImpl:
-000526r 2  A5 01          lda WRITE_PTR
-000528r 2  38             sec
-000529r 2  E5 00          sbc READ_PTR
-00052Br 2  60             rts
-00052Cr 2               
-00052Cr 2               ; Get a character from the INPUT_BUFFER if available
-00052Cr 2               ; On return, carry flag indicates whether a character was available
-00052Cr 2               ; If character available the character will be in the A register
-00052Cr 2               ; Modifies: Flags, A
-00052Cr 2               ChrinImpl:
-00052Cr 2  DA             phx
-00052Dr 2  20 rr rr       jsr BufferSize                ; Check for character available
-000530r 2  F0 2C          beq @ChrinNoChar              ; Branch if no character available
-000532r 2  20 rr rr       jsr ReadBuffer                ; Read the character from the buffer
-000535r 2  20 rr rr       jsr Chrout                    ; Echo
-000538r 2  48             pha
-000539r 2  20 rr rr       jsr BufferSize
-00053Cr 2  C9 B0          cmp #$B0                      ; Check if buffer is mostly full
-00053Er 2  90 0E          bcc @ChrinNotFull             ; Branch if buffer size < $B0
-000540r 2                 ; Only touch SC_CMD if serial is present
-000540r 2  AD 0D 03       lda HW_PRESENT
-000543r 2  29 10          and #HW_SC
-000545r 2  F0 13          beq @ChrinExit
-000547r 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-000549r 2  8D 02 90       sta SC_CMD
-00054Cr 2  80 0C          bra @ChrinExit
-00054Er 2               @ChrinNotFull:
-00054Er 2  AD 0D 03       lda HW_PRESENT
-000551r 2  29 10          and #HW_SC
-000553r 2  F0 05          beq @ChrinExit
-000555r 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-000557r 2  8D 02 90       sta SC_CMD
-00055Ar 2               @ChrinExit:
-00055Ar 2  68             pla
+000525r 2  48             pha
+000526r 2  AD 0D 03       lda HW_PRESENT
+000529r 2  29 10          and #HW_SC
+00052Br 2  F0 17          beq @ReadDone                 ; No serial card — nothing to signal
+00052Dr 2  AD 02 90       lda SC_CMD
+000530r 2  29 02          and #SC_CMD_RXIRQ_OFF
+000532r 2  D0 10          bne @ReadDone                 ; XModem owns the receiver
+000534r 2  A5 01          lda WRITE_PTR                 ; Unread bytes
+000536r 2  38             sec
+000537r 2  E5 00          sbc READ_PTR
+000539r 2  C9 B0          cmp #$B0                      ; Is the buffer still mostly full?
+00053Br 2  A9 01          lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+00053Dr 2  B0 02          bcs @ReadRts
+00053Fr 2  A9 09          lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+000541r 2               @ReadRts:
+000541r 2  8D 02 90       sta SC_CMD
+000544r 2               @ReadDone:
+000544r 2  68             pla
+000545r 2  60             rts
+000546r 2               
+000546r 2               ; Return in A register the number of unread bytes in the INPUT_BUFFER
+000546r 2               ; Modifies: Flags, A
+000546r 2               BufferSizeImpl:
+000546r 2  A5 01          lda WRITE_PTR
+000548r 2  38             sec
+000549r 2  E5 00          sbc READ_PTR
+00054Br 2  60             rts
+00054Cr 2               
+00054Cr 2               ; Get a character from the INPUT_BUFFER if available
+00054Cr 2               ; On return, carry flag indicates whether a character was available
+00054Cr 2               ; If character available the character will be in the A register
+00054Cr 2               ; Modifies: Flags, A
+00054Cr 2               ChrinImpl:
+00054Cr 2  DA             phx
+00054Dr 2  20 rr rr       jsr BufferSize                ; Check for character available
+000550r 2  F0 09          beq @ChrinNoChar              ; Branch if no character available
+000552r 2  20 rr rr       jsr ReadBuffer                ; Read the character (and set RTS for what is left)
+000555r 2  20 rr rr       jsr Chrout                    ; Echo
+000558r 2  FA             plx
+000559r 2  38             sec
+00055Ar 2  60             rts
+00055Br 2               @ChrinNoChar:
 00055Br 2  FA             plx
-00055Cr 2  38             sec
+00055Cr 2  18             clc
 00055Dr 2  60             rts
-00055Er 2               @ChrinNoChar:
-00055Er 2  FA             plx
-00055Fr 2  18             clc
-000560r 2  60             rts
+00055Er 2               
+00055Er 2               ; 1.6 first shipped with the RTS release in Chrin rather than ReadBuffer, and
+00055Er 2               ; ReadBuffer, BufferSize and Chrin were three bytes longer then. The padding keeps
+00055Er 2               ; every Kernal routine from here on at the address 1.6 gave it, so the fix changes
+00055Er 2               ; nothing in the ROM outside those three routines and the two jump slots that
+00055Er 2               ; point into them — not BASIC's or the Monitor's calls into the Kernal, and not
+00055Er 2               ; the CPU vectors.
+00055Er 2  EA EA EA       .res 3, $EA
+000561r 2                 .assert SerialChroutImpl = $A561, lderror, "Kernal routines after Chrin moved from their 1.6 addresses"
 000561r 2               
 000561r 2               ; Output a character from the A register to the Serial Card
 000561r 2               ; Modifies: Flags

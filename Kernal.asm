@@ -897,11 +897,35 @@ WriteBufferImpl:
   rts
 
 ; Read a character from the INPUT_BUFFER and store it in A register
+; Irq raises RTS once the buffer holds $F0 bytes. Every reader comes through here
+; — Chrin, BASIC's line input, INKEY, the break check, a cartridge — so this is
+; where RTS is lowered again: high while $B0 or more are still unread, low below
+; that. A reader that skipped it would leave a terminal with RTS/CTS flow control
+; waiting for good. XModem turns the receiver interrupt off and sets the command
+; register itself, so while that bit is set the register is left alone.
 ; Modifies: Flags, X, A
 ReadBufferImpl:
   ldx READ_PTR
   lda INPUT_BUFFER,x
   inc READ_PTR
+  pha
+  lda HW_PRESENT
+  and #HW_SC
+  beq @ReadDone                 ; No serial card — nothing to signal
+  lda SC_CMD
+  and #SC_CMD_RXIRQ_OFF
+  bne @ReadDone                 ; XModem owns the receiver
+  lda WRITE_PTR                 ; Unread bytes
+  sec
+  sbc READ_PTR
+  cmp #$B0                      ; Is the buffer still mostly full?
+  lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
+  bcs @ReadRts
+  lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
+@ReadRts:
+  sta SC_CMD
+@ReadDone:
+  pla
   rts
 
 ; Return in A register the number of unread bytes in the INPUT_BUFFER
@@ -920,27 +944,8 @@ ChrinImpl:
   phx
   jsr BufferSize                ; Check for character available
   beq @ChrinNoChar              ; Branch if no character available
-  jsr ReadBuffer                ; Read the character from the buffer
+  jsr ReadBuffer                ; Read the character (and set RTS for what is left)
   jsr Chrout                    ; Echo
-  pha
-  jsr BufferSize
-  cmp #$B0                      ; Check if buffer is mostly full
-  bcc @ChrinNotFull             ; Branch if buffer size < $B0
-  ; Only touch SC_CMD if serial is present
-  lda HW_PRESENT
-  and #HW_SC
-  beq @ChrinExit
-  lda #$01                      ; No parity, no echo, RTSB high, TX interrupts disabled, RX interrupts enabled
-  sta SC_CMD
-  bra @ChrinExit
-@ChrinNotFull:
-  lda HW_PRESENT
-  and #HW_SC
-  beq @ChrinExit
-  lda #$09                      ; No parity, no echo, RTSB low, TX interrupts disabled, RX interrupts enabled
-  sta SC_CMD
-@ChrinExit:
-  pla
   plx
   sec
   rts
@@ -948,6 +953,15 @@ ChrinImpl:
   plx
   clc
   rts
+
+; 1.6 first shipped with the RTS release in Chrin rather than ReadBuffer, and
+; ReadBuffer, BufferSize and Chrin were three bytes longer then. The padding keeps
+; every Kernal routine from here on at the address 1.6 gave it, so the fix changes
+; nothing in the ROM outside those three routines and the two jump slots that
+; point into them — not BASIC's or the Monitor's calls into the Kernal, and not
+; the CPU vectors.
+  .res 3, $EA
+  .assert SerialChroutImpl = $A561, lderror, "Kernal routines after Chrin moved from their 1.6 addresses"
 
 ; Output a character from the A register to the Serial Card
 ; Modifies: Flags

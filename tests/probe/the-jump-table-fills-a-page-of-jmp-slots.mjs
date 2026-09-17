@@ -71,8 +71,8 @@ export async function run(m) {
     const target = lo | (hi << 8)
     targets.push(target)
     m.assert(
-      target >= 0xa100 && target < 0xb800,
-      `${where} jumps to ${hex(target)}, outside the Kernal routines at $A100-$B7FF`,
+      target >= 0xa100 && target < 0xc000,
+      `${where} jumps to ${hex(target)}, outside the Kernal routines at $A100-$BFFF`,
     )
   }
 

@@ -66,6 +66,29 @@ made to pass.
 
 ---
 
+## The emulator's card cannot report a PICOVDP without the built-in font
+
+- **Bucket:** emulator limitation (untestable as the plan asked)
+- **Found by:** writing `a-picovdp-without-the-font-is-not-a-console`, for
+  VDP-PLAN §5 Phase 8
+- **Phase:** 2.0, Phase 8
+- **Status:** **open, and worked around.** Nothing is `xfail` for it.
+
+2.0's `ProbeVideo` sets `HW_VID` only when `STAT6` b7 (the built-in font) is
+set, because the ROM no longer carries a character set. The plan asked for a
+case on a card that reads `STAT4` = `$AC` without that bit. The emulator's
+`STAT6` is a constant `$BF` (`STAT_CAPABILITIES` in `src/core/IO/Video.ts`),
+and the debug protocol's `video.setRegister` reaches registers, not status, so
+no profile can fit such a card.
+
+The case therefore stops `ProbeVideo` on its `sta VDP_CAPS` and clears b7 in A,
+the value such a card's read would have handed the Kernal, and asserts
+`HW_VID` stays clear. That tests the Kernal's decision, not a card. A way to
+set the capability bits from the debugger (or a card option) would let the
+case drop the breakpoint.
+
+---
+
 ## A paste at 19,200 baud overruns the input buffer
 
 - **Bucket:** BIOS limitation, and an emulator one (RTS is not honoured)

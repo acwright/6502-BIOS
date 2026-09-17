@@ -27,6 +27,7 @@ const HW_VID = 0x80
 
 // BIOS.inc: the cursor column, row and the VRAM address they work out to.
 const VID_CURSOR_X = 0x0307
+const VID_MODE = 0x0393
 
 // The published slots, from the pinned jump table.
 const INIT_VIDEO = 0xa015
@@ -113,7 +114,11 @@ export async function run(m) {
   // one, which is the same pair made in memory instead of on the bus.
   const cursor = () => m.read(VID_CURSOR_X, 4)
 
+  // VID_MODE = $01 as well, so the console counts as up already: otherwise the
+  // call brings it up first, and InitVideo's font load waits for a vertical
+  // blank that an empty slot never gives.
   await m.write(HW_PRESENT, [present | HW_VID])
+  await m.write(VID_MODE, [0x01])
   await m.call6502(VIDEO_SET_CURSOR, { X: 7, Y: 3 })
   const moved = await cursor()
   m.assertBytes(moved.subarray(0, 2), [7, 3], 'the cursor with the video bit set')

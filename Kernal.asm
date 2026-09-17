@@ -36,7 +36,7 @@ BufferSize:     jmp BufferSizeImpl      ; $A00C - Get buffer count
 SetIOMode:      jmp SetIOModeImpl       ; $A00F - Set IO_MODE
 GetIOMode:      jmp GetIOModeImpl       ; $A012 - Get IO_MODE
 ; --- Video (PICOVDP) ---
-InitVideo:      jmp InitVideoImpl       ; $A015 - Text-mode console: registers, character set, palette row 0
+InitVideo:      jmp InitVideoImpl       ; $A015 - Text-mode console: registers, the card's font, palette row 0
 VideoClear:     jmp VideoClearImpl      ; $A018 - Clear video screen
 VideoPutChar:   jmp VideoPutCharImpl    ; $A01B - Write char at cursor
 VideoSetCursor: jmp VideoSetCursorImpl  ; $A01E - Set cursor (X=col, Y=row)
@@ -109,7 +109,7 @@ VdpPeek:        jmp VdpPeekImpl         ; $A0BD - Read VRAM byte at X/Y = addres
 VdpSetPalette:  jmp VdpSetPaletteImpl   ; $A0C0 - Palette entry X = 0-255 ← A = $0R, Y = $GB (at $FC00 + 2X)
 WaitVBlank:     jmp WaitVBlankImpl      ; $A0C3 - Return at the start of the next vertical blank (STAT0 untouched)
 VdpLoadFile:    jmp VdpLoadFileImpl     ; $A0C6 - Load named file (STR_PTR) into VRAM at FS_IO_ADDR, exactly FS_FILE_SIZE bytes
-VdpLoadFont:    jmp VdpLoadFontImpl     ; $A0C9 - Copy built-in font A into L0PAT and wait for it (carry set until Phase 8)
+VdpLoadFont:    jmp VdpLoadFontImpl     ; $A0C9 - Copy built-in font A into L0PAT and wait for it
 VdpSprite:      jmp VdpSpriteImpl       ; $A0CC - Sprite X = 0-63 ← VDP_P0-P3 = Y, X lo, pattern, attributes (table at $2000)
 VdpSetScroll:   jmp VdpSetScrollImpl    ; $A0CF - Layer X = 0-1 scroll: A = x lo, Y = y, VDP_P0 = x bit 8
 VdpLayer:       jmp VdpLayerImpl        ; $A0D2 - Layer X = 0-1 off (A = 0) or on
@@ -183,7 +183,7 @@ VdpSetReg:
 ;         card A = X = Y = 0 and carry set
 ; Modifies: Flags, A, X, Y
 VdpInfoImpl:
-  lda VDP_FW                    ; Both $00 when the probe found no card
+  lda VDP_FW                    ; Both $00 when the probe found no PICOVDP
   ldx VDP_CAPS
   ldy #$00
   bit HW_PRESENT                ; Video is bit 7 — see VideoClear
@@ -337,16 +337,24 @@ WaitVBlankImpl:
   clc
   rts
 
-; VdpLoadFont — Load one of the card's built-in fonts into the pattern table
-; The published slot for SPEC draft 0.5's FONT register.  Until the Kernal
-; loads the font from the card (VDP-PLAN §5 Phase 8), InitVideo still uploads
-; the character set from ROM, and this returns carry set having done nothing.
+; VdpLoadFont — Load one of the card's built-in fonts into layer 0's pattern table
+; Writes the font ID to FONT (SPEC §7), which copies it to L0PAT x $800 as that
+; register stands at the write, and waits for the copy: a pending load lands at
+; the line start where vertical blank begins, before STAT3 b0 sets, so
+; WaitVBlank returning is the completion.  STAT0 is not read.  The only font
+; STAT6 b7 promises is $00 (VDP_FONT_CP437), so any other ID is refused rather
+; than written as a command that would do nothing.
 ; Input: A = font ID
-; Output: carry set
-; Modifies: Flags
+; Output: carry set, and nothing written, if no card or A is not $00
+; Modifies: Flags, A, X, Y
 VdpLoadFontImpl:
-  sec
-  rts
+  bit HW_PRESENT                ; Video is bit 7 — see VideoClear
+  bpl VdpNoCard
+  cmp #VDP_FONT_CP437 + 1
+  bcs VdpNoCard
+  ldx #VDP_FONT                 ; b7 clear: layer 0
+  jsr VdpSetReg
+  jmp WaitVBlankImpl            ; Carry clear: there is a card
 
 ; VdpSprite — Write one sprite's four attribute bytes
 ; The attribute table is taken to be at VRAM $2000 (SPRATTR = $40), where
@@ -1177,8 +1185,9 @@ InitSIDImpl:
   rts
 
 ; InitVideo — Put the PICOVDP in the Kernal's Text-mode console
-; Writes the register table below with the display off, reloads the character
-; set into the pattern table at $0800, restores palette row 0, sets the border
+; Writes the register table below with the display off, has the card reload its
+; font into the pattern table at $0800 (VdpLoadFont, a frame at most), restores
+; palette row 0, sets the border
 ; from VID_PEN and turns the display on.  It does not clear the screen: the
 ; name and attribute tables are left as they were and shown unscrolled.  A
 ; program that switched modes, moved tables or overwrote the glyphs gets the
@@ -1198,7 +1207,8 @@ InitVideoImpl:
   inx
   cpx #(@InitVideoRegsEnd - @InitVideoRegs)
   bne @InitVideoLoop
-  jsr InitCharacters            ; The font, into L0PAT = $0800
+  lda #VDP_FONT_CP437           ; The card's font, into L0PAT = $0800, with the
+  jsr VdpLoadFontImpl           ;   display still off
   ; Palette row 0, 16 entries of $0R $GB at $FC00.  $FC00 is in bank 3, and
   ; VBANK is sampled by the address command, so it goes straight back to 0.
   lda #$03
@@ -1257,43 +1267,6 @@ InitVideoImpl:
 @InitVideoPaletteRow0:          ; SPEC §11 default palette, row 0
   .byte $00,$00, $00,$00, $02,$C4, $06,$D7, $05,$5E, $07,$7F, $0C,$55, $04,$EE
   .byte $0F,$55, $0F,$77, $0C,$B5, $0D,$C8, $02,$A4, $0C,$5B, $0C,$CC, $0F,$FF
-
-; Initialize the character set
-; Copies the 2KB character ROM into the pattern table at VRAM $0800.
-; STR_PTR is used as the source pointer but is saved and restored, so callers
-; may hold a pointer there across the call.
-; Modifies: Flags, A, X, Y
-InitCharacters:
-  lda STR_PTR                   ; Preserve caller's STR_PTR
-  pha
-  lda STR_PTR + 1
-  pha
-  ; Set VRAM write address to $0800 (pattern table base)
-  lda #$00                      ; Low byte of address
-  sta VC_REG
-  lda #$48                      ; High byte ($08) OR $40 for write mode
-  sta VC_REG
-  ; Set up source pointer
-  lda #<CharacterSet
-  sta STR_PTR                   ; Use STR_PTR ($02-$03) for character set pointer
-  lda #>CharacterSet
-  sta STR_PTR + 1
-  ; Copy 2048 bytes (8 pages of 256 bytes each)
-  ldx #$08                      ; 8 pages to copy
-  ldy #$00                      ; Byte counter within page
-@InitCharPageLoop:
-  lda (STR_PTR),y               ; Load from character set
-  sta VC_DATA                   ; Write to VRAM
-  iny
-  bne @InitCharPageLoop         ; Loop until page complete (256 bytes)
-  inc STR_PTR + 1               ; Move to next page
-  dex
-  bne @InitCharPageLoop         ; Loop for all 8 pages
-  pla                           ; Restore caller's STR_PTR
-  sta STR_PTR + 1
-  pla
-  sta STR_PTR
-  rts
 
 ; Initialize the INPUT_BUFFER
 ; Modifies: Flags, A
@@ -2233,7 +2206,9 @@ ProbeRAM:
 ; is video: an empty slot reads something else, and a TMS9918A decodes three
 ; register bits, takes the select as a harmless register 7 write, and is left
 ; alone after that.  On a PICOVDP, records STAT5 in VDP_FW and STAT6 in
-; VDP_CAPS, puts STATSEL_A back to STAT0 and sets HW_VID.  STAT5 gates nothing.
+; VDP_CAPS and puts STATSEL_A back to STAT0.  HW_VID means a PICOVDP with the
+; built-in font, so it is set only if STAT6 b7 is: the Kernal has no character
+; set of its own to fall back on.  STAT5 gates nothing.
 ; Modifies: Flags, A, VDP_FW, VDP_CAPS
 ProbeVideo:
   stz VDP_FW                    ; No card until one answers
@@ -2253,6 +2228,8 @@ ProbeVideo:
   lda #$06
   jsr VdpReadStat               ; And STATSEL_A back to STAT0
   sta VDP_CAPS                  ; STAT6: capability bits
+  asl a                         ; b7, the built-in font, into carry
+  bcc @ProbeVideoDone           ; No font: not a console
   lda HW_PRESENT
   ora #HW_VID
   sta HW_PRESENT

@@ -4,11 +4,12 @@
 // console without calling anything first.
 //
 // Three things, each of which a half-done bring-up would miss: the card is in
-// Text mode (`VMODE` 1), the font is in the pattern table (poisoned first, since
-// the card's own reset already put one there), and the character is on the
+// Text mode (`VMODE` 1), the card's font is in the pattern table (poisoned
+// first, since the card's own reset already put one there), and the character is on the
 // screen at the top left of a cleared screen.
 
 import { vram, VID_MODE } from '../lib/cells.mjs'
+import { cp437Font, FONT_SIZE, PATTERN_TABLE } from '../lib/font.mjs'
 
 export const name = 'the Text console comes up on the first Chrout after KernalInit'
 export const profile = 'video'
@@ -16,15 +17,12 @@ export const profile = 'video'
 const KernalInit = 0xa078
 const Chrout = 0xa000
 
-const PATTERN_TABLE = 0x0800
-const CHARSET_IN_ROM_IMAGE = 0xb800 - 0x8000
-const CHARSET_SIZE = 0x0800
 
 export async function run(m) {
   await m.call6502(KernalInit)
   m.assertEqual((await m.videoInfo()).mode.vmode, 0, 'VMODE after KernalInit')
 
-  await m.fillMem(PATTERN_TABLE, CHARSET_SIZE, 0x5a, 'vram')
+  await m.fillMem(PATTERN_TABLE, FONT_SIZE, 0x5a, 'vram')
   await m.call6502(Chrout, { A: 0x58 }) // X
 
   const { mode } = await m.videoInfo()
@@ -33,8 +31,8 @@ export async function run(m) {
   m.assertByte(await m.peek(VID_MODE), 1, 'VID_MODE after the first Chrout')
 
   m.assertBytes(
-    await vram(m, PATTERN_TABLE, CHARSET_SIZE),
-    await m.read(CHARSET_IN_ROM_IMAGE, CHARSET_SIZE, 'rom'),
+    await vram(m, PATTERN_TABLE, FONT_SIZE),
+    cp437Font(),
     'the pattern table after the first Chrout',
   )
 

@@ -4,7 +4,7 @@
 ;
 ;   Role        :  Sets the CPU target, then .include's every segment source
 ;                   below in link order to produce the assembled ROM image.
-;   Segments    :  KERNAL, CHARS, BASIC, WOZMON, VECTORS  (see BIOS.cfg)
+;   Segments    :  KERNAL, BASIC, WOZMON, VECTORS  (see BIOS.cfg)
 ;   Assembler   :  ca65  (cc65 toolchain)
 ;   Linker cfg  :  BIOS.cfg
 ;
@@ -30,8 +30,6 @@
 
 .segment "KERNAL"
 .include "Kernal.asm"
-.segment "CHARS"
-.include "Chars.asm"
 .segment "BASIC"
 .include "BASIC.asm"
 .segment "WOZMON"

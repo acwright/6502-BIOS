@@ -431,10 +431,8 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 |-------|------|----------|
 | `$8000–$9FFF` | 8KB | I/O space (hardware registers) |
 | `$A000–$A0FF` | 256B | **Kernal jump table** (public API) |
-| `$A100–$B7FF` | ~6KB | Kernal routines |
-| `$B800–$BFFF` | 2KB | IBM CP437 character set (VRAM init data) |
-| `$C000–$EDFF` | ~11.5KB | BASIC interpreter (5-byte floating-point) |
-| `$EE00–$FEFF` | ~4KB | Machine-code monitor |
+| `$A100–$BFFF` | ~8KB | Kernal routines |
+| `$C000–$FEFF` | ~16KB | BASIC interpreter (5-byte floating-point) |
 | `$FF00–$FFF9` | 250B | Wozmon (Apple I machine-code monitor) |
 | `$FFFA–$FFFF` | 6B | CPU vectors (NMI / RESET / IRQ) |
 
@@ -470,7 +468,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 | `$A00C` | `BufferSize` | Return number of bytes waiting in buffer |
 | `$A00F` | `SetIOMode` | Set `IO_MODE`: `A`=0 (video) or 1 (serial) |
 | `$A012` | `GetIOMode` | Get `IO_MODE` → `A` |
-| `$A015` | `InitVideo` | Put the PICOVDP in the Text-mode console — writes the registers (40×24, per-cell colour, name table `$0000`, attributes `$0400`), reloads the character set into the pattern table at `$0800` **and** restores palette row 0. Does not clear the screen |
+| `$A015` | `InitVideo` | Put the PICOVDP in the Text-mode console — writes the registers (40×24, per-cell colour, name table `$0000`, attributes `$0400`), has the card reload its built-in font into the pattern table at `$0800` (`VdpLoadFont`, which waits up to a frame) **and** restores palette row 0. Does not clear the screen |
 | `$A018` | `VideoClear` | Clear the screen to spaces in the current pen and home the cursor |
 | `$A01B` | `VideoPutChar` | Write character at current cursor position |
 | `$A01E` | `VideoSetCursor` | Set cursor: `X`=column (0–39), `Y`=row (0–23) |
@@ -522,7 +520,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 | `$A0A8` | `NvErase` | Zero all 16 bytes of a slot: `X`=slot. Carry set if no RTC or bad slot. `X` preserved |
 | `$A0AB` | `NvFind` | Lowest slot whose owner ID is `A` (valid or damaged); `A`=0 finds the lowest free slot → `X`=slot. Carry set if none |
 | `$A0AE` | `NvFormat` | Erase all 16 save slots. Carry set if no RTC |
-| `$A0B1` | `VdpInfo` | What the boot probe found: → `A`=`VDP_FW` (`STAT5`, firmware version), `X`=`VDP_CAPS` (`STAT6`, capabilities), `Y`=`$AC`. No card: `A`=`X`=`Y`=0, carry set |
+| `$A0B1` | `VdpInfo` | What the boot probe found: → `A`=`VDP_FW` (`STAT5`, firmware version), `X`=`VDP_CAPS` (`STAT6`, capabilities), `Y`=`$AC`. No console card (`HW_VID` clear): carry set, `Y`=0, and `A`/`X` are 0 — or, for a PICOVDP without the built-in font, what it reported |
 | `$A0B4` | `VdpWriteReg` | Write a register: `A`=value, `X`=register (0–127). A `VMODE` write updates `VID_MODE`; `L0CTRL`/`L1CTRL` are kept in `VDP_L0CTRL_SHADOW`/`VDP_L1CTRL_SHADOW` (`$0396–$0397`). `X`, `Y` preserved; carry set and nothing written if no card or `X` > 127 |
 | `$A0B7` | `VdpSetMode` | Write `VMODE`: `A`=1 Text, 2 Compact, 3 Graphics, 4 Full, and `VID_MODE` with it. The register only — tables, layers and sprites are the caller's; the Text console proper is `InitVideo`. Carry set and nothing written if no card or `A` out of range |
 | `$A0BA` | `VdpPoke` | Write one VRAM byte: `A`=value, `X`/`Y`=address lo/hi, anywhere in the 64 KB (`VBANK` is set for the address and put back to 0). Carry set and nothing written if no card |
@@ -530,7 +528,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 | `$A0C0` | `VdpSetPalette` | Set a palette entry: `X`=entry (0–255), `A`=`$0R`, `Y`=`$GB`, written at `$FC00 + 2X`, where `InitVideo` puts `PALBASE`. Carry set and nothing written if no card |
 | `$A0C3` | `WaitVBlank` | Return at the start of the next vertical blank, by polling `STAT3` b0 on port A; `STAT0`'s flags and the `STAT1` latches are left untouched, and `STATSEL_A` is put back to 0. No card: a 2 cs `SysDelay`, carry set. Modifies `A`, `X`, `Y` |
 | `$A0C6` | `VdpLoadFile` | Load a named file from the current disk into VRAM: `STR_PTR`=filename, `FS_IO_ADDR` ($037F)=VRAM address (any of the 64 KB) → `FS_FILE_SIZE`. Writes exactly the file's bytes, never the rest of its last sector. Carry set if no card (nothing read), or not found or read error. Clobbers `XFER_REMAIN` and `FS_SECTOR_BUF` |
-| `$A0C9` | `VdpLoadFont` | Load a built-in font from the card into the pattern table `L0PAT` names: `A`=font ID. **Not yet implemented in this build:** returns carry set having written nothing (the character set still comes from ROM) |
+| `$A0C9` | `VdpLoadFont` | Load a built-in font from the card into layer 0's pattern table, at `L0PAT` × `$800` as it stands at the call: `A`=font ID, `$00` (CP437 6×8) being the only one. Writes `FONT` (`$30`) and returns at the start of the next vertical blank, when the copy has landed; `STAT0` is not read. Carry set and nothing written if no card or `A` ≠ 0. Modifies `A`, `X`, `Y` |
 | `$A0CC` | `VdpSprite` | Write a sprite's attributes: `X`=sprite (0–63), `VDP_P0`–`VDP_P3` (`$0398–$039B`)=Y, X bits 7:0, pattern, attributes (b7 = X bit 8). Assumes the attribute table at VRAM `$2000` (`SPRATTR`=`$40`, where `SCREEN` 1–3 put it); after moving it, use `VdpPoke`. `X` preserved; carry set and nothing written if no card or `X` > 63 |
 | `$A0CF` | `VdpSetScroll` | Scroll a layer: `X`=layer (0–1), `A`=x bits 7:0, `Y`=y, `VDP_P0`=x bit 8 (0 or not). Writes `LxSCRX`, `LxSCRY` and `LxCTRL` b6, keeping `LxCTRL`'s other bits. Carry set and nothing written if no card or `X` > 1 |
 | `$A0D2` | `VdpLayer` | Show or hide a layer: `X`=layer (0–1), `A`=0 hides, anything else shows. Sets or clears `LxCTRL` b4, keeping its other bits. Carry set and nothing written if no card or `X` > 1 |
@@ -538,7 +536,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 
 ### Cartridge Support
 
-Cartridges for this system overlay the ROM area from `$C000–$FFFF`. When inserted, the cartridge replaces the Monitor, BASIC, Wozmon, and CPU vectors (NMI/RESET/IRQ) with its own code. The Kernal (`$A000–$B7FF`) and character set (`$B800–$BFFF`) remain accessible.
+Cartridges for this system overlay the ROM area from `$C000–$FFFF`. When inserted, the cartridge replaces the Monitor, BASIC, Wozmon, and CPU vectors (NMI/RESET/IRQ) with its own code. The Kernal (`$A000–$BFFF`) remains accessible. There is no character set in ROM: the text font comes from the PICOVDP (`InitVideo`).
 
 Two Kernal facilities support cartridge development:
 

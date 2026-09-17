@@ -383,6 +383,9 @@ VDP_SPRCOUNT        = $22                ; Active sprite slots, 0-64
 VDP_SPRCTRL         = $23                ; b0 enable, b1 collision, b2 $D0 terminates, b3 detailed collision, b5:4 depth
 VDP_SPRLIMIT        = $24                ; Sprites drawn per scanline, 1-32
 VDP_SPRPAL          = $25                ; Sprite palette group high bits
+VDP_FONT            = $30                ; Load a built-in font: b7 layer (0 = L0PAT), b6:0 font ID. Every write is a command
+; FONT values (SPEC §7)
+VDP_FONT_CP437      = $00                ; Font $00: CP437 6x8, 2,048 bytes; reset puts it at $0800
 ; STAT6 capability bits (SPEC §6)
 VDP_CAP_LAYERS      = %00000001          ; Two layers
 VDP_CAP_8BPP        = %00000010          ; 8bpp layer
@@ -390,3 +393,4 @@ VDP_CAP_FLIP        = %00000100          ; Sprite flip
 VDP_CAP_SCROLL      = %00001000          ; Hardware scroll
 VDP_CAP_SCANIRQ     = %00010000          ; Scanline IRQ
 VDP_CAP_64K         = %00100000          ; 64 KB VRAM
+VDP_CAP_FONT        = %10000000          ; Built-in font: FONT and font $00 (the Kernal requires it)

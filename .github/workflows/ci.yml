@@ -26,12 +26,22 @@ concurrency:
 # out — v2.6.0 is the one that reads the DS1511Y's TE bit the way the datasheet
 # does, and the case asserting the clock still runs after SETTIME needs it. On
 # v2.5.1 and earlier the emulator carried the same inversion the ROM did, so a
-# correct ROM looks like a stopped clock there. v2.7.0 is the last 2.x release
-# and bundles v1.6, so it is the emulator the 1.x line is tested on for good.
+# correct ROM looks like a stopped clock there.
+#
+# This pin used to say v2.7.0 was where the 1.x line was tested for good, on the
+# grounds that v2.7.0 is the last 2.x release and bundles v1.6. That was written
+# before 1.6 was reissued to fix serial flow control on a real R6551, and it
+# does not survive it: 2.x has no flow control at all, so the emulator that was
+# meant to be the 1.x line's forever cannot see the thing the 1.6 reissue
+# changed. v3.2.0 can — it models the R6551 the way the bench does and honours
+# RTS by default — and 3.x fits a TMS9918A unless told otherwise, which is the
+# card this ROM drives, so the profiles still need no flags. The bundled ROM is
+# beside the point either way: the suite builds this tree's ROM and passes it
+# with `--rom`.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v2.7.0
+  EMULATOR_REF: v3.2.0
 
 jobs:
   test:

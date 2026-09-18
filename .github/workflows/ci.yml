@@ -38,10 +38,13 @@ concurrency:
 # card this ROM drives, so the profiles still need no flags. The bundled ROM is
 # beside the point either way: the suite builds this tree's ROM and passes it
 # with `--rom`.
+#
+# v3.3.0 adds the serial card's CTS and DCD jumpers to that model. They default
+# to ground, where they change nothing, and the pin follows main's to it.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v3.2.0
+  EMULATOR_REF: v3.3.0
 
 jobs:
   test:

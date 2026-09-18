@@ -22,19 +22,19 @@ concurrency:
 # business. This branch is BIOS 2.x, which drives a PICOVDP and nothing else,
 # so the emulator has to be one that can fit a PICOVDP with SPEC draft 0.5's
 # font: 3.x, which fits a TMS9918A unless told otherwise, so the suite's
-# profiles pass `--vdp picovdp`. They also pass `--flow-control`, so a paste
-# waits while the ROM raises RTS; 3.2.0 turns that on by default and spells the
-# opt-out `--no-flow-control`, so the flag is now redundant and kept because it
-# says out loud what terminal the cases meet. The pin is v3.2.0 rather than the
-# 3.0.1 it was, because the serial work this ROM was fixed for is only worth
-# testing against an emulator that models the R6551 the way the bench does, and
-# 3.0.1 predates that model and the bundled ROMs that go with it. The pin is a
-# release tag, which is what a developer installs. The 1.x ROMs keep their own
-# pin on v1.x.
+# profiles pass `--vdp picovdp`. They also pass `--peer-rts honour`, so a paste
+# waits while the ROM raises RTS; that is the default, and the flag is kept
+# because it says out loud what terminal the cases meet. The pin is v3.3.0: the
+# serial work this ROM was fixed for is only worth testing against an emulator
+# that models the R6551 the way the bench does, 3.3.0 adds CTS and DCD to that
+# model (at ground, where the suite runs, they change nothing), and it is the
+# release that spells the flag `--peer-rts` rather than the deprecated
+# `--flow-control`. The pin is a release tag, which is what a developer
+# installs. The 1.x ROMs keep their own pin on v1.x.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v3.2.0
+  EMULATOR_REF: v3.3.0
 
 jobs:
   test:

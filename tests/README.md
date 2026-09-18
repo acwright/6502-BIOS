@@ -8,9 +8,9 @@ tests/run.mjs --help
 
 Needs Node ≥ 22 and an AC6502 emulator whose video card is a PICOVDP with
 SPEC draft 0.5's built-in font, and whose serial input can honour RTS: the
-AC6502 Emulator (6502-EMULATOR) **3.0.1 or later**. BIOS 2.x supports no other video card. The
+AC6502 Emulator (6502-EMULATOR) **3.3.0 or later**. BIOS 2.x supports no other video card. The
 profiles in `run.mjs` pass `--vdp picovdp`, since 3.x fits a TMS9918A
-otherwise, and `--flow-control`, so a paste waits while the ROM raises RTS
+otherwise, and `--peer-rts honour`, so a paste waits while the ROM raises RTS
 instead of overrunning the input buffer. The runner checks `session.info`
 agrees before it boots a profile. With the app installed, `make test` runs
 the `6502` on PATH.

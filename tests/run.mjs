@@ -40,12 +40,13 @@ const RTC = '2026-01-01T00:00:00'
 // Every profile names the PICOVDP, because emulator 3.x fits a TMS9918A unless
 // told otherwise and this ROM drives nothing else. A serial console leaves the
 // video slot empty whichever card is named, so on those the flag only keeps
-// every machine the same. Every profile also turns flow control on, so serial
+// every machine the same. Every profile also has the console honour RTS
+// (`--peer-rts honour`, which 3.3.0 renamed from `--flow-control`), so serial
 // input waits while the ROM raises RTS, as a terminal doing RTS/CTS would: a
 // paste at 19,200 baud outruns BASIC's crunch otherwise. The video profiles
 // send nothing over serial today, but a case that did should meet the same
 // terminal, and with nothing arriving the setting changes nothing.
-const MACHINE = ['--vdp', 'picovdp', '--flow-control']
+const MACHINE = ['--vdp', 'picovdp', '--peer-rts', 'honour']
 const VIDEO = ['--console', 'video', ...MACHINE]
 const PROFILES = {
   serial: { console: 'serial', args: MACHINE },

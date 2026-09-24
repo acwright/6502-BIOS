@@ -1,9 +1,9 @@
 # TODO
 
-For the next BIOS 2.x update. Both items were found on 2026-09-24 while looking
+For the next BIOS 2.x update. The first two were found on 2026-09-24 while looking
 into why an ACE Rev 1.0 missed its SID and CompactFlash card at 2 MHz (6502-ACE
 `TODO.md`, "The ACE runs at 1 MHz only"). The ACE now runs at 1 MHz only, so
-neither item is failing today. BIOS 1.6's routine addresses are frozen, so these
+none of these is failing today. BIOS 1.6's routine addresses are frozen, so these
 are for 2.x only, unless 1.x is reissued.
 
 ## 1. The CompactFlash probe should wait a fixed time, not a fixed number of cycles
@@ -82,3 +82,19 @@ boots in Phase 14. A probe that samples several times, over a longer window,
 may also cure that, if the ARMSID is sometimes not ready yet when the probe
 runs. Recording whether each miss was at power-on or after the reset button
 would help.
+
+## 3. The keyboard encoders' settle delay is sized for a clock the ACE no longer has
+
+**What happens now:** `KBDisable` busy-waits `KB_SETTLE_COUNT` (80) loops of
+about 5 cycles after disabling both keyboard encoders, so their firmware has let
+go of the VIA's ports before the caller reads them. The comment beside it in
+`Kernal.asm` sizes that against "the 2 MHz clock option (the worst case)": about
+200 µs at 2 MHz, against the encoder firmware's guaranteed release within
+100 µs.
+
+**Why it can change:** the ACE runs at 1 MHz only now (6502-ACE `TODO.md`), so
+the same count waits about 400 µs, four times the guarantee. Nothing is wrong,
+since a longer wait is only slower, but `JOY()` pays it on every read. At 1 MHz a
+count of 40 gives about 200 µs, the margin the comment chose. Change the count and
+its comment together, and check `JOY()` against a real board's encoders.
+

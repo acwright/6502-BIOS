@@ -8,14 +8,14 @@
 // a PAUSE that returned instantly prints exactly what a correct one prints.
 //
 // The band is deliberately wide, for the same reason as the fitted case
-// (pause-waits-about-the-right-time): a busy-loop calibrated for 1 MHz is not
-// going to agree with a timer at 2 MHz, and the BIOS promises no cycle counts.
+// (pause-waits-about-the-right-time): a busy-loop is not going to agree with a
+// timer to the cycle, and the BIOS promises no cycle counts.
 // What is being caught is a fallback that does not wait, or one that hangs.
 export const name = 'PAUSE still waits about the right time with no VIA fitted'
 export const hw = '-gpio'
 
 const CENTISECONDS = 50
-const CPU_HZ = 2_000_000
+const CPU_HZ = 1_000_000 // the ACE's clock
 const EXPECTED = (CPU_HZ * CENTISECONDS) / 100
 
 export async function run(m) {

@@ -6,7 +6,7 @@ export const name = 'PAUSE 50 waits roughly half a second of machine time'
 
 // README: "PAUSE <n> — Pause for `n` centiseconds (~10 ms each)".
 const CENTISECONDS = 50
-const CPU_HZ = 2_000_000 // 6502 ACE clock; only the order of magnitude matters here
+const CPU_HZ = 1_000_000 // the ACE's clock; only the order of magnitude matters here
 const EXPECTED = (CPU_HZ * CENTISECONDS) / 100
 
 export async function run(m) {

@@ -1,8 +1,8 @@
 # TODO
 
 For the next BIOS 2.x update. The first two were found on 2026-09-24 while looking
-into why an ACE Rev 1.0 missed its SID and CompactFlash card at 2 MHz (6502-ACE
-`TODO.md`, "The ACE runs at 1 MHz only"). The ACE now runs at 1 MHz only, so
+into why an ACE Rev 1.0 missed its SID and CompactFlash card at 2 MHz (6502-ACE's
+retired `TODO.md`, "The ACE runs at 1 MHz only": `git show 735c58e:TODO.md`). The ACE now runs at 1 MHz only, so
 none of these is failing today. BIOS 1.6's routine addresses are frozen, so these
 are for 2.x only, unless 1.x is reissued.
 
@@ -92,7 +92,7 @@ go of the VIA's ports before the caller reads them. The comment beside it in
 200 µs at 2 MHz, against the encoder firmware's guaranteed release within
 100 µs.
 
-**Why it can change:** the ACE runs at 1 MHz only now (6502-ACE `TODO.md`), so
+**Why it can change:** the ACE runs at 1 MHz only now (the 6502-ACE README), so
 the same count waits about 400 µs, four times the guarantee. Nothing is wrong,
 since a longer wait is only slower, but `JOY()` pays it on every read. At 1 MHz a
 count of 40 gives about 200 µs, the margin the comment chose. Change the count and

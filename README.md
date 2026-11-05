@@ -50,7 +50,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code, or from BASIC with 
 | 1 | `$02` | RAM card high (IO 2) |
 | 2 | `$04` | RTC DS1511Y (IO 3) |
 | 3 | `$08` | CompactFlash (IO 4) |
-| 4 | `$10` | Serial R65C51 (IO 5) |
+| 4 | `$10` | Serial R6551AP (IO 5) |
 | 5 | `$20` | GPIO/VIA 65C22 (IO 6) |
 | 6 | `$40` | SID/ARMSID (IO 7) |
 | 7 | `$80` | Video: a PICOVDP with the built-in font (IO 8) |

@@ -98,7 +98,7 @@ Current file: BIOS.asm
 000000r 2               HW_RAM_H            = %00000010          ; Bit 1: RAM card high (IO 2, $8400-$87FF)
 000000r 2               HW_RTC              = %00000100          ; Bit 2: RTC card (IO 3, DS1511Y)
 000000r 2               HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFlash)
-000000r 2               HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
+000000r 2               HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R6551AP)
 000000r 2               HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
 000000r 2               HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
 000000r 2               HW_VID              = %10000000          ; Bit 7: Video card (IO 8): a PICOVDP with the built-in font
@@ -288,7 +288,7 @@ Current file: BIOS.asm
 000000r 2               FS_FLAG_USED        = %00000001          ; Entry in use
 000000r 2               FS_DISK_SECTORS     = 2048               ; Sectors per disk bank (2048 * 512 = 1 MB); 256 disks = 256 MB
 000000r 2               
-000000r 2               ; Serial Card / Serial Card Pro (R65C51) | IO 5 | $9000-$9003
+000000r 2               ; Serial Card / Serial Card Pro (R6551AP) | IO 5 | $9000-$9003
 000000r 2               SC_DATA             := $9000             ; R/W
 000000r 2               SC_RESET            := $9001             ; Write
 000000r 2               SC_STATUS           := $9001             ; Read
@@ -2855,7 +2855,7 @@ Current file: BIOS.asm
 000C44r 2  9C 02 94       stz GPIO_DDRB                 ; Restore to inputs (InitKBImpl will configure properly)
 000C47r 2  60             rts
 000C48r 2               
-000C48r 2               ; ProbeSerial — R65C51 CMD register write/read-back test
+000C48r 2               ; ProbeSerial — R6551AP CMD register write/read-back test
 000C48r 2               ; Issues programmatic reset, writes test value to CMD, reads back
 000C48r 2               ; Open bus will not match — prevents false detection
 000C48r 2               ; Sets HW_SC in HW_PRESENT on success

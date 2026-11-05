@@ -2403,7 +2403,7 @@ ProbeGPIO:
   stz GPIO_DDRB                 ; Restore to inputs (InitKBImpl will configure properly)
   rts
 
-; ProbeSerial — R65C51 CMD register write/read-back test
+; ProbeSerial — R6551AP CMD register write/read-back test
 ; Issues programmatic reset, writes test value to CMD, reads back
 ; Open bus will not match — prevents false detection
 ; Sets HW_SC in HW_PRESENT on success

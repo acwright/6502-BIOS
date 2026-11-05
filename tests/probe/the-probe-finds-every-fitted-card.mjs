@@ -21,7 +21,7 @@ export const CARDS = [
   [0x02, 'RAM card high (IO 2)'],
   [0x04, 'RTC DS1511Y (IO 3)'],
   [0x08, 'CompactFlash (IO 4)'],
-  [0x10, 'Serial R65C51 (IO 5)'],
+  [0x10, 'Serial R6551AP (IO 5)'],
   [0x20, 'GPIO/VIA 65C22 (IO 6)'],
   [0x40, 'SID/ARMSID (IO 7)'],
   [0x80, 'Video TMS9918 (IO 8)'],

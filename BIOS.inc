@@ -69,7 +69,7 @@ HW_RAM_L            = %00000001          ; Bit 0: RAM card low  (IO 1, $8000-$83
 HW_RAM_H            = %00000010          ; Bit 1: RAM card high (IO 2, $8400-$87FF)
 HW_RTC              = %00000100          ; Bit 2: RTC card (IO 3, DS1511Y)
 HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFlash)
-HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R65C51)
+HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R6551AP)
 HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
 HW_SID              = %01000000          ; Bit 6: Sound card (IO 7, SID/ARMSID)
 HW_VID              = %10000000          ; Bit 7: Video card (IO 8, TMS9918/pico9918)
@@ -240,7 +240,7 @@ FS_ENTRY_FSIZE      = 14                 ; Offset of file size (2 bytes)
 FS_FLAG_USED        = %00000001          ; Entry in use
 FS_DISK_SECTORS     = 2048               ; Sectors per disk bank (2048 * 512 = 1 MB); 256 disks = 256 MB
 
-; Serial Card / Serial Card Pro (R65C51) | IO 5 | $9000-$9003
+; Serial Card / Serial Card Pro (R6551AP) | IO 5 | $9000-$9003
 SC_DATA             := $9000             ; R/W
 SC_RESET            := $9001             ; Write
 SC_STATUS           := $9001             ; Read

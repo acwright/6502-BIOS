@@ -21,7 +21,7 @@ export const name = 'with no serial card, Chrin reads a character without touchi
 const HW_PRESENT = 0x030d
 const HW_SC = 0x10
 
-// BIOS.inc: the R65C51's command register.
+// BIOS.inc: the R6551AP's command register.
 const SC_CMD = 0x9002
 
 // The published slots, from the pinned jump table.

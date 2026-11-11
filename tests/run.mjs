@@ -47,6 +47,11 @@ const PROFILES = {
   // the bus, as the board does; before it, $00.
   'no-cf': { console: 'serial', args: ['--empty', 'storage'] },
   'no-sound': { console: 'serial', args: ['--empty', 'sound'] },
+  // A CF card that takes as long as a real one to start after each reset
+  // (--cf-busy, 6502-EMULATOR after 3.5.0): measured cards took 426 to 545 ms,
+  // and the probe gives up at 3.0 s.
+  'cf-slow': { console: 'serial', args: ['--cf-busy', '545ms'] },
+  'cf-dead': { console: 'serial', args: ['--cf-busy', '4s'] },
 }
 
 const DIRECTIVES = new Set(['name', 'profile', 'mode', 'hw', 'xfail', 'issue', 'selftest', 'final', 'timeout'])

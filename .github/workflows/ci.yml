@@ -41,10 +41,14 @@ concurrency:
 #
 # v3.3.0 adds the serial card's CTS and DCD jumpers to that model. They default
 # to ground, where they change nothing, and the pin follows main's to it.
+#
+# v3.6.0 reads an empty slot as open bus, as the board does, and adds
+# `--cf-busy`: the no-sound, no-cf, cf-slow and cf-dead profiles need both,
+# and the pin follows main's to it again.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v3.3.0
+  EMULATOR_REF: v3.6.0
 
 jobs:
   test:

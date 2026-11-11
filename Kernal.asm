@@ -24,14 +24,15 @@
 
 ; Padding that holds 1.6's frozen routine addresses: every Kernal routine keeps
 ; the address 1.6 gave it, so the frozen 6502.inc and everything written against
-; it stay valid. The five .assert lines further down check it at link time; when
-; the code between them changes size, adjust these five numbers and nothing else.
+; it stay valid. The six .assert lines further down check it at link time; when
+; the code between them changes size, adjust these six numbers and nothing else.
 ; New routines go at the very end of the Kernal, past the vectors, for the same
 ; reason: nothing above them may move.
 PAD_W  = 5                      ; Before ReadBufferImpl    ($A51E)
 PAD_A  = 25                     ; Before BufferSizeImpl    ($A546)
 PAD_A2 = 3                      ; Before SerialChroutImpl  ($A561)
 PAD_B  = 8                      ; Before SidPlayNoteImpl   ($A586)
+PAD_S  = 47                     ; ProbeSID's 1.6 bytes      ($A9FC)
 PAD_C  = 2                      ; Before NmiVec            ($B329)
 
 ; === Kernal Jump Table ($A000-$A0FF) ===
@@ -1898,41 +1899,10 @@ ProbeSerial:
 @ProbeSerialDone:
   rts
 
-; ProbeSID — Active oscillator test using voice 3
-; Configures voice 3 noise waveform, brief delay, reads SID_OSC3
-; Non-zero and non-$FF result indicates SID present
-; Sets HW_SID in HW_PRESENT on success
-; Modifies: Flags, A, X, Y
-ProbeSID:
-  ; Set voice 3 frequency to a fast value
-  lda #$FF
-  sta SID_V3_FREQ_LO
-  sta SID_V3_FREQ_HI
-  ; Gate on + noise waveform
-  lda #(SID_CTRL_GATE | SID_CTRL_NOISE)
-  sta SID_V3_CTRL
-  ; Brief software delay for oscillator to run
-  ldy #$00
-@ProbeSIDDelay:
-  dey
-  bne @ProbeSIDDelay            ; ~1280 cycles
-  ; Read oscillator 3 output
-  lda SID_OSC3
-  beq @ProbeSIDCleanup          ; Zero → no SID
-  cmp #$FF
-  beq @ProbeSIDCleanup          ; $FF → likely floating bus
-  ; SID detected
-  pha
-  lda HW_PRESENT
-  ora #HW_SID
-  sta HW_PRESENT
-  pla
-@ProbeSIDCleanup:
-  ; Silence voice 3
-  stz SID_V3_CTRL
-  stz SID_V3_FREQ_LO
-  stz SID_V3_FREQ_HI
-  rts
+; ProbeSID grew in 1.7 and moved past the vectors (see the end of the Kernal);
+; its 1.6 bytes stay here as padding, so nothing after it moves.
+  .res PAD_S, $EA
+  .assert ProbeRTC = $AA2B, lderror, "ProbeRTC moved from its 1.6 address"
 
 ; ProbeRTC — DS1511Y NVRAM read-back test
 ; Writes test pattern to NVRAM address 0, reads it back
@@ -3655,4 +3625,68 @@ ScFlooded:
   clc
 @ScFloodedDone:
   pla
+  rts
+
+; --- The SID probe ---
+;
+; New in 1.7, and down here because 1.6's routine addresses are frozen: the
+; probe grew when it stopped accepting an empty slot's open bus as a SID.
+
+; ProbeSID — Is a SID fitted?  Voice 3's noise must change between reads
+; Starts voice 3 on noise at its highest frequency and samples SID_OSC3
+; SID_PROBE_READS times, about 1,280 cycles apart.  A SID gives a new value on
+; almost every read.  An empty slot reads open bus, the same byte every time:
+; the high byte of SID_OSC3's address, $98, which the old test (anything but
+; $00 or $FF) accepted.  SID_PROBE_CHANGES changes are needed, so one glitch on
+; an empty bus can't pass.  $98 isn't rejected by value: a SID's noise reads it
+; one time in 256, and a constant $98 already fails.
+; Each round writes voice 3 again, so a SID that comes out of its own reset
+; late and missed the first writes (an ARMSID) is found in a later round.  An
+; empty slot waits out every round: about 75 ms at 1 MHz.
+; Sets HW_SID in HW_PRESENT on success
+; Modifies: Flags, A, X, Y
+SID_PROBE_ROUNDS  = 8           ; Rounds before giving up, about 9 ms each at 1 MHz
+SID_PROBE_READS   = 8           ; Samples per round
+SID_PROBE_CHANGES = 2           ; Changes between samples that prove a SID
+ProbeSID:
+  lda #SID_PROBE_ROUNDS
+  sta SID_PROBE_ROUND
+@ProbeSIDRound:
+  lda #$FF                      ; Voice 3 at its highest frequency
+  sta SID_V3_FREQ_LO
+  sta SID_V3_FREQ_HI
+  lda #(SID_CTRL_GATE | SID_CTRL_NOISE)
+  sta SID_V3_CTRL               ; Gate on, noise
+  stz SID_PROBE_SEEN
+  lda SID_OSC3                  ; First sample, only to compare with
+  sta SID_PROBE_LAST
+  ldx #(SID_PROBE_READS - 1)
+@ProbeSIDSample:
+  ldy #$00
+@ProbeSIDDelay:
+  dey
+  bne @ProbeSIDDelay            ; ~1280 cycles
+  lda SID_OSC3
+  cmp SID_PROBE_LAST
+  sta SID_PROBE_LAST            ; (sta leaves the flags alone)
+  beq @ProbeSIDSame
+  inc SID_PROBE_SEEN
+@ProbeSIDSame:
+  dex
+  bne @ProbeSIDSample
+  lda SID_PROBE_SEEN
+  cmp #SID_PROBE_CHANGES
+  bcs @ProbeSIDFound
+  dec SID_PROBE_ROUND
+  bne @ProbeSIDRound
+  bra @ProbeSIDCleanup          ; Never changed: no SID
+@ProbeSIDFound:
+  lda HW_PRESENT
+  ora #HW_SID
+  sta HW_PRESENT
+@ProbeSIDCleanup:
+  ; Silence voice 3
+  stz SID_V3_CTRL
+  stz SID_V3_FREQ_LO
+  stz SID_V3_FREQ_HI
   rts

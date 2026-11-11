@@ -42,6 +42,12 @@ MON_IDX             := $35               ; $35     - Monitor input line index
 PE_PTR              := CF_BUF_PTR        ; $24-$25 - chain walk cursor
 PE_NEXT             := CF_LBA            ; $26-$27 - candidate next-pointer
 
+; SID probe scratch.  Aliases the XModem bytes, which are idle whenever
+; ProbeSID runs (KernalInit only, never with a transfer in flight).
+SID_PROBE_ROUND     := XMODEM_BLK        ; $36     - rounds left before giving up
+SID_PROBE_LAST      := XMODEM_CHK        ; $37     - the previous SID_OSC3 sample
+SID_PROBE_SEEN      := XMODEM_RETRY      ; $38     - changes seen this round
+
 ; NVRAM save-slot copy pointer.  Aliases STR_PTR, which NvRead/NvWrite clobber
 ; exactly as PrintStr does — the two are never live at the same time.
 NV_PTR              := STR_PTR           ; $02-$03 - caller's buffer during a slot copy

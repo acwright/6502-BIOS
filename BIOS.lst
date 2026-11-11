@@ -77,6 +77,12 @@ Current file: BIOS.asm
 000000r 2               PE_PTR              := CF_BUF_PTR        ; $24-$25 - chain walk cursor
 000000r 2               PE_NEXT             := CF_LBA            ; $26-$27 - candidate next-pointer
 000000r 2               
+000000r 2               ; SID probe scratch.  Aliases the XModem bytes, which are idle whenever
+000000r 2               ; ProbeSID runs (KernalInit only, never with a transfer in flight).
+000000r 2               SID_PROBE_ROUND     := XMODEM_BLK        ; $36     - rounds left before giving up
+000000r 2               SID_PROBE_LAST      := XMODEM_CHK        ; $37     - the previous SID_OSC3 sample
+000000r 2               SID_PROBE_SEEN      := XMODEM_RETRY      ; $38     - changes seen this round
+000000r 2               
 000000r 2               ; NVRAM save-slot copy pointer.  Aliases STR_PTR, which NvRead/NvWrite clobber
 000000r 2               ; exactly as PrintStr does — the two are never live at the same time.
 000000r 2               NV_PTR              := STR_PTR           ; $02-$03 - caller's buffer during a slot copy
@@ -406,14 +412,15 @@ Current file: BIOS.asm
 000000r 2               
 000000r 2               ; Padding that holds 1.6's frozen routine addresses: every Kernal routine keeps
 000000r 2               ; the address 1.6 gave it, so the frozen 6502.inc and everything written against
-000000r 2               ; it stay valid. The five .assert lines further down check it at link time; when
-000000r 2               ; the code between them changes size, adjust these five numbers and nothing else.
+000000r 2               ; it stay valid. The six .assert lines further down check it at link time; when
+000000r 2               ; the code between them changes size, adjust these six numbers and nothing else.
 000000r 2               ; New routines go at the very end of the Kernal, past the vectors, for the same
 000000r 2               ; reason: nothing above them may move.
 000000r 2               PAD_W  = 5                      ; Before ReadBufferImpl    ($A51E)
 000000r 2               PAD_A  = 25                     ; Before BufferSizeImpl    ($A546)
 000000r 2               PAD_A2 = 3                      ; Before SerialChroutImpl  ($A561)
 000000r 2               PAD_B  = 8                      ; Before SidPlayNoteImpl   ($A586)
+000000r 2               PAD_S  = 47                     ; ProbeSID's 1.6 bytes      ($A9FC)
 000000r 2               PAD_C  = 2                      ; Before NmiVec            ($B329)
 000000r 2               
 000000r 2               ; === Kernal Jump Table ($A000-$A0FF) ===
@@ -2286,41 +2293,12 @@ Current file: BIOS.asm
 0009FBr 2               @ProbeSerialDone:
 0009FBr 2  60             rts
 0009FCr 2               
-0009FCr 2               ; ProbeSID — Active oscillator test using voice 3
-0009FCr 2               ; Configures voice 3 noise waveform, brief delay, reads SID_OSC3
-0009FCr 2               ; Non-zero and non-$FF result indicates SID present
-0009FCr 2               ; Sets HW_SID in HW_PRESENT on success
-0009FCr 2               ; Modifies: Flags, A, X, Y
-0009FCr 2               ProbeSID:
-0009FCr 2                 ; Set voice 3 frequency to a fast value
-0009FCr 2  A9 FF          lda #$FF
-0009FEr 2  8D 0E 98       sta SID_V3_FREQ_LO
-000A01r 2  8D 0F 98       sta SID_V3_FREQ_HI
-000A04r 2                 ; Gate on + noise waveform
-000A04r 2  A9 81          lda #(SID_CTRL_GATE | SID_CTRL_NOISE)
-000A06r 2  8D 12 98       sta SID_V3_CTRL
-000A09r 2                 ; Brief software delay for oscillator to run
-000A09r 2  A0 00          ldy #$00
-000A0Br 2               @ProbeSIDDelay:
-000A0Br 2  88             dey
-000A0Cr 2  D0 FD          bne @ProbeSIDDelay            ; ~1280 cycles
-000A0Er 2                 ; Read oscillator 3 output
-000A0Er 2  AD 1B 98       lda SID_OSC3
-000A11r 2  F0 0E          beq @ProbeSIDCleanup          ; Zero → no SID
-000A13r 2  C9 FF          cmp #$FF
-000A15r 2  F0 0A          beq @ProbeSIDCleanup          ; $FF → likely floating bus
-000A17r 2                 ; SID detected
-000A17r 2  48             pha
-000A18r 2  AD 0D 03       lda HW_PRESENT
-000A1Br 2  09 40          ora #HW_SID
-000A1Dr 2  8D 0D 03       sta HW_PRESENT
-000A20r 2  68             pla
-000A21r 2               @ProbeSIDCleanup:
-000A21r 2                 ; Silence voice 3
-000A21r 2  9C 12 98       stz SID_V3_CTRL
-000A24r 2  9C 0E 98       stz SID_V3_FREQ_LO
-000A27r 2  9C 0F 98       stz SID_V3_FREQ_HI
-000A2Ar 2  60             rts
+0009FCr 2               ; ProbeSID grew in 1.7 and moved past the vectors (see the end of the Kernal);
+0009FCr 2               ; its 1.6 bytes stay here as padding, so nothing after it moves.
+0009FCr 2  EA EA EA EA    .res PAD_S, $EA
+000A00r 2  EA EA EA EA  
+000A04r 2  EA EA EA EA  
+000A2Br 2                 .assert ProbeRTC = $AA2B, lderror, "ProbeRTC moved from its 1.6 address"
 000A2Br 2               
 000A2Br 2               ; ProbeRTC — DS1511Y NVRAM read-back test
 000A2Br 2               ; Writes test pattern to NVRAM address 0, reads it back
@@ -4058,7 +4036,71 @@ Current file: BIOS.asm
 001398r 2  68             pla
 001399r 2  60             rts
 00139Ar 2               
-00139Ar 1               .segment "CHARS"
+00139Ar 2               ; --- The SID probe ---
+00139Ar 2               ;
+00139Ar 2               ; New in 1.7, and down here because 1.6's routine addresses are frozen: the
+00139Ar 2               ; probe grew when it stopped accepting an empty slot's open bus as a SID.
+00139Ar 2               
+00139Ar 2               ; ProbeSID — Is a SID fitted?  Voice 3's noise must change between reads
+00139Ar 2               ; Starts voice 3 on noise at its highest frequency and samples SID_OSC3
+00139Ar 2               ; SID_PROBE_READS times, about 1,280 cycles apart.  A SID gives a new value on
+00139Ar 2               ; almost every read.  An empty slot reads open bus, the same byte every time:
+00139Ar 2               ; the high byte of SID_OSC3's address, $98, which the old test (anything but
+00139Ar 2               ; $00 or $FF) accepted.  SID_PROBE_CHANGES changes are needed, so one glitch on
+00139Ar 2               ; an empty bus can't pass.  $98 isn't rejected by value: a SID's noise reads it
+00139Ar 2               ; one time in 256, and a constant $98 already fails.
+00139Ar 2               ; Each round writes voice 3 again, so a SID that comes out of its own reset
+00139Ar 2               ; late and missed the first writes (an ARMSID) is found in a later round.  An
+00139Ar 2               ; empty slot waits out every round: about 75 ms at 1 MHz.
+00139Ar 2               ; Sets HW_SID in HW_PRESENT on success
+00139Ar 2               ; Modifies: Flags, A, X, Y
+00139Ar 2               SID_PROBE_ROUNDS  = 8           ; Rounds before giving up, about 9 ms each at 1 MHz
+00139Ar 2               SID_PROBE_READS   = 8           ; Samples per round
+00139Ar 2               SID_PROBE_CHANGES = 2           ; Changes between samples that prove a SID
+00139Ar 2               ProbeSID:
+00139Ar 2  A9 08          lda #SID_PROBE_ROUNDS
+00139Cr 2  85 36          sta SID_PROBE_ROUND
+00139Er 2               @ProbeSIDRound:
+00139Er 2  A9 FF          lda #$FF                      ; Voice 3 at its highest frequency
+0013A0r 2  8D 0E 98       sta SID_V3_FREQ_LO
+0013A3r 2  8D 0F 98       sta SID_V3_FREQ_HI
+0013A6r 2  A9 81          lda #(SID_CTRL_GATE | SID_CTRL_NOISE)
+0013A8r 2  8D 12 98       sta SID_V3_CTRL               ; Gate on, noise
+0013ABr 2  64 38          stz SID_PROBE_SEEN
+0013ADr 2  AD 1B 98       lda SID_OSC3                  ; First sample, only to compare with
+0013B0r 2  85 37          sta SID_PROBE_LAST
+0013B2r 2  A2 07          ldx #(SID_PROBE_READS - 1)
+0013B4r 2               @ProbeSIDSample:
+0013B4r 2  A0 00          ldy #$00
+0013B6r 2               @ProbeSIDDelay:
+0013B6r 2  88             dey
+0013B7r 2  D0 FD          bne @ProbeSIDDelay            ; ~1280 cycles
+0013B9r 2  AD 1B 98       lda SID_OSC3
+0013BCr 2  C5 37          cmp SID_PROBE_LAST
+0013BEr 2  85 37          sta SID_PROBE_LAST            ; (sta leaves the flags alone)
+0013C0r 2  F0 02          beq @ProbeSIDSame
+0013C2r 2  E6 38          inc SID_PROBE_SEEN
+0013C4r 2               @ProbeSIDSame:
+0013C4r 2  CA             dex
+0013C5r 2  D0 ED          bne @ProbeSIDSample
+0013C7r 2  A5 38          lda SID_PROBE_SEEN
+0013C9r 2  C9 02          cmp #SID_PROBE_CHANGES
+0013CBr 2  B0 06          bcs @ProbeSIDFound
+0013CDr 2  C6 36          dec SID_PROBE_ROUND
+0013CFr 2  D0 CD          bne @ProbeSIDRound
+0013D1r 2  80 08          bra @ProbeSIDCleanup          ; Never changed: no SID
+0013D3r 2               @ProbeSIDFound:
+0013D3r 2  AD 0D 03       lda HW_PRESENT
+0013D6r 2  09 40          ora #HW_SID
+0013D8r 2  8D 0D 03       sta HW_PRESENT
+0013DBr 2               @ProbeSIDCleanup:
+0013DBr 2                 ; Silence voice 3
+0013DBr 2  9C 12 98       stz SID_V3_CTRL
+0013DEr 2  9C 0E 98       stz SID_V3_FREQ_LO
+0013E1r 2  9C 0F 98       stz SID_V3_FREQ_HI
+0013E4r 2  60             rts
+0013E5r 2               
+0013E5r 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; =============================================================================
 000000r 2               ; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)

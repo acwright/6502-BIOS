@@ -2617,28 +2617,47 @@ StWaitDrq:
 
 ; StProbeWait — wait for the CF card after reset, and time it
 ; The card's /RESET is the CPU's, so it starts its own start-up as the machine
-; does, and ATA gives it up to 31 s.  This polls ST_STATUS once every 100
-; cycles (CF_PROBE_STEP: 0.1 ms at 1 MHz) until BSY is clear and RDY set, or
-; CF_PROBE_LIMIT polls have passed.  Two diagnostics are left for a PEEK:
+; does, and ATA gives it up to 31 s.  Measured on a KIM (BIOS plan B4,
+; 2026-11-11): three cards ready in 426 to 545 ms, and busy as $80.
+;
+; An empty slot is recognised first, in two reads, and costs no wait.  Nothing
+; drives the bus there, so a read returns the last byte on it, the address's
+; high byte: $8C at ST_STATUS ($8C07) and $8F at ST_STATUS_TOP ($8F07).  A
+; Storage Card repeats its registers across the window, so a card fitted gives
+; one status at both; one that did not repeat would have to answer exactly $8C
+; itself, and a busy card answered $80.  An empty socket on a Storage Card
+; reads the same as no card.
+;
+; Otherwise it polls ST_STATUS once every 100 cycles (CF_PROBE_STEP: 0.1 ms at
+; 1 MHz) until BSY is clear and RDY set, or CF_PROBE_LIMIT polls have passed:
+; 3.0 s at 1 MHz and 1.5 s at 2 MHz, at least 2.75 times the slowest card.
+; Only a card that never comes ready waits it out.  Left for a PEEK:
 ;   CF_PROBE_POLLS  how many polls found the card not ready, so its start-up
 ;                   time is about that many tenths of a millisecond at 1 MHz;
-;                   CF_PROBE_LIMIT means nothing answered in time
+;                   CF_PROBE_LIMIT means it never answered ready, and 0 with
+;                   HW_CF clear means the slot was empty
 ;   CF_PROBE_STAT   the first status byte read: what a busy card says, or $8C
-;                   from an empty slot (open bus, the address's high byte)
+;                   from an empty slot
 ; Only the boot probe uses it: StWaitReady and StWaitDrq run once a card has
 ; answered, and keep their own count.
-; Output: Carry clear = ready, no error; carry set = timed out or ERR
+; Output: Carry clear = ready, no error; carry set = no card, timed out or ERR
 ; Modifies: Flags, A, X
 CF_PROBE_STEP = 100             ; Cycles per poll (documentation; the loop is counted to it)
 CF_PROBE_PAD  = 12              ; Delay passes that make the poll 100 cycles
 .ifndef CF_PROBE_LIMIT
-CF_PROBE_LIMIT = 8520           ; Polls before giving up: 0.85 s at 1 MHz, what the probe
-.endif                          ;   waited before B4 (65,536 polls of 13 cycles)
+CF_PROBE_LIMIT = 30000          ; Polls before giving up: 3.0 s at 1 MHz (owner, 2026-11-11)
+.endif
+ST_STATUS_TOP = ST_STATUS + $0300 ; The status register again, at the top of the window
 StProbeWait:
   stz CF_PROBE_POLLS
   stz CF_PROBE_POLLS+1
   lda ST_STATUS
   sta CF_PROBE_STAT             ; The first answer, busy or not
+  cmp #>ST_STATUS               ; $8C, as an empty slot reads here...
+  bne @StProbePoll
+  lda ST_STATUS_TOP
+  cmp #>ST_STATUS_TOP           ; ...and $8F, as it reads there?
+  beq @StProbeTimeout           ; Both: nothing in the slot, so no wait
 @StProbePoll:                   ; 100 cycles a pass, not ready:
   lda ST_STATUS                 ;  4
   and #(ST_STATUS_BSY | ST_STATUS_RDY) ; 2  RDY means nothing while BSY is set

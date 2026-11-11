@@ -22,7 +22,7 @@ The AC6502 family of computer systems is a modular design where every I/O card i
 The probe-and-boot sequence is:
 
 1. **Clear `HW_PRESENT`** — all bits start at zero
-2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY with timeout), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (active oscillator), Video (`STAT4` reads `$AC` and `STAT6` b7, the built-in font, is set — see [Video](#video))
+2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY with timeout), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (voice 3's noise must change between reads), Video (`STAT4` reads `$AC` and `STAT6` b7, the built-in font, is set — see [Video](#video))
 3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded. The video card is only put back in its reset-time state (the legacy submode, unscrolled); the Text console comes up the first time something is printed
 4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot)
 5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)

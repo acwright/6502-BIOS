@@ -157,7 +157,8 @@ Current file: BIOS.asm
 000000r 2                                                        ;   STOP/END/Ctrl+C break, which is what keeps its FOR and GOSUB frames alive
 000000r 2                                                        ;   for CONT.  Reset to $FF wherever the stack is reset (RUN, CLR, NEW, an error)
 000000r 2               CF_PROBE_POLLS      := $0376             ; $0376-$0377 - Boot CF probe: polls, one per 100 cycles, the card answered not
-000000r 2                                                        ;   ready (0.1 ms each at 1 MHz).  CF_PROBE_LIMIT = no card answered in time
+000000r 2                                                        ;   ready (0.1 ms each at 1 MHz).  CF_PROBE_LIMIT = never ready; 0 with HW_CF clear
+000000r 2                                                        ;   = the slot was empty
 000000r 2               CF_PROBE_STAT       := $0378             ; Boot CF probe: the first status byte it read (an empty slot reads $8C, open bus)
 000000r 2               FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 000000r 2               BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
@@ -4110,59 +4111,78 @@ Current file: BIOS.asm
 0013E5r 2               
 0013E5r 2               ; StProbeWait — wait for the CF card after reset, and time it
 0013E5r 2               ; The card's /RESET is the CPU's, so it starts its own start-up as the machine
-0013E5r 2               ; does, and ATA gives it up to 31 s.  This polls ST_STATUS once every 100
-0013E5r 2               ; cycles (CF_PROBE_STEP: 0.1 ms at 1 MHz) until BSY is clear and RDY set, or
-0013E5r 2               ; CF_PROBE_LIMIT polls have passed.  Two diagnostics are left for a PEEK:
+0013E5r 2               ; does, and ATA gives it up to 31 s.  Measured on a KIM (BIOS plan B4,
+0013E5r 2               ; 2026-11-11): three cards ready in 426 to 545 ms, and busy as $80.
+0013E5r 2               ;
+0013E5r 2               ; An empty slot is recognised first, in two reads, and costs no wait.  Nothing
+0013E5r 2               ; drives the bus there, so a read returns the last byte on it, the address's
+0013E5r 2               ; high byte: $8C at ST_STATUS ($8C07) and $8F at ST_STATUS_TOP ($8F07).  A
+0013E5r 2               ; Storage Card repeats its registers across the window, so a card fitted gives
+0013E5r 2               ; one status at both; one that did not repeat would have to answer exactly $8C
+0013E5r 2               ; itself, and a busy card answered $80.  An empty socket on a Storage Card
+0013E5r 2               ; reads the same as no card.
+0013E5r 2               ;
+0013E5r 2               ; Otherwise it polls ST_STATUS once every 100 cycles (CF_PROBE_STEP: 0.1 ms at
+0013E5r 2               ; 1 MHz) until BSY is clear and RDY set, or CF_PROBE_LIMIT polls have passed:
+0013E5r 2               ; 3.0 s at 1 MHz and 1.5 s at 2 MHz, at least 2.75 times the slowest card.
+0013E5r 2               ; Only a card that never comes ready waits it out.  Left for a PEEK:
 0013E5r 2               ;   CF_PROBE_POLLS  how many polls found the card not ready, so its start-up
 0013E5r 2               ;                   time is about that many tenths of a millisecond at 1 MHz;
-0013E5r 2               ;                   CF_PROBE_LIMIT means nothing answered in time
+0013E5r 2               ;                   CF_PROBE_LIMIT means it never answered ready, and 0 with
+0013E5r 2               ;                   HW_CF clear means the slot was empty
 0013E5r 2               ;   CF_PROBE_STAT   the first status byte read: what a busy card says, or $8C
-0013E5r 2               ;                   from an empty slot (open bus, the address's high byte)
+0013E5r 2               ;                   from an empty slot
 0013E5r 2               ; Only the boot probe uses it: StWaitReady and StWaitDrq run once a card has
 0013E5r 2               ; answered, and keep their own count.
-0013E5r 2               ; Output: Carry clear = ready, no error; carry set = timed out or ERR
+0013E5r 2               ; Output: Carry clear = ready, no error; carry set = no card, timed out or ERR
 0013E5r 2               ; Modifies: Flags, A, X
 0013E5r 2               CF_PROBE_STEP = 100             ; Cycles per poll (documentation; the loop is counted to it)
 0013E5r 2               CF_PROBE_PAD  = 12              ; Delay passes that make the poll 100 cycles
 0013E5r 2               .ifndef CF_PROBE_LIMIT
-0013E5r 2               CF_PROBE_LIMIT = 8520           ; Polls before giving up: 0.85 s at 1 MHz, what the probe
-0013E5r 2               .endif                          ;   waited before B4 (65,536 polls of 13 cycles)
+0013E5r 2               CF_PROBE_LIMIT = 30000          ; Polls before giving up: 3.0 s at 1 MHz (owner, 2026-11-11)
+0013E5r 2               .endif
+0013E5r 2               ST_STATUS_TOP = ST_STATUS + $0300 ; The status register again, at the top of the window
 0013E5r 2               StProbeWait:
 0013E5r 2  9C 76 03       stz CF_PROBE_POLLS
 0013E8r 2  9C 77 03       stz CF_PROBE_POLLS+1
 0013EBr 2  AD 07 8C       lda ST_STATUS
 0013EEr 2  8D 78 03       sta CF_PROBE_STAT             ; The first answer, busy or not
-0013F1r 2               @StProbePoll:                   ; 100 cycles a pass, not ready:
-0013F1r 2  AD 07 8C       lda ST_STATUS                 ;  4
-0013F4r 2  29 C0          and #(ST_STATUS_BSY | ST_STATUS_RDY) ; 2  RDY means nothing while BSY is set
-0013F6r 2  C9 40          cmp #ST_STATUS_RDY            ;  2
-0013F8r 2  F0 1F          beq @StProbeReady             ;  2  BSY clear and RDY set
-0013FAr 2  EE 76 03       inc CF_PROBE_POLLS            ;  6
-0013FDr 2  D0 03          bne @StProbeCounted           ;  3  (+5 once every 256 polls)
-0013FFr 2  EE 77 03       inc CF_PROBE_POLLS+1
-001402r 2               @StProbeCounted:
-001402r 2  AD 76 03       lda CF_PROBE_POLLS            ;  4  CF_PROBE_POLLS >= CF_PROBE_LIMIT?
-001405r 2  C9 48          cmp #<CF_PROBE_LIMIT          ;  2
-001407r 2  AD 77 03       lda CF_PROBE_POLLS+1          ;  4
-00140Ar 2  E9 21          sbc #>CF_PROBE_LIMIT          ;  2
-00140Cr 2  B0 09          bcs @StProbeTimeout           ;  2
-00140Er 2  A2 0C          ldx #CF_PROBE_PAD             ;  2
-001410r 2               @StProbeDelay:
-001410r 2  CA             dex                           ;  5 x 12 - 1 = 59
-001411r 2  D0 FD          bne @StProbeDelay
-001413r 2  24 00          bit ZP                        ;  3
-001415r 2  80 DA          bra @StProbePoll              ;  3
-001417r 2               @StProbeTimeout:
-001417r 2  38             sec                           ; No card answered in time
-001418r 2  60             rts
-001419r 2               @StProbeReady:
-001419r 2  AD 07 8C       lda ST_STATUS
-00141Cr 2  29 01          and #ST_STATUS_ERR            ; Ready, but reporting an error?
-00141Er 2  D0 F7          bne @StProbeTimeout
-001420r 2  18             clc
-001421r 2  60             rts
-001422r 2               
-001422r 1               .segment "CHARS"
+0013F1r 2  C9 8C          cmp #>ST_STATUS               ; $8C, as an empty slot reads here...
+0013F3r 2  D0 07          bne @StProbePoll
+0013F5r 2  AD 07 8F       lda ST_STATUS_TOP
+0013F8r 2  C9 8F          cmp #>ST_STATUS_TOP           ; ...and $8F, as it reads there?
+0013FAr 2  F0 26          beq @StProbeTimeout           ; Both: nothing in the slot, so no wait
+0013FCr 2               @StProbePoll:                   ; 100 cycles a pass, not ready:
+0013FCr 2  AD 07 8C       lda ST_STATUS                 ;  4
+0013FFr 2  29 C0          and #(ST_STATUS_BSY | ST_STATUS_RDY) ; 2  RDY means nothing while BSY is set
+001401r 2  C9 40          cmp #ST_STATUS_RDY            ;  2
+001403r 2  F0 1F          beq @StProbeReady             ;  2  BSY clear and RDY set
+001405r 2  EE 76 03       inc CF_PROBE_POLLS            ;  6
+001408r 2  D0 03          bne @StProbeCounted           ;  3  (+5 once every 256 polls)
+00140Ar 2  EE 77 03       inc CF_PROBE_POLLS+1
+00140Dr 2               @StProbeCounted:
+00140Dr 2  AD 76 03       lda CF_PROBE_POLLS            ;  4  CF_PROBE_POLLS >= CF_PROBE_LIMIT?
+001410r 2  C9 30          cmp #<CF_PROBE_LIMIT          ;  2
+001412r 2  AD 77 03       lda CF_PROBE_POLLS+1          ;  4
+001415r 2  E9 75          sbc #>CF_PROBE_LIMIT          ;  2
+001417r 2  B0 09          bcs @StProbeTimeout           ;  2
+001419r 2  A2 0C          ldx #CF_PROBE_PAD             ;  2
+00141Br 2               @StProbeDelay:
+00141Br 2  CA             dex                           ;  5 x 12 - 1 = 59
+00141Cr 2  D0 FD          bne @StProbeDelay
+00141Er 2  24 00          bit ZP                        ;  3
+001420r 2  80 DA          bra @StProbePoll              ;  3
+001422r 2               @StProbeTimeout:
+001422r 2  38             sec                           ; No card answered in time
+001423r 2  60             rts
+001424r 2               @StProbeReady:
+001424r 2  AD 07 8C       lda ST_STATUS
+001427r 2  29 01          and #ST_STATUS_ERR            ; Ready, but reporting an error?
+001429r 2  D0 F7          bne @StProbeTimeout
+00142Br 2  18             clc
+00142Cr 2  60             rts
+00142Dr 2               
+00142Dr 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; =============================================================================
 000000r 2               ; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)

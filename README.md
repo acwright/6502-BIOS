@@ -21,7 +21,7 @@ The AC6502 family of computer systems is a modular design where every I/O card i
 The probe-and-boot sequence is:
 
 1. **Clear `HW_PRESENT`** — all bits start at zero
-2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY, polled for up to 0.85 s, and timed: `CF_PROBE_POLLS`), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (voice 3's noise must change between reads), Video (VRAM read-back)
+2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (an empty slot in two reads; otherwise BSY/RDY, polled for up to 3.0 s and timed: `CF_PROBE_POLLS`), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (voice 3's noise must change between reads), Video (VRAM read-back)
 3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded
 4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot)
 5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)
@@ -368,7 +368,7 @@ Within each disk, the directory lives at the first sector (LBA `n×2048`) and ho
 
 Assembly programs can access disk storage directly through the Kernal jump table (see `FsLoadFileAddr`, `FsSaveFileAddr`, `FsSetDisk`, and `FsFormatDisk` below).
 
-**The boot probe waits for the card, and says how long it waited.** The card starts up when the machine does, and the probe polls its status once every 100 cycles until it reports ready, for up to 8,520 polls (0.85 s at 1 MHz); a card that takes longer is recorded as absent until the next reset. Two bytes are left for a `PEEK` afterwards: `CF_PROBE_POLLS` (`$0376–$0377`, `PEEK(886)+256*PEEK(887)`) is how many polls found the card not ready, so tenths of a millisecond at 1 MHz, and 8,520 means nothing answered; `CF_PROBE_STAT` (`$0378`, `PEEK(888)`) is the first status byte it read. With the slot empty that byte is `$8C`, open bus, and the probe waits out its whole limit.
+**The boot probe waits for the card, and says how long it waited.** A card starts up when the machine does; cards measured on a KIM took 426 to 545 ms. The probe first checks for an empty slot, which reads `$8C` at `$8C07` and `$8F` at `$8F07` (open bus: nothing drives the bus there), and skips the wait if so. Otherwise it polls the status once every 100 cycles until the card reports ready, for up to 30,000 polls (3.0 s at 1 MHz, 1.5 s at 2 MHz); a card that never comes ready is recorded as absent until the next reset. Two bytes are left for a `PEEK` afterwards: `CF_PROBE_POLLS` (`$0376–$0377`, `PEEK(886)+256*PEEK(887)`) is how many polls found the card not ready, so tenths of a millisecond at 1 MHz; 30,000 means it never answered ready, and 0 with no card found means the slot was empty. `CF_PROBE_STAT` (`$0378`, `PEEK(888)`) is the first status byte it read: `$80` from a busy card, `$8C` from an empty slot.
 
 ### Serial I/O & XModem Transfer
 

@@ -4,7 +4,7 @@
 // and reaches the outside world two ways:
 //
 //   KernalVersion ($A07B)   what a program reads
-//   BASIC's header string   "AC6502 BIOS v2.0", what a user reads
+//   BASIC's header string   "AC6502 BIOS v2.1", what a user reads
 //
 // The header is built from the equates with .sprintf, so today they cannot
 // drift. This case is what keeps it that way: a header string typed out by hand

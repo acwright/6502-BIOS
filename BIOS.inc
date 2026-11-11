@@ -163,7 +163,7 @@ XMODEM_STARTRETRY   = 60                 ; Retries waiting for initial connect (
 
 ; BIOS Version
 BIOS_VERSION_MAJOR  = 2
-BIOS_VERSION_MINOR  = 0
+BIOS_VERSION_MINOR  = 1
 
 ; NOT user memory, despite the name -- kept only because Wozmon builds its input
 ; buffer on it.  Every byte of $0400-$07FF belongs to something: $0400 is

@@ -3,7 +3,7 @@
 // 2.0 boots straight to BASIC, and BASIC's header is the whole of what a user
 // sees before the prompt:
 //
-//   AC6502 BIOS v2.0
+//   AC6502 BIOS v2.1
 //   BASIC v2.0 30718 BYTES FREE
 //   RAM RTC CF SER VIA SID
 //

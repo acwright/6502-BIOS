@@ -22,7 +22,7 @@ The AC6502 family of computer systems is a modular design where every I/O card i
 The probe-and-boot sequence is:
 
 1. **Clear `HW_PRESENT`** — all bits start at zero
-2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY with timeout), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (voice 3's noise must change between reads), Video (`STAT4` reads `$AC` and `STAT6` b7, the built-in font, is set — see [Video](#video))
+2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (BSY/RDY, polled for up to 0.85 s, and timed: `CF_PROBE_POLLS`), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (voice 3's noise must change between reads), Video (`STAT4` reads `$AC` and `STAT6` b7, the built-in font, is set — see [Video](#video))
 3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded. The video card is only put back in its reset-time state (the legacy submode, unscrolled); the Text console comes up the first time something is printed
 4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot)
 5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)
@@ -385,6 +385,8 @@ Within each disk, the directory lives at the first sector (LBA `n×2048`) and ho
 
 Assembly programs can access disk storage directly through the Kernal jump table (see `FsLoadFileAddr`, `FsSaveFileAddr`, `FsSetDisk`, and `FsFormatDisk` below).
 
+**The boot probe waits for the card, and says how long it waited.** The card starts up when the machine does, and the probe polls its status once every 100 cycles until it reports ready, for up to 8,520 polls (0.85 s at 1 MHz); a card that takes longer is recorded as absent until the next reset. Two bytes are left for a `PEEK` afterwards: `CF_PROBE_POLLS` (`$0376–$0377`, `PEEK(886)+256*PEEK(887)`) is how many polls found the card not ready, so tenths of a millisecond at 1 MHz, and 8,520 means nothing answered; `CF_PROBE_STAT` (`$0378`, `PEEK(888)`) is the first status byte it read. With the slot empty that byte is `$8C`, open bus, and the probe waits out its whole limit.
+
 ### Serial I/O & XModem Transfer
 
 A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE`, and `BLOAD`/`BSAVE`, without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs and raw bytes over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
@@ -475,7 +477,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack — and therefore BASIC's `GOSUB` and `FOR` frames, which are pushed onto it |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039C`; `$039D–$03FF` unassigned) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, the CF probe's `CF_PROBE_POLLS` and `CF_PROBE_STAT` at `$0376–$0378`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039C`; `$039D–$03FF` unassigned) |
 | `$0400–$04FF` | 256B | `BAS_LINBUF` — the raw input line, as typed |
 | `$0500–$05FF` | 256B | `BAS_TOKBUF` — tokenizing scratch |
 | `$0600–$07FF` | 512B | `FS_SECTOR_BUF` — CompactFlash sector buffer, overwritten by **any** filesystem call (`LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT`) |

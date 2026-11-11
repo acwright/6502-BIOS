@@ -116,6 +116,9 @@ BAS_STKBASE         := $0375             ; Stack pointer the READY loop restores
                                          ;   program suspended, or the running program's statement-boundary SP after a
                                          ;   STOP/END/Ctrl+C break, which is what keeps its FOR and GOSUB frames alive
                                          ;   for CONT.  Reset to $FF wherever the stack is reset (RUN, CLR, NEW, an error)
+CF_PROBE_POLLS      := $0376             ; $0376-$0377 - Boot CF probe: polls, one per 100 cycles, the card answered not
+                                         ;   ready (0.1 ms each at 1 MHz).  CF_PROBE_LIMIT = no card answered in time
+CF_PROBE_STAT       := $0378             ; Boot CF probe: the first status byte it read (an empty slot reads $8C, open bus)
 FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a program image placed at PROGRAM_START by a loader

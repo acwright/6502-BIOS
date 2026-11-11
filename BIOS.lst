@@ -2175,10 +2175,13 @@ Current file: BIOS.asm
 0008E5r 2  60             rts
 0008E6r 2               
 0008E6r 2               ; Encoder settle count for KBDisableImpl. Each loop iteration is 5 cycles, so
-0008E6r 2               ; the busy-wait is ~KB_SETTLE_COUNT*5 cycles. Sized against the 2 MHz clock
-0008E6r 2               ; option (the worst case): 80 => ~400 cycles => ~200 us @ 2 MHz (~400 us @ 1 MHz),
-0008E6r 2               ; comfortably above the firmware's guaranteed 100 us release ceiling.
-0008E6r 2               KB_SETTLE_COUNT = 80
+0008E6r 2               ; the busy-wait is ~KB_SETTLE_COUNT*5 cycles, paid on every JOY() read. The
+0008E6r 2               ; encoder firmware guarantees to release the ports within 100 us. Sized against
+0008E6r 2               ; 2 MHz, which the ACE carries as a jumper option (Rev 1.1's J1), with 1 MHz the
+0008E6r 2               ; standard: 50 => ~250 cycles => ~125 us @ 2 MHz, ~250 us @ 1 MHz. 40 would
+0008E6r 2               ; leave exactly 100 us at 2 MHz, with no margin (BIOS plan B5; owner, 2026-11-11).
+0008E6r 2               ; It was 80, sized when 2 MHz was the only clock that mattered: ~400 us @ 1 MHz.
+0008E6r 2               KB_SETTLE_COUNT = 50
 0008E6r 2               
 0008E6r 2               ; KBDisable — Disable both keyboard encoders and wait for them to release the ports
 0008E6r 2               ; Sets CB2/CA2 high, then busy-waits so the encoder firmware has time to let go of
@@ -2190,7 +2193,7 @@ Current file: BIOS.asm
 0008E8r 2  8D 0C 94       sta GPIO_PCR                  ; Tell both encoders to release the ports
 0008EBr 2  8A             txa
 0008ECr 2  48             pha                           ; Preserve X so the contract stays "Modifies: Flags, A"
-0008EDr 2  A2 50          ldx #KB_SETTLE_COUNT
+0008EDr 2  A2 32          ldx #KB_SETTLE_COUNT
 0008EFr 2               @KBSettle:
 0008EFr 2  CA             dex
 0008F0r 2  D0 FD          bne @KBSettle                 ; Give the encoders time to go high-impedance

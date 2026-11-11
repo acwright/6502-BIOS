@@ -1713,10 +1713,13 @@ VideoSetColorImpl:
   rts
 
 ; Encoder settle count for KBDisableImpl. Each loop iteration is 5 cycles, so
-; the busy-wait is ~KB_SETTLE_COUNT*5 cycles. Sized against the 2 MHz clock
-; option (the worst case): 80 => ~400 cycles => ~200 us @ 2 MHz (~400 us @ 1 MHz),
-; comfortably above the firmware's guaranteed 100 us release ceiling.
-KB_SETTLE_COUNT = 80
+; the busy-wait is ~KB_SETTLE_COUNT*5 cycles, paid on every JOY() read. The
+; encoder firmware guarantees to release the ports within 100 us. Sized against
+; 2 MHz, which the ACE carries as a jumper option (Rev 1.1's J1), with 1 MHz the
+; standard: 50 => ~250 cycles => ~125 us @ 2 MHz, ~250 us @ 1 MHz. 40 would
+; leave exactly 100 us at 2 MHz, with no margin (BIOS plan B5; owner, 2026-11-11).
+; It was 80, sized when 2 MHz was the only clock that mattered: ~400 us @ 1 MHz.
+KB_SETTLE_COUNT = 50
 
 ; KBDisable — Disable both keyboard encoders and wait for them to release the ports
 ; Sets CB2/CA2 high, then busy-waits so the encoder firmware has time to let go of

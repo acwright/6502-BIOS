@@ -231,6 +231,18 @@ against what came back, which cannot be satisfied early. The general rule is in
 answer.** Nothing was loosened to fix it — the assertion is the same exact ` 91`
 it always was.
 
+**It came back on 2026-11-11, twice.** Two more emulator profiles (`no-cf`,
+`no-sound`, then `cf-slow` and `cf-dead`) loaded CI's runner further, and two
+cases that had passed for months met the same window. *INKEY returns 0 with no
+key waiting* waited for `THEN` and asserted `THEN 0`, and failed three of four
+`main` runs reading ` 0` not yet arrived. On `v1.x`, *the Monitor's L loads a
+.prg* waited for `/^\. /`, and the Monitor's prompt is `. ` — which is also how
+its echoed command line starts, and the previous command's prompt can still be
+arriving when the cursor is taken; it read the console before the load report.
+INKEY now waits for the `OK` that ends the run, L for its whole report line,
+and *T copies a block*, which had the same wait, for the prompt after its own
+echoed line. The rule held; the cases had broken it.
+
 ### CONT could not resume inside a FOR loop
 
 - **Bucket:** BIOS bug — code wrong, docs silent, and Microsoft 6502 BASIC does

@@ -366,6 +366,14 @@ against what came back, which cannot be satisfied early. The general rule is in
 answer.** Nothing was loosened to fix it — the assertion is the same exact ` 91`
 it always was.
 
+**It came back on 2026-11-11.** Two more emulator profiles (`no-cf`,
+`no-sound`, then `cf-slow` and `cf-dead`) loaded CI's runner further, and *INKEY
+returns 0 with no key waiting*, which had passed for months, met the same
+window: it waited for `THEN` and asserted `THEN 0`, and failed three of four
+runs reading ` 0` not yet arrived. It now waits for the `OK` that ends the run.
+On `v1.x` two Monitor cases had the same fault, a wait for the `. ` prompt that
+the echoed command line also starts with. The rule held; the cases had broken it.
+
 ### CONT could not resume inside a FOR loop
 
 - **Bucket:** BIOS bug — code wrong, docs silent, and Microsoft 6502 BASIC does

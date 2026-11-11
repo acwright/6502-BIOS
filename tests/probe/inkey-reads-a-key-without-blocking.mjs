@@ -22,7 +22,11 @@ export async function run(m) {
 
   const started = await m.serialWrite('RUN\r')
   await m.serialWrite('A') // 65, and deliberately no CR
-  const out = await m.expectFrom(started.cursor, /^THEN/m, { timeoutMs: 20000 })
+  // Wait for the prompt that ends the run, not for "THEN": a pattern the answer's
+  // own prefix satisfies can be met with " 0" still to come, and on a loaded CI
+  // host it was (tests/README.md, "a wait pattern must not be satisfiable by a
+  // prefix of the answer").
+  const out = await m.expectFrom(started.cursor, /^OK/m, { timeoutMs: 20000 })
 
   m.assertMatch(out.output, /^GOT 65$/m, 'INKEY delivered the key')
   // Reading consumes it, or the same key would be delivered forever.

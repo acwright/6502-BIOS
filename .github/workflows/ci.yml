@@ -31,10 +31,15 @@ concurrency:
 # release that spells the flag `--peer-rts` rather than the deprecated
 # `--flow-control`. The pin is a release tag, which is what a developer
 # installs. The 1.x ROMs keep their own pin on v1.x.
+#
+# v3.6.0 reads an empty slot as open bus, as the board does, so the probe
+# cases on the no-sound and no-cf profiles meet what a real machine shows
+# (B1's fails on v2.0.2 there), and adds `--cf-busy`, which the cf-slow and
+# cf-dead profiles need.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v3.3.0
+  EMULATOR_REF: v3.6.0
 
 jobs:
   test:

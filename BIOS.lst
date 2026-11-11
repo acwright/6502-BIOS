@@ -184,7 +184,7 @@ Current file: BIOS.asm
 000000r 2               
 000000r 2               ; BIOS Version
 000000r 2               BIOS_VERSION_MAJOR  = 1
-000000r 2               BIOS_VERSION_MINOR  = 6
+000000r 2               BIOS_VERSION_MINOR  = 7
 000000r 2               
 000000r 2               ; NOT user memory, despite the name -- kept only because Wozmon builds its input
 000000r 2               ; buffer on it.  Every byte of $0400-$07FF belongs to something: $0400 is
@@ -1025,7 +1025,7 @@ Current file: BIOS.asm
 0003CAr 2               ; Modifies: A, X
 0003CAr 2               KernalVersionImpl:
 0003CAr 2  A9 01          lda #BIOS_VERSION_MAJOR
-0003CCr 2  A2 06          ldx #BIOS_VERSION_MINOR
+0003CCr 2  A2 07          ldx #BIOS_VERSION_MINOR
 0003CEr 2  60             rts
 0003CFr 2               
 0003CFr 2               ; ProgramEnd — Determine where the program image at PROGRAM_START ends.

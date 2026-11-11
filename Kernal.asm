@@ -2045,7 +2045,7 @@ StWaitDrq:
 ; Output: Carry clear = success, Carry set = error
 ; Modifies: Flags, A
 StInit:
-  jsr StWaitReadyPoll           ; Not StWaitReady: HW_CF is what this sets, so
+  jsr StProbeWait               ; Not StWaitReady: HW_CF is what this sets, so
                                 ;   the guarded entry would answer "no card"
                                 ;   before the card had been asked
   bcs @StInitDone               ; Timeout or error — CF not present
@@ -3689,4 +3689,63 @@ ProbeSID:
   stz SID_V3_CTRL
   stz SID_V3_FREQ_LO
   stz SID_V3_FREQ_HI
+  rts
+
+; --- The CF probe ---
+;
+; New in 1.7, and down here for the same reason as the SID probe: StInit's
+; address is frozen, so only its jsr changed.
+
+; StProbeWait — wait for the CF card after reset, and time it
+; The card's /RESET is the CPU's, so it starts its own start-up as the machine
+; does, and ATA gives it up to 31 s.  This polls ST_STATUS once every 100
+; cycles (CF_PROBE_STEP: 0.1 ms at 1 MHz) until BSY is clear and RDY set, or
+; CF_PROBE_LIMIT polls have passed.  Two diagnostics are left for a PEEK:
+;   CF_PROBE_POLLS  how many polls found the card not ready, so its start-up
+;                   time is about that many tenths of a millisecond at 1 MHz;
+;                   CF_PROBE_LIMIT means nothing answered in time
+;   CF_PROBE_STAT   the first status byte read: what a busy card says, or $8C
+;                   from an empty slot (open bus, the address's high byte)
+; Only the boot probe uses it: StWaitReady and StWaitDrq run once a card has
+; answered, and keep their own count.
+; Output: Carry clear = ready, no error; carry set = timed out or ERR
+; Modifies: Flags, A, X
+CF_PROBE_STEP = 100             ; Cycles per poll (documentation; the loop is counted to it)
+CF_PROBE_PAD  = 12              ; Delay passes that make the poll 100 cycles
+.ifndef CF_PROBE_LIMIT
+CF_PROBE_LIMIT = 8520           ; Polls before giving up: 0.85 s at 1 MHz, what the probe
+.endif                          ;   waited before B4 (65,536 polls of 13 cycles)
+StProbeWait:
+  stz CF_PROBE_POLLS
+  stz CF_PROBE_POLLS+1
+  lda ST_STATUS
+  sta CF_PROBE_STAT             ; The first answer, busy or not
+@StProbePoll:                   ; 100 cycles a pass, not ready:
+  lda ST_STATUS                 ;  4
+  and #(ST_STATUS_BSY | ST_STATUS_RDY) ; 2  RDY means nothing while BSY is set
+  cmp #ST_STATUS_RDY            ;  2
+  beq @StProbeReady             ;  2  BSY clear and RDY set
+  inc CF_PROBE_POLLS            ;  6
+  bne @StProbeCounted           ;  3  (+5 once every 256 polls)
+  inc CF_PROBE_POLLS+1
+@StProbeCounted:
+  lda CF_PROBE_POLLS            ;  4  CF_PROBE_POLLS >= CF_PROBE_LIMIT?
+  cmp #<CF_PROBE_LIMIT          ;  2
+  lda CF_PROBE_POLLS+1          ;  4
+  sbc #>CF_PROBE_LIMIT          ;  2
+  bcs @StProbeTimeout           ;  2
+  ldx #CF_PROBE_PAD             ;  2
+@StProbeDelay:
+  dex                           ;  5 x 12 - 1 = 59
+  bne @StProbeDelay
+  bit ZP                        ;  3
+  bra @StProbePoll              ;  3
+@StProbeTimeout:
+  sec                           ; No card answered in time
+  rts
+@StProbeReady:
+  lda ST_STATUS
+  and #ST_STATUS_ERR            ; Ready, but reporting an error?
+  bne @StProbeTimeout
+  clc
   rts

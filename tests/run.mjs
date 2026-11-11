@@ -41,6 +41,12 @@ const PROFILES = {
   video: { console: 'video', args: ['--console', 'video'] },
   cf: { console: 'serial', args: [], fixtures: true },
   nvram: { console: 'serial', args: [], nvram: true },
+  // A slot left empty, so the probe itself meets it: `hw:` clears a bit after
+  // the probe has run and cannot show what the probe does. On an emulator with
+  // open bus (6502-EMULATOR after 3.5.0) an empty slot reads the last byte on
+  // the bus, as the board does; before it, $00.
+  'no-cf': { console: 'serial', args: ['--empty', 'storage'] },
+  'no-sound': { console: 'serial', args: ['--empty', 'sound'] },
 }
 
 const DIRECTIVES = new Set(['name', 'profile', 'mode', 'hw', 'xfail', 'issue', 'selftest', 'final', 'timeout'])

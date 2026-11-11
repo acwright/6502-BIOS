@@ -22,7 +22,11 @@ const BAS_VARTAB = 0x035f
 const prg = describeFixtures().file('SAMPLE.PRG')
 
 export async function run(m) {
-  const { output } = await m.send('L "SAMPLE.PRG"\r', /^\. /)
+  // Wait for the whole report line. The Monitor's prompt is ". ", and so is the
+  // start of the echoed command line, so a wait for the prompt was met by the
+  // echo before the load had said anything (tests/README.md: a wait pattern
+  // must not be satisfiable by a prefix of the answer).
+  const { output } = await m.send('L "SAMPLE.PRG"\r', /^LOADED [^\r\n]* AT \$[0-9A-F]{4}\r?\n/m)
   m.assertMatch(output, new RegExp(`^LOADED ${prg.size} BYTES AT \\$0800$`, 'm'), 'the load report')
   m.assertBytes(await m.read(PROGRAM_START, prg.size), prg.bytes, 'the loaded image')
 

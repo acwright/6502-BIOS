@@ -48,7 +48,7 @@ The `HW_PRESENT` byte at `$030D` can be read from user code, or from BASIC with 
 |-----|------|------|
 | 0 | `$01` | RAM card low (IO 1) |
 | 1 | `$02` | RAM card high (IO 2) |
-| 2 | `$04` | RTC DS1511Y (IO 3) |
+| 2 | `$04` | RTC DS1511Y or DS1501 (IO 3) |
 | 3 | `$08` | CompactFlash (IO 4) |
 | 4 | `$10` | Serial R6551AP (IO 5) |
 | 5 | `$20` | GPIO/VIA 65C22 (IO 6) |
@@ -395,7 +395,7 @@ When an XModem transfer is initiated, the system prints `XMODEM RX READY` (recei
 
 ### Real-Time Clock
 
-A DS1511Y RTC provides time and date. `RtcReadTime` returns hours/minutes/seconds in `A`/`X`/`Y` (binary). `RtcReadDate` returns date/month/year. 256 bytes of battery-backed NVRAM are accessible via `RtcReadNVRAM` / `RtcWriteNVRAM`.
+A DS1511Y RTC, or a DS1501 with its own 6 pF crystal, provides time and date. The boot probe clears Control B's Crystal Select bit, which a DS1501 needs at 0 for that crystal and a DS1511Y ignores. `RtcReadTime` returns hours/minutes/seconds in `A`/`X`/`Y` (binary). `RtcReadDate` returns date/month/year. 256 bytes of battery-backed NVRAM are accessible via `RtcReadNVRAM` / `RtcWriteNVRAM`.
 
 #### NVRAM Save Slots
 

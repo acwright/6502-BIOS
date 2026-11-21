@@ -68,7 +68,7 @@ HW_PRESENT          := $030D             ; Hardware present bitmask (set during 
 ; HW_PRESENT bit definitions (bit order matches IO slot numbers)
 HW_RAM_L            = %00000001          ; Bit 0: RAM card low  (IO 1, $8000-$83FF)
 HW_RAM_H            = %00000010          ; Bit 1: RAM card high (IO 2, $8400-$87FF)
-HW_RTC              = %00000100          ; Bit 2: RTC card (IO 3, DS1511Y)
+HW_RTC              = %00000100          ; Bit 2: RTC card (IO 3, DS1511Y or DS1501)
 HW_CF               = %00001000          ; Bit 3: Storage card (IO 4, CompactFlash)
 HW_SC               = %00010000          ; Bit 4: Serial card (IO 5, R6551AP)
 HW_GPIO             = %00100000          ; Bit 5: GPIO card (IO 6, 65C22 VIA — keyboard/joysticks)
@@ -185,7 +185,7 @@ RAM_BANK_L          := $83FF             ; Write-only RAM bank latch, value ($00
 RAM_DATA_H          := $8400             ; R/W ($8400-$87FE)
 RAM_BANK_H          := $87FF             ; Write-only RAM bank latch, value ($00-$FF) sets which of 256 ~1K banks of RAM is selected
 
-; RTC Card (DS1511Y) | IO 3 | $8800-$881F
+; RTC Card (DS1511Y, or the DS1501 inside it, which has the same registers) | IO 3 | $8800-$881F
 RTC_SEC             := $8800
 RTC_MIN             := $8801
 RTC_HR              := $8802
@@ -204,10 +204,11 @@ RTC_CTRL_A          := $880E
 RTC_CTRL_B          := $880F
 RTC_RAM_ADDR        := $8810
 RTC_RAM_DATA        := $8813
-; DS1511Y Control Register B Bits
+; DS1511Y / DS1501 Control Register B Bits
 RTC_CTRL_B_TE       := %10000000         ; Transfer Enable — 1 = counters update the user registers once a second, 0 = inhibited
+RTC_CTRL_B_CS       := %01000000         ; Crystal Select — the DS1501's oscillator load: 0 = 6 pF crystal, 1 = 12.5 pF; a DS1511Y wants 0
 RTC_CTRL_B_BME      := %00100000         ; Burst Mode Enable — 1 = RTC_RAM_ADDR auto-increments on each access of RTC_RAM_DATA
-; DS1511Y Month Register (05H) — upper 3 bits are control bits, low 5 are month
+; DS1511Y / DS1501 Month Register (05H) — upper 3 bits are control bits, low 5 are month
 RTC_MON_MASK        := %00011111         ; Month value occupies the low 5 bits
 RTC_MON_EOSC        := %10000000         ; Oscillator Start/Stop (0 = oscillator running)
 RTC_MON_E32K        := %01000000         ; 32kHz square-wave enable (1 = SQW output disabled)

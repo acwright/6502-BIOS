@@ -76,7 +76,7 @@ InitSC:         jmp InitSCImpl          ; $A04E - Initialize serial 6551
 SerialChrout:   jmp SerialChroutImpl    ; $A051 - Direct serial output (bypass IO_MODE)
 XModemLoad:     jmp XModemLoadImpl      ; $A054 - Receive binary via XModem
 XModemSave:     jmp XModemSaveImpl      ; $A057 - Send binary via XModem
-; --- RTC (DS1511Y) ---
+; --- RTC (DS1511Y or DS1501) ---
 RtcReadTime:    jmp RtcReadTimeImpl     ; $A05A - Read RTC time
 RtcReadDate:    jmp RtcReadDateImpl     ; $A05D - Read RTC date
 RtcWriteTime:   jmp RtcWriteTimeImpl    ; $A060 - Set RTC time
@@ -105,7 +105,7 @@ PrintDecU16:    jmp PrintDecU16Impl     ; $A096 - Print unsigned 16-bit decimal 
 ; --- Keyboard encoder control (raw port access) ---
 KBDisable:      jmp KBDisableImpl       ; $A099 - Release both encoders and settle; ports free for raw read
 KBEnable:       jmp KBEnableImpl        ; $A09C - Re-enable both encoders
-; --- NVRAM save slots (DS1511Y) ---
+; --- NVRAM save slots (DS1511Y or DS1501) ---
 NvStat:         jmp NvStatImpl          ; $A09F - Slot status (X=slot) → A=status, Y=owner ID
 NvRead:         jmp NvReadImpl          ; $A0A2 - Copy a valid slot's payload (X=slot, A/Y=dest lo/hi)
 NvWrite:        jmp NvWriteImpl         ; $A0A5 - Write a slot (X=slot, A/Y=src lo/hi, NV_ID=owner ID)
@@ -1296,7 +1296,9 @@ BinToBcd:
   ora RTC_TMP                   ; Combine with ones
   rts
 
-; === DS1511Y RTC Routines ===
+; === DS1511Y / DS1501 RTC Routines ===
+; The DS1501 is the chip inside the DS1511Y module, without its crystal and cell:
+; the same registers and NVRAM, so every routine here serves both.
 
 ; The clock registers at $8800-$8807 are double buffered.  A set of internal
 ; counters does the actual timekeeping; what the CPU reads and writes is a
@@ -1904,7 +1906,7 @@ ProbeSerial:
   .res PAD_S, $EA
   .assert ProbeRTC = $AA2B, lderror, "ProbeRTC moved from its 1.6 address"
 
-; ProbeRTC — DS1511Y NVRAM read-back test
+; ProbeRTC — DS1511Y / DS1501 NVRAM read-back test
 ; Writes test pattern to NVRAM address 0, reads it back
 ; Sets HW_RTC in HW_PRESENT on success
 ; Restores original NVRAM value afterward
@@ -1915,8 +1917,14 @@ ProbeRTC:
   ; read-back would compare against the wrong byte, HW_RTC would never be set,
   ; and the restore would land on a third address.  So clear it before the RAM
   ; ports are touched — read-modify-write, since Control B also holds TE.
+  ;
+  ; CS goes in the same write.  On a DS1501 it sets the oscillator's load, 0 for
+  ; the 6 pF crystal every AC6502 board fits; it too is battery-backed and
+  ; undefined at power-up, and a chip left at 1 runs its clock slow (issue #4).
+  ; A DS1511Y's datasheet says CS should be 0.  Nothing else writes CS: RtcFreeze,
+  ; RtcThaw and the burst routines keep it as this leaves it.
   lda RTC_CTRL_B
-  and #<~RTC_CTRL_B_BME
+  and #<~(RTC_CTRL_B_BME | RTC_CTRL_B_CS)
   sta RTC_CTRL_B
   stz RTC_RAM_ADDR              ; Select NVRAM address 0
   lda RTC_RAM_DATA              ; Save existing value

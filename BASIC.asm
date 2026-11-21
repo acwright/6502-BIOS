@@ -6981,6 +6981,20 @@ BasCmdGoto:
         lda     BAS_TMP1+1
         sbc     #0
         sta     TXTPTR+1
+        ; Typed at the prompt, the jump leaves direct mode.  While CURLIN+1 is
+        ; still $FF, BasNewstt takes the target for the end of a finished
+        ; direct line and returns to the READY loop, so a direct GOTO or GOSUB
+        ; ran nothing (issue #3).  @loadLine sets the real line number.  Set
+        ; after the search, not before, so an undefined line still reports
+        ; `?UNDEF'D STATEMENT ERROR` with no spurious `IN 0`.  No CLR: a direct
+        ; GOTO keeps the variables, as msbasic's does.  A direct GOSUB's frame
+        ; keeps the $FF it pushed, so its RETURN comes back to the typed line.
+        lda     BAS_CURLIN+1
+        cmp     #$FF
+        bne     @ret
+        stz     BAS_CURLIN
+        stz     BAS_CURLIN+1
+@ret:
         rts
 @undef:
         ldx     #ERR_UNDEFSTMT
@@ -7281,15 +7295,8 @@ BasCmdRun:
 @withLine:
         jsr     BasCmdClr
         jsr     ChrGot
-        jsr     BasCmdGoto              ; does not return if the line is undefined
-        ; Leave direct mode, exactly as the bare RUN path above does.
-        ; BasCmdGoto only moves TXTPTR; while CURLIN+1 is still $FF, BasNewstt
-        ; treats the branch target as an immediate-mode statement and returns
-        ; to the READY loop after it -- so `RUN 20` printed nothing at all.
-        ; Set after the branch, not before, so an undefined line still reports
-        ; `?UNDEF'D STATEMENT ERROR` with no spurious `IN 0` line number.
-        stz     BAS_CURLIN
-        stz     BAS_CURLIN+1
+        jsr     BasCmdGoto              ; does not return if the line is undefined;
+                                        ;   leaves direct mode, as the bare path does
         jmp     BasNewstt               ; as the bare path above: CLR reset the
                                         ;   stack this was dispatched from
 

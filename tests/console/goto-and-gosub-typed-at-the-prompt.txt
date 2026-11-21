@@ -1,0 +1,24 @@
+name: GOTO and GOSUB typed at the prompt run the program from that line
+# README: "GOTO linenum", "GOSUB linenum" — Microsoft BASIC runs the program
+# from the named line when either is typed at the prompt.
+#
+# Issue #3: both printed OK and ran nothing, because the jump left BASIC in
+# direct mode. A direct GOTO keeps the variables (it is not RUN, so no CLR), a
+# direct GOSUB's RETURN comes back to the rest of the typed line, and an
+# undefined line reports the error with no line number.
+mode: basic
+
+> 10 PRINT "TEN":END
+> 20 PRINT "SUB":RETURN
+> 30 PRINT "THIRTY";A
+> A = 7
+> GOTO 30
+~ ^THIRTY 7$
+! ^TEN
+> GOSUB 20:PRINT "BACK"
+~ ^SUB$
+~ ^BACK$
+! ^THIRTY
+> GOTO 9999
+~ \?UNDEF'D STATEMENT ERROR$
+! IN 0

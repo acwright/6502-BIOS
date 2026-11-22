@@ -38,12 +38,12 @@ async function timed(m, character) {
 export async function run(m) {
   await m.pause()
   await m.write(IO_MODE, [0x02])
-  m.assertByte(await m.peek(MIRROR_STALL), 0x00, 'MIRROR_STALL after the boot')
   const column = await m.peek(VID_CURSOR_X)
 
   await m.call('serial.lines', { cts: false })
 
-  // The register is empty, so the first byte is written and waits there.
+  // The register is empty, so the first byte is written and waits there. A
+  // stale MIRROR_STALL (nothing clears it at boot) would cost it one look only.
   await timed(m, 'A')
   m.assertByte(await m.peek(MIRROR_STALL), 0x00, 'MIRROR_STALL after the byte that filled the register')
 

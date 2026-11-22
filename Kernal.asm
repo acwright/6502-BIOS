@@ -941,7 +941,6 @@ KernalInitImpl:
   stz PRG_IMAGE_END + 1         ;   runs before any loader can, so a non-zero
                                 ;   value always means a loader put it there
   stz CF_DISK                   ; Reset current CF disk bank to 0
-  stz MIRROR_STALL              ; The serial mirror starts expecting a line
   lda #$1F                      ; Black on white.  Only KernalInit resets the
   sta VID_PEN                   ;   pen: NEW, RUN, CLR and errors keep it
   and #$0F                      ; The border starts on the pen's background
@@ -1454,14 +1453,8 @@ SerialChroutImpl:
   sei                           ; Irq must not raise RTS while the byte goes out
   jsr ScFlooded                 ; Input buffer full? Then RTS has to stay up
   bcs @ChroutDrop               ; Drop this byte rather than open the gate
-  jsr ScRtsLow                  ; The transmitter only runs with RTS down
-@ChroutReady:
-  jsr ScRxPoll                  ; SerialMirror leaves its byte in the register
-  and #SC_STATUS_TDRE           ;   rather than wait for it, so it may not have
-  beq @ChroutReady              ;   gone yet: writing now would overwrite it
-  tsx
-  lda $0103,x                   ; The character again (stack: P, X, A)
-  sta SC_DATA
+  jsr ScTxReady                 ; RTS down, and the register free (SerialMirror
+  sta SC_DATA                   ;   may have left a byte in it)
 @ChroutWait:
   jsr ScRxPoll                  ; Status, and any byte that arrived with it
   and #SC_STATUS_TDRE           ; Check if TX buffer not empty
@@ -1473,6 +1466,22 @@ SerialChroutImpl:
   pla                           ; The character, and the flags it left, as before
   rts
 
+; ScTxReady — Lower RTS, then wait for the transmit register to be free
+; SerialMirror leaves its byte in the register rather than wait for it to go,
+; and on the R6551 a second write overwrites the first, so SerialChrout waits
+; here before it writes.  On an idle line the first look finds it free.
+; Preserves: A
+; Modifies: Flags, X
+ScTxReady:
+  jsr ScRtsLow                  ; The transmitter only runs with RTS down
+  pha
+@ScTxWait:
+  jsr ScRxPoll                  ; Status, and any byte that arrived with it
+  and #SC_STATUS_TDRE
+  beq @ScTxWait
+  pla
+  rts
+
 ; SerialMirror — A video console's character, sent to serial as well
 ; IO_MODE bit 1 (IO_MIRROR), so a terminal or an agent on the serial line sees
 ; what BASIC prints to the screen.  Only what reaches Chrout: CLS, LOCATE,
@@ -1481,7 +1490,8 @@ SerialChroutImpl:
 ; - The byte is written as soon as the transmit register is free, and not
 ;   waited on afterwards, so the 520 us a character takes at 19200 baud
 ;   overlaps whatever the program does next.  SerialChrout waits for the
-;   register before it writes, so it never overwrites a mirrored byte.
+;   register before it writes (ScTxReady), so it never overwrites a mirrored
+;   byte.
 ; - CTS high stops the transmitter: a terminal holding it, or a card that takes
 ;   CTS from the cable (the ACE's or Serial Card's CTS EN on the cable, the
 ;   Serial Card Pro always) with nothing plugged in.  If the register is still

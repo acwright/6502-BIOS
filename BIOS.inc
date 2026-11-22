@@ -121,7 +121,8 @@ CF_PROBE_POLLS      := $0376             ; $0376-$0377 - Boot CF probe: polls, o
                                          ;   ready (0.1 ms each at 1 MHz).  CF_PROBE_LIMIT = never ready; 0 with HW_CF clear
                                          ;   = the slot was empty
 CF_PROBE_STAT       := $0378             ; Boot CF probe: the first status byte it read (an empty slot reads $8C, open bus)
-MIRROR_STALL        := $0379             ; Serial mirror: b7 set = the line took no byte last time, so give it one look
+MIRROR_STALL        := $0379             ; Serial mirror: b7 set = the line took no byte last time, so give it one look.
+                                         ;   Needs no clearing: a stale b7 costs one look, which an idle line passes
 FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a program image placed at PROGRAM_START by a loader

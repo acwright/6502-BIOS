@@ -24,7 +24,7 @@ The probe-and-boot sequence is:
 1. **Clear `HW_PRESENT`** — all bits start at zero
 2. **Probe each I/O slot** — RAM (read-back), RTC (NVRAM read-back), CompactFlash (an empty slot in two reads; otherwise BSY/RDY, polled for up to 3.0 s and timed: `CF_PROBE_POLLS`), Serial (TDRE after reset), GPIO/VIA (DDR read-back), SID (voice 3's noise must change between reads), Video (`STAT4` reads `$AC` and `STAT6` b7, the built-in font, is set — see [Video](#video))
 3. **Conditionally initialise** — each subsystem is only initialised if its probe succeeded. The video card is only put back in its reset-time state (the legacy submode, unscrolled); the Text console comes up the first time something is printed
-4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot)
+4. **Console auto-detection** — if video is present, `IO_MODE` is set to video; if only serial is present, output is routed to the serial port; if neither is found, `IO_MODE` is left unchanged (no halt — allows cartridges with their own display hardware to boot). Either way the serial mirror is off after a boot
 5. **Beep** — a short tone on the SID (skipped silently if SID absent; provides audible feedback that the system is alive)
 6. **Boot vector check** — if `BOOT_VECTOR` (`$035B`) is non-zero, jump to the address stored there (cartridge or external program takes over). Otherwise continue to normal boot
 7. **Console check** — verify that at least video or serial is present. If neither is found and no boot vector was set, the CPU halts (interactive boot requires a console)
@@ -389,7 +389,14 @@ Assembly programs can access disk storage directly through the Kernal jump table
 
 ### Serial I/O & XModem Transfer
 
-A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. `LOAD`/`SAVE`, and `BLOAD`/`BSAVE`, without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs and raw bytes over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
+A 6551 ACIA provides a serial port at 19200 baud (8-N-1). The `IO_MODE` Kernal variable selects whether `Chrout` routes to video or serial. With a video console, BASIC reads the serial line as well as the keyboard. `LOAD`/`SAVE`, and `BLOAD`/`BSAVE`, without a filename use the standard XModem protocol (128-byte blocks with checksum) to transfer programs and raw bytes over serial. The receiver initiates the transfer by sending NAK; the sender responds with data blocks; each block is acknowledged before the next is sent. The last block is padded with SUB (`$1A`). Compatible with any terminal program that supports XModem (checksum mode).
+
+**The serial mirror.** With a video console, BASIC answers on the screen only, so a terminal or a program on the serial line can type but can't see the reply. `POKE 774,2` sets bit 1 of `IO_MODE` (`IO_MIRROR`), and from then on every character `Chrout` puts on the screen goes to serial as well: BASIC's output, the echo of each line typed (at the keyboard or over serial), the Monitor, error messages and the `BRK` report. `POKE 774,0` turns it off, and so does every boot, cold or warm. A program can do the same with `SetIOMode` (`A` = 2). Bit 1 means nothing when bit 0 is set (the serial console) or there is no serial card.
+
+- **It is a transcript, not a picture of the screen.** What is drawn without `Chrout` doesn't reach the line: `CLS`, `LOCATE`, `COLOR`, `VPOKE` and `VideoChroutRaw`.
+- **It costs speed only when the output is continuous.** A character holds the line for about 520 µs at 19200 baud, so with the mirror on the console can't print faster than about 1,900 characters a second. BASIC printing whole lines runs at about 3,300 a second on video alone (1 MHz), so a loop like that slows by about 1.7 times. The mirror writes each byte as soon as the ACIA can take it and doesn't wait for it to go, so a program that prints between other work hardly notices.
+- **A stalled line never holds up the screen.** `CTS` high stops the ACIA's transmitter: a terminal holding it, or a card that takes `CTS` from the cable with nothing plugged in. If the ACIA hasn't taken a byte after about 7.6 ms (at 1 MHz), the mirror drops it and sets `MIRROR_STALL` (`$0379`); while that is set, each byte gets one look and is dropped if the line is still stopped. The first byte the line takes again clears it. Over the input buffer's high mark the mirror drops bytes too, as `SerialChrout` does, so a paste still lands.
+- **XModem keeps it.** A `LOAD`, `SAVE`, `BLOAD` or `BSAVE` over XModem makes serial the console for the transfer and puts `IO_MODE` back afterwards, mirror bit included.
 
 When an XModem transfer is initiated, the system prints `XMODEM RX READY` (receive) or `XMODEM TX READY` (send) and waits up to ~60 seconds for the terminal program to start the transfer, giving ample time to configure and begin the transfer in your terminal program.
 
@@ -477,7 +484,7 @@ A SID chip provides audio output. The `Beep` Kernal routine plays a ~475 Hz tone
 | `$0000–$00FF` | 256B | Zero page (Kernal + BASIC workspace) |
 | `$0100–$01FF` | 256B | CPU stack — and therefore BASIC's `GOSUB` and `FOR` frames, which are pushed onto it |
 | `$0200–$02FF` | 256B | Keyboard input ring buffer |
-| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, the CF probe's `CF_PROBE_POLLS` and `CF_PROBE_STAT` at `$0376–$0378`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039C`; `$039D–$03FF` unassigned) |
+| `$0300–$03FF` | 256B | Kernal variables (vectors, cursor, `HW_PRESENT`, `CF_DISK`, `BOOT_VECTOR`, RTC, FS state including `FS_IO_ADDR`, the CF probe's `CF_PROBE_POLLS` and `CF_PROBE_STAT` at `$0376–$0378`, the serial mirror's `MIRROR_STALL` at `$0379`, BASIC runtime, `NV_ID` at `$0390`, the video variables at `$0391–$039C`; `$039D–$03FF` unassigned) |
 | `$0400–$04FF` | 256B | `BAS_LINBUF` — the raw input line, as typed |
 | `$0500–$05FF` | 256B | `BAS_TOKBUF` — tokenizing scratch |
 | `$0600–$07FF` | 512B | `FS_SECTOR_BUF` — CompactFlash sector buffer, overwritten by **any** filesystem call (`LOAD`, `SAVE`, `DIR`, `DEL`, `BLOAD`, `BSAVE`, `FORMAT`) |
@@ -500,7 +507,7 @@ The table is a fixed 256 bytes: the 72 published slots below, then 13 reserved s
 | `$A006` | `WriteBuffer` | Push byte into the input buffer |
 | `$A009` | `ReadBuffer` | Pop byte from the input buffer |
 | `$A00C` | `BufferSize` | Return number of bytes waiting in buffer |
-| `$A00F` | `SetIOMode` | Set `IO_MODE`: `A`=0 (video) or 1 (serial) |
+| `$A00F` | `SetIOMode` | Set `IO_MODE`: `A`=0 (video), 1 (serial) or 2 (video, mirrored to serial) |
 | `$A012` | `GetIOMode` | Get `IO_MODE` → `A` |
 | `$A015` | `InitVideo` | Put the PICOVDP in the Text-mode console — writes the registers (40×24, per-cell colour, name table `$0000`, attributes `$0400`), has the card reload its built-in font into the pattern table at `$0800` (`VdpLoadFont`, which waits up to a frame) **and** restores palette row 0, and sets the border to `VID_BORDER`. Does not clear the screen |
 | `$A018` | `VideoClear` | Clear the screen to spaces in the current pen and home the cursor |
@@ -621,7 +628,7 @@ In practice, **Pattern A is recommended** for most cartridges.
 - **`HW_PRESENT`** (`$030D`) — read after `KernalInit` to discover installed hardware
 - **`KernalVersion`** (`$A07B`) — check BIOS compatibility (`A`=major, `X`=minor)
 - **RAM vectors** — `IRQ_PTR` (`$0300`), `BRK_PTR` (`$0302`), `NMI_PTR` (`$0304`) can be overwritten to install custom interrupt handlers. **A handler that chains to the Kernal's must not leave anything on the stack** — see below
-- **`IO_MODE`** (`$0306`) — set via `SetIOMode` (`$A00F`) to route console output
+- **`IO_MODE`** (`$0306`) — set via `SetIOMode` (`$A00F`) to route console output; bit 1 mirrors a video console to serial (see *The serial mirror*)
 - **No-console safe** — `KernalInit` does not halt if neither video nor serial is detected, allowing cartridges with their own display hardware to boot normally
 - **`BRK_PTR`** — `KernalInit` points it at the Kernal's `BRK` report, which ends by warm-starting BASIC at `$C000`. A cartridge with no BASIC there must point `BRK_PTR` at a handler of its own
 - **No character set in ROM** — the whole of `$A000–$BFFF` is Kernal on 2.x. The font is the card's: `InitVideo` or `VdpLoadFont` loads it

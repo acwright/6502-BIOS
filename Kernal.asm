@@ -131,21 +131,30 @@ UnimplementedStub:
   rts
 
 ; Chrout dispatcher — routes output based on IO_MODE
+; Bit 0 chooses the console: 0 = video, 1 = serial.  Bit 1 (IO_MIRROR), with
+; the video console, sends each character to serial as well — see SerialMirror.
+; Every boot with a console leaves it clear.
 ; Input: A = character to output
+; Preserves: A, X, Y
 ; Modifies: Flags
 ChroutDispatch:
   pha
   lda IO_MODE
-  and #$01                      ; Bit 0: 0=video, 1=serial
-  bne @Serial
+  lsr a                         ; Bit 0 into carry: 1 = serial console
+  bcs @Serial
+  lsr a                         ; Bit 1 into carry: 1 = mirror to serial
   pla
+  bcs @Mirror
   jmp VideoChroutImpl
+@Mirror:
+  jsr VideoChroutImpl           ; Keeps A, X and Y
+  jmp SerialMirror
 @Serial:
   pla
   jmp SerialChroutImpl
 
 ; Set IO_MODE
-; Input: A = mode (bit 0: 0=video, 1=serial)
+; Input: A = mode (bit 0: 0=video, 1=serial; bit 1: mirror video to serial)
 SetIOModeImpl:
   sta IO_MODE
   rts
@@ -932,6 +941,7 @@ KernalInitImpl:
   stz PRG_IMAGE_END + 1         ;   runs before any loader can, so a non-zero
                                 ;   value always means a loader put it there
   stz CF_DISK                   ; Reset current CF disk bank to 0
+  stz MIRROR_STALL              ; The serial mirror starts expecting a line
   lda #$1F                      ; Black on white.  Only KernalInit resets the
   sta VID_PEN                   ;   pen: NEW, RUN, CLR and errors keep it
   and #$0F                      ; The border starts on the pen's background
@@ -1445,6 +1455,12 @@ SerialChroutImpl:
   jsr ScFlooded                 ; Input buffer full? Then RTS has to stay up
   bcs @ChroutDrop               ; Drop this byte rather than open the gate
   jsr ScRtsLow                  ; The transmitter only runs with RTS down
+@ChroutReady:
+  jsr ScRxPoll                  ; SerialMirror leaves its byte in the register
+  and #SC_STATUS_TDRE           ;   rather than wait for it, so it may not have
+  beq @ChroutReady              ;   gone yet: writing now would overwrite it
+  tsx
+  lda $0103,x                   ; The character again (stack: P, X, A)
   sta SC_DATA
 @ChroutWait:
   jsr ScRxPoll                  ; Status, and any byte that arrived with it
@@ -1455,6 +1471,67 @@ SerialChroutImpl:
   plp                           ; Interrupts back as the caller had them
   plx
   pla                           ; The character, and the flags it left, as before
+  rts
+
+; SerialMirror — A video console's character, sent to serial as well
+; IO_MODE bit 1 (IO_MIRROR), so a terminal or an agent on the serial line sees
+; what BASIC prints to the screen.  Only what reaches Chrout: CLS, LOCATE,
+; COLOR, VPOKE and VideoChroutRaw draw without it.  Best effort, because the
+; screen must never wait on the line:
+; - The byte is written as soon as the transmit register is free, and not
+;   waited on afterwards, so the 520 us a character takes at 19200 baud
+;   overlaps whatever the program does next.  SerialChrout waits for the
+;   register before it writes, so it never overwrites a mirrored byte.
+; - CTS high stops the transmitter: a terminal holding it, or a card that takes
+;   CTS from the cable (the ACE's or Serial Card's CTS EN on the cable, the
+;   Serial Card Pro always) with nothing plugged in.  If the register is still
+;   full after MIRROR_POLLS looks, the byte is dropped and MIRROR_STALL set.
+;   While it is set each byte gets one look, so a stalled line costs the screen
+;   almost nothing; the first byte that finds the register free goes, and
+;   clears it.
+; - Over the input buffer's high mark the byte is dropped, as SerialChrout
+;   drops it (ScFlooded), so a paste typed with the mirror on still lands.
+; Input: A = character
+; Preserves: A, X, Y
+; Modifies: Flags
+MIRROR_POLLS = 255              ; Looks before giving up, about 30 cycles each: 7.6 ms
+                                ;   at 1 MHz and 3.8 ms at 2 MHz, against the 520 us
+                                ;   a full register can need to empty
+SerialMirror:
+  pha
+  phx
+  phy
+  php
+  sei                           ; Irq must not raise RTS between the look and the write
+  lda HW_PRESENT
+  and #HW_SC
+  beq @MirrorDone               ; No serial card — nothing to mirror to
+  jsr ScFlooded                 ; Input buffer over the mark? Then RTS stays up
+  bcs @MirrorDone
+  jsr ScRtsLow                  ; The transmitter only runs with RTS down
+  ldy #MIRROR_POLLS
+  bit MIRROR_STALL
+  bpl @MirrorWait
+  ldy #1                        ; Stalled last time: one look only
+@MirrorWait:
+  jsr ScRxPoll                  ; Status, and any byte that arrived with it
+  and #SC_STATUS_TDRE
+  bne @MirrorSend
+  dey
+  bne @MirrorWait
+  lda #$80                      ; The line took nothing: drop it, and stall
+  sta MIRROR_STALL
+  bra @MirrorDone
+@MirrorSend:
+  stz MIRROR_STALL
+  tsx
+  lda $0104,x                   ; The character (stack: P, Y, X, A)
+  sta SC_DATA
+@MirrorDone:
+  plp                           ; Interrupts back as the caller had them
+  ply
+  plx
+  pla
   rts
 
 ; ScFlooded — Is the input buffer too full to open the gate for a byte out?

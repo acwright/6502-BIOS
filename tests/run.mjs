@@ -52,6 +52,10 @@ const PROFILES = {
   serial: { console: 'serial', args: MACHINE },
   video: { console: 'video', args: VIDEO },
   'video-cf': { console: 'video', args: VIDEO, fixtures: true },
+  // CTS from the cable (the ACE's CTS EN on pins 2 and 3), so a case can hold it
+  // high with `serial.lines` and stop the transmitter, as a terminal or an
+  // unplugged cable does. Every other profile has it at ground, as boards ship.
+  'video-cts': { console: 'video', args: [...VIDEO, '--cts', 'cable'] },
   cf: { console: 'serial', args: MACHINE, fixtures: true },
   nvram: { console: 'serial', args: MACHINE, nvram: true },
   // A slot left empty, so the probe itself meets it: `hw:` clears a bit after

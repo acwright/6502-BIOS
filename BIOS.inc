@@ -58,7 +58,8 @@ KERNAL_VARS         := $0300             ; $0300-$03FF
 IRQ_PTR             := $0300             ; $0300-$0301
 BRK_PTR             := $0302             ; $0302-$0303
 NMI_PTR             := $0304             ; $0304-$0305
-IO_MODE             := $0306             ; Bit 0: 0=video, 1=serial output
+IO_MODE             := $0306             ; Bit 0: 0=video, 1=serial output; bit 1: mirror a video console to serial
+IO_MIRROR           = %00000010          ; IO_MODE bit 1: with bit 0 clear, Chrout sends to serial as well as video
 VID_CURSOR_X        := $0307             ; Video cursor column (0-39)
 VID_CURSOR_Y        := $0308             ; Video cursor row (0-23)
 VID_CURSOR_ADDR     := $0309             ; Video cursor VRAM address ($0309-$030A)
@@ -120,6 +121,7 @@ CF_PROBE_POLLS      := $0376             ; $0376-$0377 - Boot CF probe: polls, o
                                          ;   ready (0.1 ms each at 1 MHz).  CF_PROBE_LIMIT = never ready; 0 with HW_CF clear
                                          ;   = the slot was empty
 CF_PROBE_STAT       := $0378             ; Boot CF probe: the first status byte it read (an empty slot reads $8C, open bus)
+MIRROR_STALL        := $0379             ; Serial mirror: b7 set = the line took no byte last time, so give it one look
 FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a program image placed at PROGRAM_START by a loader

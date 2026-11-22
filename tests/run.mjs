@@ -39,6 +39,10 @@ const RTC = '2026-01-01T00:00:00'
 const PROFILES = {
   serial: { console: 'serial', args: [] },
   video: { console: 'video', args: ['--console', 'video'] },
+  // CTS from the cable (the ACE's CTS EN on pins 2 and 3), so a case can hold it
+  // high with `serial.lines` and stop the transmitter, as a terminal or an
+  // unplugged cable does. Every other profile has it at ground, as boards ship.
+  'video-cts': { console: 'video', args: ['--console', 'video', '--cts', 'cable'] },
   cf: { console: 'serial', args: [], fixtures: true },
   nvram: { console: 'serial', args: [], nvram: true },
   // A slot left empty, so the probe itself meets it: `hw:` clears a bit after

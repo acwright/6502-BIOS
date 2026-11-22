@@ -127,7 +127,7 @@ Set as `# key: value` in a `.bas` header, `key: value` in a `.txt` header, or an
 | | |
 |---|---|
 | `name` | what the case is called in the report (default: its path) |
-| `profile` | `serial` (default), `video`, or `cf` |
+| `profile` | `serial` (default), `video`, `cf`, or `video-cts` (a video console with CTS from the cable, which `serial.lines` can hold high) |
 | `mode` | `basic` (default) or `monitor` — Tier 2 |
 | `hw` | cards to take away — `hw: -cf`, `hw: -sid -rtc`, `hw: -all` |
 | `timeout` | per-step timeout in ms (default 20000) |

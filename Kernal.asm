@@ -40,7 +40,7 @@ PAD_C  = 2                      ; Before NmiVec            ($B329)
 ; Provides stable entry points for external code and cartridges
 
 ; --- Character I/O ---
-Chrout:         jmp ChroutDispatch      ; $A000 - Output char (dispatched by IO_MODE)
+Chrout:         jmp ChroutMirror        ; $A000 - Output char (dispatched by IO_MODE)
 Chrin:          jmp ChrinImpl           ; $A003 - Input char from buffer
 WriteBuffer:    jmp WriteBufferImpl     ; $A006 - Write byte to input buffer
 ReadBuffer:     jmp ReadBufferImpl      ; $A009 - Read byte from input buffer
@@ -126,6 +126,8 @@ UnimplementedStub:
   rts
 
 ; Chrout dispatcher — routes output based on IO_MODE
+; Since 1.8 the Chrout slot goes to ChroutMirror first, which comes here unless
+; the serial mirror is on; this routine keeps its 1.6 address and its bytes.
 ; Input: A = character to output
 ; Modifies: Flags
 ChroutDispatch:
@@ -140,7 +142,7 @@ ChroutDispatch:
   jmp SerialChroutImpl
 
 ; Set IO_MODE
-; Input: A = mode (bit 0: 0=video, 1=serial)
+; Input: A = mode (bit 0: 0=video, 1=serial; bit 1: mirror video to serial)
 SetIOModeImpl:
   sta IO_MODE
   rts
@@ -988,8 +990,8 @@ SerialChroutImpl:
   sei                           ; Irq must not raise RTS while the byte goes out
   jsr ScFlooded                 ; Input buffer full? Then RTS has to stay up
   bcs @ChroutDrop               ; Drop this byte rather than open the gate
-  jsr ScRtsLow                  ; The transmitter only runs with RTS down
-  sta SC_DATA
+  jsr ScTxReady                 ; RTS down, and the register free (SerialMirror
+  sta SC_DATA                   ;   may have left a byte in it)
 @ChroutWait:
   jsr ScRxPoll                  ; Status, and any byte that arrived with it
   and #SC_STATUS_TDRE           ; Check if TX buffer not empty
@@ -3775,4 +3777,108 @@ StProbeWait:
   and #ST_STATUS_ERR            ; Ready, but reporting an error?
   bne @StProbeTimeout
   clc
+  rts
+
+; --- The serial mirror ---
+;
+; New in 1.8, and down here for the same reason as the probes: Chrout's slot
+; now points at ChroutMirror, and SerialChrout's jsr ScRtsLow became jsr
+; ScTxReady, so nothing above moved.
+
+; ChroutMirror — Chrout, with IO_MODE bit 1 (IO_MIRROR) honoured
+; With the video console and bit 1 set, the character goes to video and then
+; to serial (SerialMirror); otherwise 1.6's ChroutDispatch handles it as before.
+; Every boot with a console leaves bit 1 clear.
+; Input: A = character to output
+; Preserves: A, X, Y
+; Modifies: Flags
+ChroutMirror:
+  pha
+  lda IO_MODE
+  and #(IO_MIRROR | $01)
+  cmp #IO_MIRROR                ; Video console, mirrored?
+  beq @ChroutMirrored
+  pla
+  jmp ChroutDispatch
+@ChroutMirrored:
+  pla
+  jsr VideoChroutImpl           ; Keeps A, X and Y
+  jmp SerialMirror
+
+; ScTxReady — Lower RTS, then wait for the transmit register to be free
+; SerialMirror leaves its byte in the register rather than wait for it to go,
+; and on the R6551 a second write overwrites the first, so SerialChrout waits
+; here before it writes.  On an idle line the first look finds it free.
+; Preserves: A
+; Modifies: Flags, X
+ScTxReady:
+  jsr ScRtsLow                  ; The transmitter only runs with RTS down
+  pha
+@ScTxWait:
+  jsr ScRxPoll                  ; Status, and any byte that arrived with it
+  and #SC_STATUS_TDRE
+  beq @ScTxWait
+  pla
+  rts
+
+; SerialMirror — A video console's character, sent to serial as well
+; IO_MODE bit 1 (IO_MIRROR), so a terminal or an agent on the serial line sees
+; what BASIC prints to the screen.  Only what reaches Chrout: CLS, LOCATE,
+; COLOR and VideoChroutRaw draw without it.  Best effort, because the screen
+; must never wait on the line:
+; - The byte is written as soon as the transmit register is free, and not
+;   waited on afterwards, so the 520 us a character takes at 19200 baud
+;   overlaps whatever the program does next.  SerialChrout waits for the
+;   register before it writes (ScTxReady), so it never overwrites a mirrored
+;   byte.
+; - CTS high stops the transmitter: a terminal holding it, or a card that takes
+;   CTS from the cable (the ACE's or Serial Card's CTS EN on the cable, the
+;   Serial Card Pro always) with nothing plugged in.  If the register is still
+;   full after MIRROR_POLLS looks, the byte is dropped and MIRROR_STALL set.
+;   While it is set each byte gets one look, so a stalled line costs the screen
+;   almost nothing; the first byte that finds the register free goes, and
+;   clears it.
+; - Over the input buffer's high mark the byte is dropped, as SerialChrout
+;   drops it (ScFlooded), so a paste typed with the mirror on still lands.
+; Input: A = character
+; Preserves: A, X, Y
+; Modifies: Flags
+MIRROR_POLLS = 255              ; Looks before giving up, about 30 cycles each: 7.6 ms
+                                ;   at 1 MHz and 3.8 ms at 2 MHz, against the 520 us
+                                ;   a full register can need to empty
+SerialMirror:
+  pha
+  phx
+  phy
+  php
+  sei                           ; Irq must not raise RTS between the look and the write
+  lda HW_PRESENT
+  and #HW_SC
+  beq @MirrorDone               ; No serial card — nothing to mirror to
+  jsr ScFlooded                 ; Input buffer over the mark? Then RTS stays up
+  bcs @MirrorDone
+  jsr ScRtsLow                  ; The transmitter only runs with RTS down
+  ldy #MIRROR_POLLS
+  bit MIRROR_STALL
+  bpl @MirrorWait
+  ldy #1                        ; Stalled last time: one look only
+@MirrorWait:
+  jsr ScRxPoll                  ; Status, and any byte that arrived with it
+  and #SC_STATUS_TDRE
+  bne @MirrorSend
+  dey
+  bne @MirrorWait
+  lda #$80                      ; The line took nothing: drop it, and stall
+  sta MIRROR_STALL
+  bra @MirrorDone
+@MirrorSend:
+  stz MIRROR_STALL
+  tsx
+  lda $0104,x                   ; The character (stack: P, Y, X, A)
+  sta SC_DATA
+@MirrorDone:
+  plp                           ; Interrupts back as the caller had them
+  ply
+  plx
+  pla
   rts

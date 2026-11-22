@@ -98,7 +98,8 @@ Current file: BIOS.asm
 000000r 2               IRQ_PTR             := $0300             ; $0300-$0301
 000000r 2               BRK_PTR             := $0302             ; $0302-$0303
 000000r 2               NMI_PTR             := $0304             ; $0304-$0305
-000000r 2               IO_MODE             := $0306             ; Bit 0: 0=video, 1=serial output
+000000r 2               IO_MODE             := $0306             ; Bit 0: 0=video, 1=serial output; bit 1: mirror a video console to serial
+000000r 2               IO_MIRROR           = %00000010          ; IO_MODE bit 1: with bit 0 clear, Chrout sends to serial as well as video
 000000r 2               VID_CURSOR_X        := $0307             ; Video cursor column (0-39)
 000000r 2               VID_CURSOR_Y        := $0308             ; Video cursor row (0-23)
 000000r 2               VID_CURSOR_ADDR     := $0309             ; Video cursor VRAM address ($0309-$030A)
@@ -160,6 +161,8 @@ Current file: BIOS.asm
 000000r 2                                                        ;   ready (0.1 ms each at 1 MHz).  CF_PROBE_LIMIT = never ready; 0 with HW_CF clear
 000000r 2                                                        ;   = the slot was empty
 000000r 2               CF_PROBE_STAT       := $0378             ; Boot CF probe: the first status byte it read (an empty slot reads $8C, open bus)
+000000r 2               MIRROR_STALL        := $0379             ; Serial mirror: b7 set = the line took no byte last time, so give it one look.
+000000r 2                                                        ;   Needs no clearing: a stale b7 costs one look, which an idle line passes
 000000r 2               FS_IO_ADDR          := $037F             ; $037F-$0380 - Load/save target address for FsLoadFileAddr/FsSaveFileAddr
 000000r 2               BAS_FNAME           := $0381             ; $0381-$038D - 13-byte scratch for null-terminated 8.3 filename (12-char "NAME.EXT" + null)
 000000r 2               PRG_IMAGE_END       := $038E             ; $038E-$038F - End address of a program image placed at PROGRAM_START by a loader
@@ -433,7 +436,7 @@ Current file: BIOS.asm
 000000r 2               ; Provides stable entry points for external code and cartridges
 000000r 2               
 000000r 2               ; --- Character I/O ---
-000000r 2  4C rr rr     Chrout:         jmp ChroutDispatch      ; $A000 - Output char (dispatched by IO_MODE)
+000000r 2  4C rr rr     Chrout:         jmp ChroutMirror        ; $A000 - Output char (dispatched by IO_MODE)
 000003r 2  4C rr rr     Chrin:          jmp ChrinImpl           ; $A003 - Input char from buffer
 000006r 2  4C rr rr     WriteBuffer:    jmp WriteBufferImpl     ; $A006 - Write byte to input buffer
 000009r 2  4C rr rr     ReadBuffer:     jmp ReadBufferImpl      ; $A009 - Read byte from input buffer
@@ -521,6 +524,8 @@ Current file: BIOS.asm
 000100r 2  60             rts
 000101r 2               
 000101r 2               ; Chrout dispatcher — routes output based on IO_MODE
+000101r 2               ; Since 1.8 the Chrout slot goes to ChroutMirror first, which comes here unless
+000101r 2               ; the serial mirror is on; this routine keeps its 1.6 address and its bytes.
 000101r 2               ; Input: A = character to output
 000101r 2               ; Modifies: Flags
 000101r 2               ChroutDispatch:
@@ -535,7 +540,7 @@ Current file: BIOS.asm
 00010Er 2  4C rr rr       jmp SerialChroutImpl
 000111r 2               
 000111r 2               ; Set IO_MODE
-000111r 2               ; Input: A = mode (bit 0: 0=video, 1=serial)
+000111r 2               ; Input: A = mode (bit 0: 0=video, 1=serial; bit 1: mirror video to serial)
 000111r 2               SetIOModeImpl:
 000111r 2  8D 06 03       sta IO_MODE
 000114r 2  60             rts
@@ -1386,8 +1391,8 @@ Current file: BIOS.asm
 000564r 2  78             sei                           ; Irq must not raise RTS while the byte goes out
 000565r 2  20 rr rr       jsr ScFlooded                 ; Input buffer full? Then RTS has to stay up
 000568r 2  B0 10          bcs @ChroutDrop               ; Drop this byte rather than open the gate
-00056Ar 2  20 rr rr       jsr ScRtsLow                  ; The transmitter only runs with RTS down
-00056Dr 2  8D 00 90       sta SC_DATA
+00056Ar 2  20 rr rr       jsr ScTxReady                 ; RTS down, and the register free (SerialMirror
+00056Dr 2  8D 00 90       sta SC_DATA                   ;   may have left a byte in it)
 000570r 2               @ChroutWait:
 000570r 2  20 rr rr       jsr ScRxPoll                  ; Status, and any byte that arrived with it
 000573r 2  29 10          and #SC_STATUS_TDRE           ; Check if TX buffer not empty
@@ -4191,7 +4196,111 @@ Current file: BIOS.asm
 00142Br 2  18             clc
 00142Cr 2  60             rts
 00142Dr 2               
-00142Dr 1               .segment "CHARS"
+00142Dr 2               ; --- The serial mirror ---
+00142Dr 2               ;
+00142Dr 2               ; New in 1.8, and down here for the same reason as the probes: Chrout's slot
+00142Dr 2               ; now points at ChroutMirror, and SerialChrout's jsr ScRtsLow became jsr
+00142Dr 2               ; ScTxReady, so nothing above moved.
+00142Dr 2               
+00142Dr 2               ; ChroutMirror — Chrout, with IO_MODE bit 1 (IO_MIRROR) honoured
+00142Dr 2               ; With the video console and bit 1 set, the character goes to video and then
+00142Dr 2               ; to serial (SerialMirror); otherwise 1.6's ChroutDispatch handles it as before.
+00142Dr 2               ; Every boot with a console leaves bit 1 clear.
+00142Dr 2               ; Input: A = character to output
+00142Dr 2               ; Preserves: A, X, Y
+00142Dr 2               ; Modifies: Flags
+00142Dr 2               ChroutMirror:
+00142Dr 2  48             pha
+00142Er 2  AD 06 03       lda IO_MODE
+001431r 2  29 03          and #(IO_MIRROR | $01)
+001433r 2  C9 02          cmp #IO_MIRROR                ; Video console, mirrored?
+001435r 2  F0 04          beq @ChroutMirrored
+001437r 2  68             pla
+001438r 2  4C rr rr       jmp ChroutDispatch
+00143Br 2               @ChroutMirrored:
+00143Br 2  68             pla
+00143Cr 2  20 rr rr       jsr VideoChroutImpl           ; Keeps A, X and Y
+00143Fr 2  4C rr rr       jmp SerialMirror
+001442r 2               
+001442r 2               ; ScTxReady — Lower RTS, then wait for the transmit register to be free
+001442r 2               ; SerialMirror leaves its byte in the register rather than wait for it to go,
+001442r 2               ; and on the R6551 a second write overwrites the first, so SerialChrout waits
+001442r 2               ; here before it writes.  On an idle line the first look finds it free.
+001442r 2               ; Preserves: A
+001442r 2               ; Modifies: Flags, X
+001442r 2               ScTxReady:
+001442r 2  20 rr rr       jsr ScRtsLow                  ; The transmitter only runs with RTS down
+001445r 2  48             pha
+001446r 2               @ScTxWait:
+001446r 2  20 rr rr       jsr ScRxPoll                  ; Status, and any byte that arrived with it
+001449r 2  29 10          and #SC_STATUS_TDRE
+00144Br 2  F0 F9          beq @ScTxWait
+00144Dr 2  68             pla
+00144Er 2  60             rts
+00144Fr 2               
+00144Fr 2               ; SerialMirror — A video console's character, sent to serial as well
+00144Fr 2               ; IO_MODE bit 1 (IO_MIRROR), so a terminal or an agent on the serial line sees
+00144Fr 2               ; what BASIC prints to the screen.  Only what reaches Chrout: CLS, LOCATE,
+00144Fr 2               ; COLOR and VideoChroutRaw draw without it.  Best effort, because the screen
+00144Fr 2               ; must never wait on the line:
+00144Fr 2               ; - The byte is written as soon as the transmit register is free, and not
+00144Fr 2               ;   waited on afterwards, so the 520 us a character takes at 19200 baud
+00144Fr 2               ;   overlaps whatever the program does next.  SerialChrout waits for the
+00144Fr 2               ;   register before it writes (ScTxReady), so it never overwrites a mirrored
+00144Fr 2               ;   byte.
+00144Fr 2               ; - CTS high stops the transmitter: a terminal holding it, or a card that takes
+00144Fr 2               ;   CTS from the cable (the ACE's or Serial Card's CTS EN on the cable, the
+00144Fr 2               ;   Serial Card Pro always) with nothing plugged in.  If the register is still
+00144Fr 2               ;   full after MIRROR_POLLS looks, the byte is dropped and MIRROR_STALL set.
+00144Fr 2               ;   While it is set each byte gets one look, so a stalled line costs the screen
+00144Fr 2               ;   almost nothing; the first byte that finds the register free goes, and
+00144Fr 2               ;   clears it.
+00144Fr 2               ; - Over the input buffer's high mark the byte is dropped, as SerialChrout
+00144Fr 2               ;   drops it (ScFlooded), so a paste typed with the mirror on still lands.
+00144Fr 2               ; Input: A = character
+00144Fr 2               ; Preserves: A, X, Y
+00144Fr 2               ; Modifies: Flags
+00144Fr 2               MIRROR_POLLS = 255              ; Looks before giving up, about 30 cycles each: 7.6 ms
+00144Fr 2                                               ;   at 1 MHz and 3.8 ms at 2 MHz, against the 520 us
+00144Fr 2                                               ;   a full register can need to empty
+00144Fr 2               SerialMirror:
+00144Fr 2  48             pha
+001450r 2  DA             phx
+001451r 2  5A             phy
+001452r 2  08             php
+001453r 2  78             sei                           ; Irq must not raise RTS between the look and the write
+001454r 2  AD 0D 03       lda HW_PRESENT
+001457r 2  29 10          and #HW_SC
+001459r 2  F0 2C          beq @MirrorDone               ; No serial card — nothing to mirror to
+00145Br 2  20 rr rr       jsr ScFlooded                 ; Input buffer over the mark? Then RTS stays up
+00145Er 2  B0 27          bcs @MirrorDone
+001460r 2  20 rr rr       jsr ScRtsLow                  ; The transmitter only runs with RTS down
+001463r 2  A0 FF          ldy #MIRROR_POLLS
+001465r 2  2C 79 03       bit MIRROR_STALL
+001468r 2  10 02          bpl @MirrorWait
+00146Ar 2  A0 01          ldy #1                        ; Stalled last time: one look only
+00146Cr 2               @MirrorWait:
+00146Cr 2  20 rr rr       jsr ScRxPoll                  ; Status, and any byte that arrived with it
+00146Fr 2  29 10          and #SC_STATUS_TDRE
+001471r 2  D0 0A          bne @MirrorSend
+001473r 2  88             dey
+001474r 2  D0 F6          bne @MirrorWait
+001476r 2  A9 80          lda #$80                      ; The line took nothing: drop it, and stall
+001478r 2  8D 79 03       sta MIRROR_STALL
+00147Br 2  80 0A          bra @MirrorDone
+00147Dr 2               @MirrorSend:
+00147Dr 2  9C 79 03       stz MIRROR_STALL
+001480r 2  BA             tsx
+001481r 2  BD 04 01       lda $0104,x                   ; The character (stack: P, Y, X, A)
+001484r 2  8D 00 90       sta SC_DATA
+001487r 2               @MirrorDone:
+001487r 2  28             plp                           ; Interrupts back as the caller had them
+001488r 2  7A             ply
+001489r 2  FA             plx
+00148Ar 2  68             pla
+00148Br 2  60             rts
+00148Cr 2               
+00148Cr 1               .segment "CHARS"
 000000r 1               .include "Chars.asm"
 000000r 2               ; =============================================================================
 000000r 2               ; CHARS  —  IBM Code Page 437 Character Set (5x8 font, 8x8 cell)

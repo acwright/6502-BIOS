@@ -36,10 +36,14 @@ concurrency:
 # cases on the no-sound and no-cf profiles meet what a real machine shows
 # (B1's fails on v2.0.2 there), and adds `--cf-busy`, which the cf-slow and
 # cf-dead profiles need.
+#
+# v3.7.0 models the keyboard controller's queue and its 20 ms hold, so input.type
+# is paced to the rate the machine takes keys (both suites pass on it), and
+# bundles 1.8 and 2.2.0, the ROMs these lines release.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v3.6.0
+  EMULATOR_REF: v3.7.0
 
 jobs:
   test:

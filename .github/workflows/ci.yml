@@ -39,11 +39,12 @@ concurrency:
 #
 # v3.7.0 models the keyboard controller's queue and its 20 ms hold, so input.type
 # is paced to the rate the machine takes keys (both suites pass on it), and
-# bundles 1.8 and 2.2.0, the ROMs these lines release.
+# bundles 1.8 and 2.2.0, the ROMs these lines release. v3.7.1 types a held key
+# once, as the machine's keyboard does; nothing the suites type is held.
 env:
   CC65_REF: 0fca83500b1a32fa1758bf2484562a00381f5642
   EMULATOR_REPO: acwright/6502-EMULATOR
-  EMULATOR_REF: v3.7.0
+  EMULATOR_REF: v3.7.1
 
 jobs:
   test:

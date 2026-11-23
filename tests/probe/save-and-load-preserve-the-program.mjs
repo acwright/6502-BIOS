@@ -23,6 +23,12 @@ export async function run(m) {
     await m.send(line + '\r', line.split(' ')[1])
   }
 
+  // A line's echo arrives before BASIC has stored it, so VARTAB read straight
+  // after the last echo can still be short of that line (CI read $083D for
+  // $084C, line 40 missing). A direct statement's answer comes only once every
+  // line before it has been taken in, and " 42" is nowhere in its echo.
+  await m.send('PRINT 6*7\r', /^ 42/m)
+
   const end = await m.peekWord(BAS_VARTAB)
   const before = await m.read(PROGRAM_START, end - PROGRAM_START)
   m.assert(before.length > 40, `the program is implausibly short: ${before.length} bytes`)

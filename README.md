@@ -30,7 +30,7 @@ The probe-and-boot sequence is:
 8. **Splash screen** — displayed on the active console:
 
 ```
-  -- 6502 BIOS v1.7 --
+  -- 6502 BIOS v1.8 --
 ENTER=BASIC  ESC=MONITOR
 ```
 
